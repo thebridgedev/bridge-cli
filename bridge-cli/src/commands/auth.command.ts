@@ -1,54 +1,28 @@
-import { Command } from 'commander';
-import { getManagementClient } from '../config.js';
-import { outputSuccess, outputError } from '../output.js';
+/**
+ * `bridge auth …` — top-level wiring for the auth command tree.
+ *
+ * Subcommand modules live in `./auth/*.command.ts`:
+ *   - `login`           (TBP-113): browser-based PKCE auth.
+ *   - `logout`          (TBP-113): revoke + delete credentials.
+ *   - `status`          (TBP-113): show current login state.
+ *   - `config`/`mfa`/`password-policy`: pre-existing app auth-config commands.
+ */
+import type { Command } from 'commander';
+import { registerAuthLoginCommand } from './auth/login.command.js';
+import { registerAuthLogoutCommand } from './auth/logout.command.js';
+import { registerAuthStatusCommand } from './auth/status.command.js';
+import { registerAuthConfigCommands } from './auth/config.command.js';
 
 export function registerAuthCommands(program: Command): void {
-  const auth = program.command('auth').description('Manage authentication configuration');
+  const auth = program
+    .command('auth')
+    .description('Authenticate with Bridge and manage app auth configuration');
 
-  auth.command('config')
-    .description('Get current auth configuration')
-    .action(async () => {
-      try {
-        const app = await getManagementClient().app.get();
-        outputSuccess({
-          mfaEnabled: app.mfaEnabled,
-          passkeysEnabled: app.passkeysEnabled,
-          magicLinkEnabled: app.magicLinkEnabled,
-          googleSsoEnabled: app.googleSsoEnabled,
-          azureAdSsoEnabled: app.azureAdSsoEnabled,
-          githubSsoEnabled: app.githubSsoEnabled,
-          linkedinSsoEnabled: app.linkedinSsoEnabled,
-          facebookSsoEnabled: app.facebookSsoEnabled,
-          appleSsoEnabled: app.appleSsoEnabled,
-          onboardingFlow: app.onboardingFlow,
-          tenantSelfSignup: app.tenantSelfSignup,
-          accessTokenTTL: app.accessTokenTTL,
-          refreshTokenTTL: app.refreshTokenTTL,
-        });
-      } catch (err) { outputError(err); }
-    });
+  // TBP-113 — interactive credentials.
+  registerAuthLoginCommand(auth);
+  registerAuthLogoutCommand(auth);
+  registerAuthStatusCommand(auth);
 
-  auth.command('mfa')
-    .description('Enable or disable MFA')
-    .requiredOption('--enabled <bool>', 'true or false', (v) => v === 'true')
-    .action(async (opts) => {
-      try { outputSuccess(await getManagementClient().app.update({ mfaEnabled: opts.enabled })); }
-      catch (err) { outputError(err); }
-    });
-
-  auth.command('password-policy')
-    .description('Update access token TTL')
-    .option('--access-token-ttl <seconds>', 'Access token TTL in seconds', parseInt)
-    .option('--refresh-token-ttl <seconds>', 'Refresh token TTL in seconds', parseInt)
-    .action(async (opts) => {
-      try {
-        const data = Object.fromEntries(
-          Object.entries({
-            accessTokenTTL: opts.accessTokenTtl,
-            refreshTokenTTL: opts.refreshTokenTtl,
-          }).filter(([, v]) => v !== undefined),
-        );
-        outputSuccess(await getManagementClient().app.update(data));
-      } catch (err) { outputError(err); }
-    });
+  // Pre-existing — app-level auth configuration.
+  registerAuthConfigCommands(auth);
 }

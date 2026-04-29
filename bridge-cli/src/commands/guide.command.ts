@@ -133,7 +133,7 @@ This guide covers integrating Bridge into any language/framework using the REST 
 Bridge issues JWTs signed with PS256. Verify them using your app's JWKS endpoint:
 
 \`\`\`
-GET https://account-api.thebridge.dev/v1/account/app/.well-known/jwks.json
+GET https://api.thebridge.dev/v1/account/app/.well-known/jwks.json
 \`\`\`
 
 Use a JWT library in your language that supports JWKS auto-refresh:
@@ -156,7 +156,7 @@ The access token contains:
 
 Evaluate flags server-side:
 \`\`\`
-POST https://account-api.thebridge.dev/cloud-views/flags/bulkEvaluate/{appId}
+POST https://api.thebridge.dev/cloud-views/flags/bulkEvaluate/{appId}
 Authorization: Bearer <user-access-token>
 \`\`\`
 
@@ -164,7 +164,7 @@ Authorization: Bearer <user-access-token>
 
 Use the Bridge REST API with an API token:
 \`\`\`
-GET https://account-api.thebridge.dev/v1/account/tenant
+GET https://api.thebridge.dev/v1/account/tenant
 x-api-key: <your-api-token>
 \`\`\`
 
