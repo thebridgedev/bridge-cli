@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { outputSuccess, outputError } from '../output.js';
 
-const GUIDE_BASE_URL = 'https://raw.githubusercontent.com/nebulr-group';
+const GUIDE_BASE_URL = 'https://raw.githubusercontent.com/thebridgedev';
 const GUIDE_REPOS: Record<string, string> = {
   react: 'bridge-react/main',
   svelte: 'bridge-svelte/main',
@@ -104,7 +104,7 @@ async function fetchGuide(tech: string, feature?: string): Promise<string> {
 }
 
 const MASTER_PROMPT_GITHUB_URL =
-  'https://raw.githubusercontent.com/nebulr-group/bridge-cli/main/prompts/master-integration-prompt.md';
+  'https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/bridge-cli/prompts/master-integration-prompt.md';
 
 async function fetchMasterPrompt(): Promise<string> {
   // Local override for development
