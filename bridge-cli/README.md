@@ -56,7 +56,7 @@ For non-interactive contexts (CI/CD pipelines, Docker images, headless agents) s
 export BRIDGE_API_KEY=<your-api-token>
 ```
 
-The env var takes precedence over the credentials file when both are present, so you can safely export `BRIDGE_API_KEY` in a CI shell that also has a stale `credentials.json` from a developer's home directory.
+If you have logged in via `bridge auth login`, the credentials file always wins — a fresh login takes effect immediately, even when `BRIDGE_API_KEY` is still exported in your shell. `BRIDGE_API_KEY` is only used when no credentials file is present (the typical CI runner shape). To switch back to env-var auth on a developer machine, run `bridge auth logout` first.
 
 Optional configuration (applies to both auth paths):
 

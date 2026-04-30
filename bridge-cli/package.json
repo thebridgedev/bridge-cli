@@ -1,6 +1,6 @@
 {
   "name": "@nebulr-group/bridge-cli",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0",
   "description": "Bridge platform CLI for AI coding agents and developers",
   "author": "Nebulr Group",
   "license": "MIT",
@@ -23,7 +23,7 @@
     "publish:local": "npm run build && node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')),v=p.version.match(/^(\\d+\\.\\d+\\.\\d+)-alpha\\.(\\d+)$/);if(v){p.version=v[1]+'-alpha.'+(+v[2]+1);}else{p.version=p.version+'-alpha.0';}fs.writeFileSync('package.json',JSON.stringify(p,null,'  ')+'\\n');console.log('Version bumped to '+p.version);\" && npm publish --registry http://host.docker.internal:4873 --no-git-checks --ignore-scripts && npm dist-tag add @nebulr-group/bridge-cli@$(node -p \"require('./package.json').version\") alpha --registry http://host.docker.internal:4873"
   },
   "dependencies": {
-    "@nebulr-group/bridge-auth-core": "^0.1.0-beta.9",
+    "@nebulr-group/bridge-auth-core": "^0.1.0",
     "commander": "^12.0.0"
   },
   "devDependencies": {

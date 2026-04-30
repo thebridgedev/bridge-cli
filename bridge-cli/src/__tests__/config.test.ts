@@ -170,8 +170,10 @@ describe('getManagementClient (bridge-cli config)', () => {
     );
   });
 
-  // TBP-113 — BRIDGE_API_KEY env always wins over the credentials file.
-  it('prefers BRIDGE_API_KEY over the credentials file when both are present', () => {
+  // TBP-113 — credentials file (from `bridge auth login`) wins over BRIDGE_API_KEY.
+  // Rationale: login is the interactive primary path, so a fresh login takes
+  // effect immediately even when an old env var is still exported.
+  it('prefers the credentials file over BRIDGE_API_KEY when both are present', () => {
     writeCreds({ apiKey: 'fake-jwt-from-file' });
     process.env.BRIDGE_API_KEY = 'env-key';
     const { getManagementClient } = loadConfig();
@@ -179,7 +181,7 @@ describe('getManagementClient (bridge-cli config)', () => {
     getManagementClient();
 
     expect(ManagementMock).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: 'env-key' }),
+      expect.objectContaining({ apiKey: 'fake-jwt-from-file' }),
     );
   });
 
