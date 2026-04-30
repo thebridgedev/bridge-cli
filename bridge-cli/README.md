@@ -16,26 +16,81 @@ npx @nebulr-group/bridge-cli tenant list
 
 ## Authentication
 
-Set your Bridge API key as an environment variable:
+bridge-cli supports two authentication paths.
+
+### 1. Interactive (recommended for humans + AI agents) — `bridge auth login`
+
+```bash
+bridge auth login
+```
+
+Opens your default browser, runs through a PKCE-secured loopback flow (RFC 8252), and stores a 10-day token at `~/.config/bridge/credentials.json` (mode `0600`). After that, every subsequent `bridge` command picks the token up automatically — no env vars needed.
+
+```bash
+bridge auth status   # show who you're logged in as and when the token expires
+bridge auth logout   # revoke the token and delete the credentials file
+```
+
+#### `bridge auth login` flags
+
+| Flag | Description |
+|------|-------------|
+| `--app <id\|name>` | Pin to a specific app, skipping the picker on the consent screen. |
+| `--label <text>`  | Friendly label stored on the token (default: `bridge-cli`). Useful when listing CLI tokens at `app.thebridge.dev/keys`. |
+| `--no-browser`    | Print the authorization URL instead of opening a browser. Use this on headless boxes or over SSH. |
+
+When the token expires (10 days), the next command fails with a friendly `Token expired. Run `bridge auth login` to re-authenticate.` message.
+
+The credentials file location honors `XDG_CONFIG_HOME`:
+
+```bash
+$XDG_CONFIG_HOME/bridge/credentials.json   # if XDG_CONFIG_HOME is set
+~/.config/bridge/credentials.json          # otherwise
+```
+
+### 2. Service-account / CI — `BRIDGE_API_KEY`
+
+For non-interactive contexts (CI/CD pipelines, Docker images, headless agents) set the API key directly in the environment:
 
 ```bash
 export BRIDGE_API_KEY=<your-api-token>
 ```
 
-Optional configuration:
+If you have logged in via `bridge auth login`, the credentials file always wins — a fresh login takes effect immediately, even when `BRIDGE_API_KEY` is still exported in your shell. `BRIDGE_API_KEY` is only used when no credentials file is present (the typical CI runner shape). To switch back to env-var auth on a developer machine, run `bridge auth logout` first.
+
+Optional configuration (applies to both auth paths):
 
 ```bash
-export BRIDGE_BASE_URL=https://account-api.thebridge.dev  # default
-export BRIDGE_TENANT_ID=<tenant-id>                        # for user commands
-export BRIDGE_DEBUG=true                                   # enable debug logging
+export BRIDGE_BASE_URL=https://api.thebridge.dev   # default
+export BRIDGE_TENANT_ID=<tenant-id>                 # for user commands
+export BRIDGE_DEBUG=true                            # enable debug logging
 ```
 
 ## Usage
 
-All output is JSON by default. AI agents parse it directly; humans can pipe through `jq`.
+All output is JSON by default for management commands. AI agents parse it directly; humans can pipe through `jq`. The `bridge auth status` and `bridge auth login` commands print human-readable text, since their primary audience is a human in a terminal.
 
 ```bash
 bridge <command> <subcommand> [options]
+```
+
+### Auth (interactive credentials)
+
+```bash
+bridge auth login                # default: open browser, complete PKCE flow
+bridge auth login --app acme     # pin to a specific app
+bridge auth login --label "work laptop"
+bridge auth login --no-browser   # print the URL (headless / SSH)
+bridge auth status               # show current login state
+bridge auth logout               # revoke token + delete local file
+```
+
+### Auth Configuration (app-level — separate from `auth login`)
+
+```bash
+bridge auth config
+bridge auth mfa --enabled true
+bridge auth password-policy --access-token-ttl 3600
 ```
 
 ### App
@@ -84,14 +139,6 @@ bridge flag create --key dark-mode --description "Dark mode UI" --enabled
 bridge flag update --id <flag-id> --enabled true
 bridge flag toggle --id <flag-id> --enabled true
 bridge flag delete --id <flag-id>
-```
-
-### Auth Configuration
-
-```bash
-bridge auth config
-bridge auth mfa --enabled true
-bridge auth password-policy --access-token-ttl 3600
 ```
 
 ### Branding
@@ -176,14 +223,24 @@ bridge guide custom
 }
 ```
 
+`bridge auth login`, `bridge auth logout`, and `bridge auth status` print plain text (they're the only commands aimed primarily at humans).
+
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Client error (4xx) |
+| 1 | Client error (4xx), or `bridge auth login` failed/cancelled |
 | 2 | Server error (5xx) |
-| 3 | Configuration error (missing API key, etc.) |
+| 3 | Configuration error (missing API key, expired credentials, etc.) |
+
+## Security notes
+
+- `bridge auth login` uses RFC 8252 loopback PKCE — the loopback URL is always `http://127.0.0.1:<random-port>/callback` (never `localhost`, to avoid DNS spoofing).
+- The loopback HTTP server handles a single request, then closes — no port stays bound.
+- The CSRF `state` parameter is verified on the callback before the code is exchanged.
+- The credentials file is written with mode `0600` (owner-only). Its parent directory is created with mode `0700`.
+- The CLI never logs the JWT or the PKCE `code_verifier`.
 
 ## Development
 
@@ -197,6 +254,6 @@ npm run build
 # Run locally
 node bridge-cli/dist/bin.js --help
 
-# Package
-npm run package
+# Test
+npm test
 ```
