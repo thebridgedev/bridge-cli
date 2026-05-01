@@ -34,6 +34,7 @@ interface LoginOptions {
    * We read this as `opts.browser === false` → use --no-browser path.
    */
   browser?: boolean;
+  reauth?: boolean;
 }
 
 export function registerAuthLoginCommand(auth: Command): void {
@@ -43,6 +44,7 @@ export function registerAuthLoginCommand(auth: Command): void {
     .option('--app <id|name>', 'Pin to a specific app (skips the picker on the consent screen)')
     .option('--label <text>', 'Friendly label stored on the token (default: "bridge-cli")')
     .option('--no-browser', 'Print the authorization URL instead of opening a browser')
+    .option('--reauth', 'Force the consent screen to sign you out and prompt for credentials again')
     .action(async (opts: LoginOptions) => {
       try {
         await runLogin(opts);
@@ -87,6 +89,7 @@ async function runLogin(opts: LoginOptions): Promise<void> {
     state,
     appId: opts.app,
     label: opts.label,
+    reauth: opts.reauth === true,
   });
 
   // 3. Open browser (or print URL if --no-browser or open fails).
@@ -160,7 +163,14 @@ async function runLogin(opts: LoginOptions): Promise<void> {
 
 function buildAuthorizeUrl(
   authBaseUrl: string,
-  params: { challenge: string; redirect: string; state: string; appId?: string; label?: string },
+  params: {
+    challenge: string;
+    redirect: string;
+    state: string;
+    appId?: string;
+    label?: string;
+    reauth?: boolean;
+  },
 ): string {
   const url = new URL(`${authBaseUrl}/cli/authorize`);
   url.searchParams.set('challenge', params.challenge);
@@ -169,6 +179,10 @@ function buildAuthorizeUrl(
   url.searchParams.set('scope', 'management');
   if (params.appId) url.searchParams.set('app_id', params.appId);
   if (params.label) url.searchParams.set('label', params.label);
+  // OAuth-style `prompt=login` — the consent screen reads this as "clear any
+  // existing browser session and re-prompt for credentials" so users who just
+  // ran `bridge auth logout` aren't dropped straight into the workspace picker.
+  if (params.reauth) url.searchParams.set('prompt', 'login');
   return url.toString();
 }
 

@@ -183,6 +183,101 @@ describe('bridge auth login', () => {
     expect(stdout).toContain('App: Test App');
   }, 15_000);
 
+  it('adds prompt=login to the authorize URL when --reauth is set', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          api_token: 'fake-jwt-reauth',
+          expires_at: '2099-01-01T00:00:00.000Z',
+          app: { id: 'a', name: 'A' },
+          user: { id: 'u', email: 'u@a.b' },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const program = new Command();
+    program.exitOverride();
+    const auth = program.command('auth');
+    registerAuthLoginCommand(auth);
+
+    const runPromise = program.parseAsync([
+      'node',
+      'bridge',
+      'auth',
+      'login',
+      '--no-browser',
+      '--reauth',
+    ]);
+
+    const deadline = Date.now() + 5000;
+    let redirect = '';
+    let state = '';
+    let authorizeUrl = '';
+    while (Date.now() < deadline) {
+      const stdout = stdoutChunks.join('');
+      const match = stdout.match(/https?:\/\/\S+\/cli\/authorize\?\S+/);
+      if (match) {
+        authorizeUrl = match[0];
+        const u = new URL(authorizeUrl);
+        redirect = u.searchParams.get('redirect') ?? '';
+        state = u.searchParams.get('state') ?? '';
+        if (redirect && state) break;
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const u = new URL(authorizeUrl);
+    expect(u.searchParams.get('prompt')).toBe('login');
+
+    await hitLoopback(redirect, 'AUTH-CODE-REAUTH', state);
+    await runPromise;
+  }, 15_000);
+
+  it('omits the prompt param when --reauth is not set', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          api_token: 'fake-jwt-noflag',
+          expires_at: '2099-01-01T00:00:00.000Z',
+          app: { id: 'a', name: 'A' },
+          user: { id: 'u', email: 'u@a.b' },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const program = new Command();
+    program.exitOverride();
+    const auth = program.command('auth');
+    registerAuthLoginCommand(auth);
+
+    const runPromise = program.parseAsync(['node', 'bridge', 'auth', 'login', '--no-browser']);
+
+    const deadline = Date.now() + 5000;
+    let redirect = '';
+    let state = '';
+    let authorizeUrl = '';
+    while (Date.now() < deadline) {
+      const stdout = stdoutChunks.join('');
+      const match = stdout.match(/https?:\/\/\S+\/cli\/authorize\?\S+/);
+      if (match) {
+        authorizeUrl = match[0];
+        const u = new URL(authorizeUrl);
+        redirect = u.searchParams.get('redirect') ?? '';
+        state = u.searchParams.get('state') ?? '';
+        if (redirect && state) break;
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const u = new URL(authorizeUrl);
+    expect(u.searchParams.get('prompt')).toBeNull();
+
+    await hitLoopback(redirect, 'AUTH-CODE-NOFLAG', state);
+    await runPromise;
+  }, 15_000);
+
   it('builds the authorize URL with --app and --label flags', async () => {
     fetchSpy.mockResolvedValue(
       new Response(
