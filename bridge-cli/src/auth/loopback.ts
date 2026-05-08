@@ -261,15 +261,19 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
         // staying on 127.0.0.1 — branded UX.
         res.statusCode = 302;
         res.setHeader('Location', successRedirectUrl);
+        res.setHeader('Connection', 'close');
         res.end(() => {
           server.close();
+          server.closeAllConnections();
         });
       } else {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Connection', 'close');
         res.end(successHtml, () => {
           // Close listener AFTER the response flushes so the user actually sees the page.
           server.close();
+          server.closeAllConnections();
         });
       }
       resolveResult(verified);
@@ -277,8 +281,10 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
       const msg = err instanceof Error ? err.message : String(err);
       res.statusCode = 400;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Connection', 'close');
       res.end(FAILURE_HTML(msg), () => {
         server.close();
+        server.closeAllConnections();
       });
       rejectResult(err instanceof Error ? err : new Error(msg));
     }
@@ -305,6 +311,7 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
       ),
     );
     server.close();
+    server.closeAllConnections();
   }, timeoutMs);
   // Don't keep the process alive for the timeout once the server closes.
   timeoutHandle.unref?.();
@@ -320,6 +327,7 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
     close: () => {
       try {
         server.close();
+        server.closeAllConnections();
       } catch {
         // server already closed; ignore.
       }
