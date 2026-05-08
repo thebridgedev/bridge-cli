@@ -2,6 +2,43 @@
 
 You are integrating The Bridge into a user's application. The Bridge provides authentication, tenant management, feature flags, and payments. Your job is to detect the project structure, identify the technologies, and apply the right integration for each.
 
+## Step 0 — Authenticate
+
+Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it exits, proceed to Step 1.
+
+---
+
+**At the end of this integration you will output a success message that looks like this:**
+
+```
+   ██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗
+   ██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝
+   ██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗
+   ██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝
+   ██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗
+   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝
+
+  ──────────────────────────────────────────────
+   Congratulations — [project-name] now has superpowers.
+   ...
+    ✅  You know who's calling
+        [token-description]
+   ...
+  ──────────────────────────────────────────────
+    Here is what I actually did:
+    [what-i-actually-did]
+
+    And here is what I changed:
+    [what-i-changed]
+  ──────────────────────────────────────────────
+```
+
+As you work through the steps below, track the following so you have it ready:
+- **`[project-name]`** — folder name and/or `package.json` name for each project integrated
+- **`[token-description]`** — the identifiers the developer uses to access the authenticated user in their framework (e.g. stores for Svelte, hooks for React, decorators for NestJS)
+- **`[what-i-actually-did]`** — high-level outcomes: what works now that didn't before
+- **`[what-i-changed]`** — every package installed, file created or modified, and URL configured, with exact values
+
 ## Step 1 — Discover projects
 
 Scan the current directory and its immediate subdirectories for `package.json` files. For each one:
@@ -62,7 +99,7 @@ If the project's `BridgeConfig` has no `loginRoute`, it is using hosted auth —
 
 **Decision matrix:**
 
-- **Layout wiring complete AND all required auth routes present:** Bridge is fully integrated. Skip to **Step 7 — What's next** to offer additional features.
+- **Layout wiring complete AND all required auth routes present:** Bridge is fully integrated. Skip to **Step 6b** to output the success message.
 - **Layout wiring complete BUT auth routes missing:** Bridge is partially integrated — the missing routes will silently break signup or password reset. Offer to fetch the SDK auth guide (`bridge guide svelte sdk-auth`) and add only the missing files. Do not regenerate routes that already exist.
 - **Layout wiring incomplete (regardless of route state):** Offer to complete the initial setup (proceed to Step 4).
 - **Bridge is NOT installed:** Continue with Steps 2–6 for fresh setup.
@@ -192,66 +229,19 @@ If anything fails, diagnose and fix before moving on. Once the checks pass, move
 
 ## Step 6b — Tell the developer what they just got
 
-This is the last thing the developer reads before deciding whether the integration was worth it. **Lead with capabilities, not files.** A list of "added X, edited Y, dropped Z" tells the developer what changed but not what they can DO that they couldn't an hour ago. Flip that. Keep it short — every line earns its place or gets cut.
+Run `bridge guide integration-success` to fetch the success message template, then output it personalised for this project.
 
-Use this structure (drop any section that doesn't apply to the actual integration):
+**Substitutions (always apply):**
 
-```
-Bridge is wired into [project name from package.json]. Here's what you can do now:
+- `[project-name]` → the `name` field from the project's `package.json`
+- `[bridge-plugin]` → the installed Bridge plugin (e.g. `bridge-svelte`, `bridge-react`, `bridge-nestjs`)
+- `[dev-url]` → the frontend dev server URL detected in Step 3b (e.g. `http://localhost:5173`)
 
-**Real authentication.** Signup, login, password reset, magic link, passkey, SSO, MFA, and tenant selection are live. Toggle which flows appear from the Bridge admin dashboard — no deploy needed.
+**Personalisation rules:**
 
-**Private by default.** Every backend endpoint requires a logged-in user except the [N] public routes ([list them]). Protected pages on the frontend bounce unauth'd users to your login page.
+- Fill in every `[placeholder]` using the substitution guide at the bottom of the template. For `[what-i-actually-did]` and `[what-i-changed]`, draw from what you actually observed and changed during Steps 1–6 — the examples in the guide are illustrative only. Strip the `AGENT SUBSTITUTION GUIDE` section before outputting — it must never be shown to the developer.
+- If both a frontend and a backend were integrated, group the bottom two sections by project rather than merging them into a flat list.
+- **DO NOT write any text before the banner.** The very first character of your response must be the first character of the ASCII art. No "Perfect!", no "Here's your success message:", no transition sentence, no acknowledgement — nothing. Start with the `█` character. If you find yourself typing an intro, stop and delete it.
+- **If the build is broken** or auth doesn't actually work end-to-end, prepend a single "Heads up:" line before the banner. Never bury bad news under it.
 
-**You know who's calling.** The authenticated user and their tenant are available in your code on every request. JWTs are verified against Bridge's JWKS automatically.
-
-**Verified emails only.** Signups can't log in until they click the verification link.
-
-**Multi-tenant ready.** Tenant context flows through every request — teams/orgs/workspaces don't require rebuilding auth.
-
-Try it now by starting up your app, click "Log in" → "Sign up", use a real email, click the verification link, set a password, log in. Then hit a protected route while logged out and confirm you're bounced to the login page.
-```
-
-**Tone rules:**
-
-- **Personalize with the project name** read from `package.json:name`. "Bridge is wired into swu-deck-builder-ui" beats "Bridge is wired in" — it signals attention without sounding generic. Apply this once at the top.
-- Second person ("your app", "you can"). Speak TO the developer about THEIR app.
-- Concrete user-facing verbs (signup, log in, click, verify, scope) — not implementation verbs (configure, install, register).
-- Quantify where the number matters ("seven auth flows", "[N] public routes"). Skip when it'd be filler.
-- **No emojis.** They read as AI-generated. Use bold headers instead.
-- **Stay framework-neutral in the template; let the agent localize.** The template above uses generic phrasing like "your endpoints", "your code", "your login page" so it reads correctly for any stack (NestJS, Express, Next.js, SvelteKit, Angular, React, or anything else). The agent MAY add a single concrete example if it sharpens the message — e.g., "(in NestJS, that's `@CurrentUser()`)" or "(in Express, `req.user`)" — but only when it actually clarifies. Never bake one framework's syntax into the prose as if it were universal.
-- **Adapt sections to the actual integration.** Frontend-only run: skip the backend block. Hosted auth: skip the in-app login route reference. No backend touched: skip "you know who's calling". Don't pad with capabilities the project didn't actually get.
-- **No "Caveats" or "Files changed" sections.** If something is broken or genuinely needs the developer's attention, surface it as the FIRST line above the value summary ("Heads up: bun run build fails in this sandbox — pre-existing, not Bridge"). Don't tack a caveats section on at the bottom. Don't list files at all — git diff exists for that.
-- **Don't oversell.** If the build is broken or auth doesn't actually work end-to-end yet, lead with that — never bury bad news under congratulations.
-
-After delivering the value summary, transition into Step 7.
-
-## Step 7 — What's next
-
-After the initial integration is verified (or if Step 1b detected Bridge is already fully integrated), present the user with additional features they can add:
-
-```
-Bridge auth is set up! Here's what you can add next:
-
-1. SDK Auth — In-app login/signup forms (replace hosted login with your own UI)
-2. Feature Flags — Gate routes and UI elements behind feature flags
-3. Payments — Subscription plans with Stripe integration
-4. Team Management — Invite users, manage roles, update workspace settings
-
-Which feature would you like to add? (number, or "done" to finish)
-```
-
-For the selected feature, fetch the corresponding guide:
-
-| Choice | Command |
-|--------|---------|
-| 1. SDK Auth | `bridge guide {tech} sdk-auth` |
-| 2. Feature Flags | `bridge guide {tech} feature-flags` |
-| 3. Payments | `bridge guide {tech} payments` |
-| 4. Team Management | `bridge guide {tech} team` |
-
-Replace `{tech}` with the detected frontend framework (e.g., `svelte`).
-
-Follow the returned prompt to apply the feature. After completion, return to this menu so the user can add more features or choose "done" to finish.
-
-**Note:** If the user chose SDK auth in Step 2 and it's already been applied, skip option 1 in the menu. Similarly, skip any features that are already detected in the project.
+After delivering the message, the integration is complete.

@@ -1,7 +1,10 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { outputSuccess, outputError } from '../output.js';
+import { readCredentials, isExpired } from '../credentials.js';
+import { runLogin } from './auth/login.command.js';
 
 const GUIDE_BASE_URL = 'https://raw.githubusercontent.com/thebridgedev';
 const GUIDE_REPOS: Record<string, string> = {
@@ -30,8 +33,14 @@ export function registerGuideCommands(program: Command): void {
     .description('Integration guides — run with no arguments for the master integration prompt')
     .action(async () => {
       try {
-        const content = await fetchMasterPrompt();
-        outputSuccess({ guide: content });
+        await ensureAuthenticated();
+        const creds = readCredentials()!;
+        const raw = await fetchMasterPrompt();
+        const guide = raw
+          .replace('{{session.email}}', creds.user.email)
+          .replace('{{session.appName}}', creds.app.name)
+          .replace('{{session.appId}}', creds.app.id);
+        outputSuccess({ guide });
       } catch (err) { outputError(err); }
     });
 
@@ -63,6 +72,29 @@ export function registerGuideCommands(program: Command): void {
         guide: CUSTOM_GUIDE,
       });
     });
+
+  guide.command('integration-success')
+    .description('Integration success message template — output at the end of a completed integration')
+    .action(async () => {
+      try {
+        const content = await fetchIntegrationSuccess();
+        outputSuccess({ guide: content });
+      } catch (err) { outputError(err); }
+    });
+}
+
+async function fetchIntegrationSuccess(): Promise<string> {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const bundledPath = join(__dirname, '..', 'prompts', 'integration-success.md');
+  return readFile(bundledPath, 'utf-8');
+}
+
+async function ensureAuthenticated(): Promise<void> {
+  const creds = readCredentials();
+  if (!creds || isExpired(creds)) {
+    process.stdout.write('No active Bridge session — opening your browser to log in.\n');
+    await runLogin({});
+  }
 }
 
 async function fetchGuide(tech: string, feature?: string): Promise<string> {

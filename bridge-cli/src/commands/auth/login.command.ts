@@ -37,6 +37,8 @@ interface LoginOptions {
   reauth?: boolean;
 }
 
+export { runLogin };
+
 export function registerAuthLoginCommand(auth: Command): void {
   auth
     .command('login')
@@ -107,7 +109,7 @@ async function runLogin(opts: LoginOptions): Promise<void> {
           `Open this URL manually:\n  ${authorizeUrl}\n`,
       );
     } else {
-      stdout.write('Opened your browser. Waiting for authorization...\n');
+      stdout.write('Your browser just opened — complete the login there. Waiting...\n');
     }
   }
 
