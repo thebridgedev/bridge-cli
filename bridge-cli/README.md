@@ -154,6 +154,15 @@ bridge branding update --bg-color "#ffffff" --text-color "#000000"
 bridge plan list
 bridge plan create --key pro --name "Pro Plan"
 bridge plan update --key pro --name "Pro Plan v2"
+
+# Prices — a plan can have several (one per currency + interval). Idempotent.
+bridge plan price set pro --amount 29 --currency usd --interval month
+bridge plan price set pro --amount 290 --currency usd --interval year
+bridge plan price rm  pro --interval year
+
+# Usage quotas (hard | metered caps)
+bridge plan quota set pro --metric ai_completions --limit 1000 --policy hard
+bridge plan quota rm  pro --metric ai_completions
 ```
 
 ### API Tokens
@@ -191,13 +200,26 @@ bridge info roles
 
 ### Integration Guides
 
+Three master prompts orchestrate the per-framework guides:
+
+```bash
+bridge guide              # Bridge Auth master prompt (auth, RBAC, tenants)
+bridge guide flags        # Feature Flags 2.0 master prompt
+bridge guide billing      # Billing 2.0 master prompt (subscriptions, quotas, webhooks)
+```
+
+Per-framework guides:
+
 ```bash
 bridge guide list
-bridge guide react
-bridge guide nextjs
-bridge guide express
-bridge guide custom
+bridge guide <framework>                    # auth guide (svelte | react | nextjs | angular | nestjs | express)
+bridge guide <framework> sdk-auth           # in-app auth UI (frontend frameworks only)
+bridge guide flags --framework <name>       # flags-specific guide
+bridge guide billing --framework <name>     # billing-specific guide
+bridge guide custom                         # REST API fallback for any language
 ```
+
+`bridge guide flags` and `bridge guide billing` auto-detect the framework from `package.json` when `--framework` is omitted — they fall back to the generic master prompt if no framework signal is found.
 
 ## Output Format
 

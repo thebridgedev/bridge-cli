@@ -2,9 +2,32 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { outputSuccess, outputError } from '../output.js';
+import { outputSuccess, outputPrompt, outputError } from '../output.js';
 import { readCredentials, isExpired } from '../credentials.js';
 import { runLogin } from './auth/login.command.js';
+
+/**
+ * Locate the directory containing this module on disk. Built CLI: dist/commands.
+ * In jest (ts-jest CommonJS transform), `import.meta` isn't available — fall
+ * back to the CommonJS `__dirname` global which ts-jest exposes.
+ *
+ * The `import.meta.url` reference is wrapped in `new Function(...)` so the
+ * parser doesn't choke when the file is transpiled to CommonJS.
+ */
+function thisDir(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    const url: string = new Function('return import.meta.url')();
+    return dirname(fileURLToPath(url));
+  } catch {
+    // CommonJS / jest path.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cjs = (globalThis as any).__dirname;
+    if (typeof cjs === 'string') return cjs;
+    // Best-effort: jest sets process.cwd() to the package root.
+    return join(process.cwd(), 'src', 'commands');
+  }
+}
 
 const GUIDE_BASE_URL = 'https://raw.githubusercontent.com/thebridgedev';
 const GUIDE_REPOS: Record<string, string> = {
@@ -17,8 +40,34 @@ const GUIDE_REPOS: Record<string, string> = {
 };
 
 const AVAILABLE_FEATURES: Record<string, string[]> = {
-  svelte: ['sdk-auth', 'feature-flags', 'payments', 'team'],
+  svelte: ['sdk-auth', 'feature-flags', 'flags', 'billing', 'team'],
+  react: ['flags', 'billing'],
+  nextjs: ['flags', 'billing'],
+  angular: ['flags', 'billing'],
+  nestjs: ['flags', 'billing'],
+  express: ['flags', 'billing'],
 };
+
+const FLAGS_FRAMEWORKS = ['svelte', 'react', 'nextjs', 'angular', 'nestjs', 'express'] as const;
+type FlagsFramework = (typeof FLAGS_FRAMEWORKS)[number];
+
+const BILLING_FRAMEWORKS = ['svelte', 'react', 'nextjs', 'angular', 'nestjs', 'express'] as const;
+type BillingFramework = (typeof BILLING_FRAMEWORKS)[number];
+
+/**
+ * Per-framework prompts are the responsibility of each plugin repo
+ * (`bridge-<framework>/mcp/feature-flags-prompt.md` and `mcp/billing-prompt.md`).
+ * Bridge-cli only bundles the generic master orchestrators
+ * (`prompts/flags/master.md`, `prompts/billing/master.md`) — never per-framework
+ * copies, which would diverge from the plugin's source of truth.
+ *
+ * Both alias sets are now exhaustive: every framework routes through fetchGuide
+ * to its plugin repo's mcp/ folder. If the plugin repo doesn't have the file
+ * yet, the user gets a clear "HTTP 404 — file may not exist yet in the plugin
+ * repo" error pointing them at the right destination.
+ */
+const FLAGS_ALIAS_FRAMEWORKS: Set<FlagsFramework> = new Set(FLAGS_FRAMEWORKS);
+const BILLING_ALIAS_FRAMEWORKS: Set<BillingFramework> = new Set(BILLING_FRAMEWORKS);
 
 function guideFilename(feature?: string): string {
   if (!feature) return 'integration-prompt.md';
@@ -31,8 +80,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export function registerGuideCommands(program: Command): void {
   const guide = program.command('guide')
     .description('Integration guides — run with no arguments for the master integration prompt')
-    .action(async () => {
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
       try {
+        const opts = command.optsWithGlobals() as { json?: boolean };
         await ensureAuthenticated();
         const creds = readCredentials()!;
         const raw = await fetchMasterPrompt();
@@ -40,7 +91,8 @@ export function registerGuideCommands(program: Command): void {
           .replace('{{session.email}}', creds.user.email)
           .replace('{{session.appName}}', creds.app.name)
           .replace('{{session.appId}}', creds.app.id);
-        outputSuccess({ guide });
+        if (opts.json) outputSuccess({ guide });
+        else outputPrompt(guide);
       } catch (err) { outputError(err); }
     });
 
@@ -52,41 +104,255 @@ export function registerGuideCommands(program: Command): void {
       outputSuccess({ technologies, features: AVAILABLE_FEATURES });
     });
 
+  // TBP-206 — `bridge guide flags [--framework <name>]`
+  guide.command('flags')
+    .description('Feature Flags 2.0 integration prompt (use --framework for per-framework guide)')
+    .option('--framework <name>', `Framework: ${FLAGS_FRAMEWORKS.join(' | ')} (auto-detected from package.json when omitted)`)
+    .option('--cwd <path>', 'Project dir used for framework detection', process.cwd())
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
+      try {
+        const opts = command.optsWithGlobals() as {
+          framework?: string;
+          cwd?: string;
+          json?: boolean;
+        };
+        // Always return the master when no --framework flag is given.
+        // The master orchestrates discovery then calls bridge guide flags --framework <name> in Step 4.
+        const content = opts.framework
+          ? await fetchGuide(await resolveFlagsFramework(opts.framework, opts.cwd ?? process.cwd()) ?? opts.framework, 'feature-flags')
+          : await fetchFlagsMasterPrompt();
+        if (opts.json) {
+          outputSuccess({
+            feature: 'flags',
+            framework: opts.framework ?? 'generic',
+            guide: content,
+          });
+        } else {
+          outputPrompt(content);
+        }
+      } catch (err) { outputError(err); }
+    });
+
+  // Billing 2.0 — `bridge guide billing [--framework <name>]`. Mirrors the
+  // flags command shape. Auto-detects from package.json when --framework is
+  // omitted; falls back to `prompts/billing/master.md` when detection fails.
+  guide.command('billing')
+    .description('Billing 2.0 integration prompt (use --framework for per-framework guide)')
+    .option('--framework <name>', `Framework: ${BILLING_FRAMEWORKS.join(' | ')} (auto-detected from package.json when omitted)`)
+    .option('--cwd <path>', 'Project dir used for framework detection', process.cwd())
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
+      try {
+        const opts = command.optsWithGlobals() as {
+          framework?: string;
+          cwd?: string;
+          json?: boolean;
+        };
+        // Always return the master when no --framework flag is given.
+        // The master orchestrates discovery, pricing-model elicitation, and
+        // calls `bridge guide billing --framework <name>` itself in Step 4.
+        const content = opts.framework
+          ? await fetchGuide(await resolveBillingFramework(opts.framework, opts.cwd ?? process.cwd()) ?? opts.framework, 'billing')
+          : await fetchBillingMasterPrompt();
+        if (opts.json) {
+          outputSuccess({
+            feature: 'billing',
+            framework: opts.framework ?? 'generic',
+            guide: content,
+          });
+        } else {
+          outputPrompt(content);
+        }
+      } catch (err) { outputError(err); }
+    });
+
   for (const tech of Object.keys(GUIDE_REPOS)) {
     guide.command(tech)
-      .argument('[feature]', 'Feature guide (e.g. sdk-auth, feature-flags, payments, team)')
+      .argument('[feature]', 'Feature guide (e.g. sdk-auth, feature-flags, flags, billing, team)')
       .description(`Integration guide for ${tech}`)
-      .action(async (feature?: string) => {
+      .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+      .action(async (feature: string | undefined, _opts, command) => {
         try {
-          const content = await fetchGuide(tech, feature);
-          outputSuccess({ technology: tech, feature: feature ?? 'default', guide: content });
+          const opts = command.optsWithGlobals() as { json?: boolean };
+          // `flags` is a synonym for `feature-flags`. Both routes — `bridge
+          // guide flags --framework <name>` and `bridge guide <name> flags` —
+          // resolve to the same plugin-repo source of truth at
+          // `bridge-<name>/mcp/feature-flags-prompt.md`. `billing` follows the
+          // same pattern. There is no per-framework bundled fallback by design.
+          let content: string;
+          let resolvedFeature = feature ?? 'default';
+          if (feature === 'flags' && FLAGS_FRAMEWORKS.includes(tech as FlagsFramework)) {
+            content = await fetchGuide(tech, 'feature-flags');
+            resolvedFeature = 'flags';
+          } else if (feature === 'billing' && BILLING_FRAMEWORKS.includes(tech as BillingFramework)) {
+            content = await fetchGuide(tech, 'billing');
+            resolvedFeature = 'billing';
+          } else {
+            content = await fetchGuide(tech, feature);
+          }
+          if (opts.json) {
+            outputSuccess({ technology: tech, feature: resolvedFeature, guide: content });
+          } else {
+            outputPrompt(content);
+          }
         } catch (err) { outputError(err); }
       });
   }
 
   guide.command('custom')
     .description('Universal integration guide for any technology using REST API + JWKS')
-    .action(() => {
-      outputSuccess({
-        technology: 'custom',
-        guide: CUSTOM_GUIDE,
-      });
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action((_opts, command) => {
+      const opts = command.optsWithGlobals() as { json?: boolean };
+      if (opts.json) outputSuccess({ technology: 'custom', guide: CUSTOM_GUIDE });
+      else outputPrompt(CUSTOM_GUIDE);
     });
 
   guide.command('integration-success')
     .description('Integration success message template — output at the end of a completed integration')
-    .action(async () => {
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
       try {
+        const opts = command.optsWithGlobals() as { json?: boolean };
         const content = await fetchIntegrationSuccess();
-        outputSuccess({ guide: content });
+        if (opts.json) outputSuccess({ guide: content });
+        else outputPrompt(content);
       } catch (err) { outputError(err); }
     });
 }
 
 async function fetchIntegrationSuccess(): Promise<string> {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const bundledPath = join(__dirname, '..', 'prompts', 'integration-success.md');
-  return readFile(bundledPath, 'utf-8');
+  const here = thisDir();
+  const candidates = [
+    join(here, '..', 'prompts', 'integration-success.md'),
+    join(here, '..', '..', 'prompts', 'integration-success.md'),
+  ];
+  for (const path of candidates) {
+    try {
+      return await readFile(path, 'utf-8');
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error(`integration-success prompt not found. Tried: ${candidates.join(', ')}`);
+}
+
+/**
+ * Detect framework from package.json so `bridge guide flags` can be called
+ * bare. Same heuristic order as `bridge flag init`.
+ */
+export async function resolveFlagsFramework(
+  override: string | undefined,
+  cwd: string,
+): Promise<FlagsFramework | undefined> {
+  if (override) {
+    if (!FLAGS_FRAMEWORKS.includes(override as FlagsFramework)) {
+      throw new Error(
+        `Unknown --framework: ${override}. Must be one of ${FLAGS_FRAMEWORKS.join(', ')}.`,
+      );
+    }
+    return override as FlagsFramework;
+  }
+  try {
+    const raw = await readFile(join(cwd, 'package.json'), 'utf-8');
+    const pkg = JSON.parse(raw) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    if ('next' in deps) return 'nextjs';
+    if ('@sveltejs/kit' in deps || 'svelte' in deps) return 'svelte';
+    if ('@nestjs/core' in deps) return 'nestjs';
+    if ('@angular/core' in deps) return 'angular';
+    if ('react' in deps) return 'react';
+    if ('express' in deps) return 'express';
+  } catch {
+    /* no package.json — fall through */
+  }
+  return undefined;
+}
+
+/**
+ * Bridge-cli only bundles the generic master orchestrators. Per-framework
+ * prompts always come from the plugin repos' mcp/ folder via `fetchGuide`.
+ */
+export async function fetchFlagsMasterPrompt(): Promise<string> {
+  return fetchBundledMaster('flags');
+}
+
+export async function fetchBillingMasterPrompt(): Promise<string> {
+  return fetchBundledMaster('billing');
+}
+
+async function fetchBundledMaster(feature: 'flags' | 'billing'): Promise<string> {
+  const filename = 'master.md';
+
+  // Local override for development (same env var as the rest of the guides).
+  const localDir = process.env.BRIDGE_GUIDE_LOCAL_DIR;
+  if (localDir) {
+    const localPath = join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', feature, filename);
+    try {
+      return await readFile(localPath, 'utf-8');
+    } catch {
+      /* fall through to bundled */
+    }
+  }
+
+  // Two possible runtime locations:
+  //   - Built CLI: dist/commands/guide.command.js → ../prompts/<feature>/master.md
+  //   - Jest (ts-jest, run from src/): src/commands/guide.command.ts → ../../prompts/<feature>/master.md
+  const here = thisDir();
+  const candidates = [
+    join(here, '..', 'prompts', feature, filename),
+    join(here, '..', '..', 'prompts', feature, filename),
+  ];
+  for (const path of candidates) {
+    try {
+      return await readFile(path, 'utf-8');
+    } catch {
+      /* try next */
+    }
+  }
+  const label = feature === 'flags' ? 'Flags' : 'Billing';
+  throw new Error(
+    `${label} master prompt not found. Tried: ${candidates.join(', ')}`,
+  );
+}
+
+/**
+ * Detect framework for Billing 2.0. Mirrors resolveFlagsFramework — same
+ * package.json heuristic order, validated against BILLING_FRAMEWORKS.
+ */
+export async function resolveBillingFramework(
+  override: string | undefined,
+  cwd: string,
+): Promise<BillingFramework | undefined> {
+  if (override) {
+    if (!BILLING_FRAMEWORKS.includes(override as BillingFramework)) {
+      throw new Error(
+        `Unknown --framework: ${override}. Must be one of ${BILLING_FRAMEWORKS.join(', ')}.`,
+      );
+    }
+    return override as BillingFramework;
+  }
+  try {
+    const raw = await readFile(join(cwd, 'package.json'), 'utf-8');
+    const pkg = JSON.parse(raw) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    if ('next' in deps) return 'nextjs';
+    if ('@sveltejs/kit' in deps || 'svelte' in deps) return 'svelte';
+    if ('@nestjs/core' in deps) return 'nestjs';
+    if ('@angular/core' in deps) return 'angular';
+    if ('react' in deps) return 'react';
+    if ('express' in deps) return 'express';
+  } catch {
+    /* no package.json — fall through */
+  }
+  return undefined;
 }
 
 async function ensureAuthenticated(): Promise<void> {
@@ -136,22 +402,38 @@ async function fetchGuide(tech: string, feature?: string): Promise<string> {
 }
 
 const MASTER_PROMPT_GITHUB_URL =
-  'https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/bridge-cli/prompts/master-integration-prompt.md';
+  'https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/bridge-cli/prompts/auth-master-integration-prompt.md';
 
 async function fetchMasterPrompt(): Promise<string> {
+  const filename = 'auth-master-integration-prompt.md';
+
   // Local override for development
   const localDir = process.env.BRIDGE_GUIDE_LOCAL_DIR;
   if (localDir) {
-    const localPath = join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', 'master-integration-prompt.md');
+    const localPath = join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', filename);
     try {
       return await readFile(localPath, 'utf-8');
     } catch { /* fall through */ }
   }
 
+  // Resolved-on-disk fallback (when the CLI runs from its own checkout).
+  const here = thisDir();
+  const candidates = [
+    join(here, '..', 'prompts', filename),
+    join(here, '..', '..', 'prompts', filename),
+  ];
+  for (const path of candidates) {
+    try {
+      return await readFile(path, 'utf-8');
+    } catch {
+      /* try next */
+    }
+  }
+
   // Remote fetch
   const response = await fetch(MASTER_PROMPT_GITHUB_URL);
   if (!response.ok) {
-    throw new Error(`Master integration prompt not available (HTTP ${response.status})`);
+    throw new Error(`Auth master integration prompt not available (HTTP ${response.status})`);
   }
   return response.text();
 }

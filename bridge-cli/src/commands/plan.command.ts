@@ -2,6 +2,125 @@ import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 
+// ── Quota types + helpers ────────────────────────────────────────────────────
+// Matches the backend PlanQuota shape (TBP-264). The published
+// `@nebulr-group/bridge-auth-core` management plan types don't carry `quotas`
+// yet, so we cast at the SDK boundary (same pattern as flag.command.ts) and read
+// quotas off responses defensively. Tightening rides with TBP-236.
+
+export type QuotaPolicy = 'hard' | 'metered';
+
+export interface Quota {
+  metric: string;
+  limit: number;
+  policy: QuotaPolicy;
+}
+
+const QUOTA_POLICIES: ReadonlyArray<QuotaPolicy> = ['hard', 'metered'];
+
+export function validateQuotaEntry(entry: {
+  metric?: string;
+  limit?: number;
+  policy?: string;
+}): Quota {
+  const metric = (entry.metric ?? '').trim();
+  if (!metric) throw new Error('--metric is required and must be non-empty.');
+
+  const limit = entry.limit;
+  if (
+    typeof limit !== 'number' ||
+    !Number.isFinite(limit) ||
+    !Number.isInteger(limit) ||
+    limit < 0
+  ) {
+    throw new Error(`--limit must be an integer >= 0, got "${entry.limit}".`);
+  }
+
+  const policy = entry.policy as QuotaPolicy;
+  if (!QUOTA_POLICIES.includes(policy)) {
+    throw new Error(
+      `--policy must be one of ${QUOTA_POLICIES.join(', ')}, got "${entry.policy}".`,
+    );
+  }
+
+  return { metric, limit, policy };
+}
+
+/** Upsert a quota by metric (replace if present, append otherwise). Pure. */
+export function upsertQuota(quotas: Quota[], entry: Quota): Quota[] {
+  return [...quotas.filter((q) => q.metric !== entry.metric), entry];
+}
+
+// ── Price helpers ─────────────────────────────────────────────────────────────
+
+export type RecurrenceInterval = 'day' | 'week' | 'month' | 'year';
+const VALID_INTERVALS: ReadonlyArray<RecurrenceInterval> = [
+  'day',
+  'week',
+  'month',
+  'year',
+];
+
+export interface PlanPriceInput {
+  currency: string;
+  recurrenceInterval: RecurrenceInterval;
+  amount: number;
+}
+
+/**
+ * Validate + normalise one price entry from CLI flags. A plan can carry several
+ * prices (e.g. monthly + yearly); each is set independently and identified by
+ * its currency + interval. `--interval` is always required.
+ */
+export function buildPriceEntry(opts: {
+  amount?: number;
+  currency?: string;
+  interval?: string;
+}): PlanPriceInput {
+  const amount = opts.amount;
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+    throw new Error(`--amount must be a number >= 0, got "${opts.amount}".`);
+  }
+  const interval = (opts.interval ?? '') as RecurrenceInterval;
+  if (!VALID_INTERVALS.includes(interval)) {
+    throw new Error(
+      `--interval is required and must be one of ${VALID_INTERVALS.join(', ')}, got "${opts.interval}".`,
+    );
+  }
+  const currency = (opts.currency ?? 'USD').trim().toUpperCase();
+  if (!currency) throw new Error('--currency must be non-empty.');
+  return { amount, currency, recurrenceInterval: interval };
+}
+
+/** Upsert a price by (currency + interval): replace if present, append otherwise. Pure. */
+export function upsertPrice(
+  prices: PlanPriceInput[],
+  entry: PlanPriceInput,
+): PlanPriceInput[] {
+  return [
+    ...prices.filter(
+      (p) =>
+        !(
+          p.currency === entry.currency &&
+          p.recurrenceInterval === entry.recurrenceInterval
+        ),
+    ),
+    entry,
+  ];
+}
+
+/** Fetch a plan + its quotas/prices (read defensively — list() may omit them). */
+async function getPlan(
+  key: string,
+): Promise<{ plan: Record<string, unknown>; quotas: Quota[]; prices: PlanPriceInput[] }> {
+  const plans = (await getManagementClient().plans.list()) as unknown as Record<string, unknown>[];
+  const plan = plans.find((p) => p.key === key);
+  if (!plan) throw new Error(`Plan not found: ${key}`);
+  const quotas = ((plan as { quotas?: Quota[] }).quotas ?? []) as Quota[];
+  const prices = ((plan as { prices?: PlanPriceInput[] }).prices ?? []) as PlanPriceInput[];
+  return { plan, quotas, prices };
+}
+
 export function registerPlanCommands(program: Command): void {
   const plan = program.command('plan').description('Manage subscription plans');
 
@@ -12,8 +131,18 @@ export function registerPlanCommands(program: Command): void {
       catch (err) { outputError(err); }
     });
 
+  plan.command('get')
+    .description('Get a plan by key (includes usage quotas)')
+    .argument('<key>', 'Plan key')
+    .action(async (key: string) => {
+      try {
+        const { plan: found, quotas } = await getPlan(key);
+        outputSuccess({ ...found, quotas });
+      } catch (err) { outputError(err); }
+    });
+
   plan.command('create')
-    .description('Create a new plan')
+    .description('Create a new plan (no prices — add them with `plan price set`)')
     .requiredOption('--key <key>', 'Plan key')
     .requiredOption('--name <name>', 'Plan name')
     .option('--description <desc>', 'Description')
@@ -27,6 +156,9 @@ export function registerPlanCommands(program: Command): void {
           description: opts.description,
           trial: opts.trial,
           trialDays: opts.trialDays,
+          // Start with no prices so the server doesn't apply its default
+          // placeholder price; add prices explicitly via `plan price set`.
+          prices: [],
         }));
       } catch (err) { outputError(err); }
     });
@@ -41,6 +173,104 @@ export function registerPlanCommands(program: Command): void {
         const { key, ...data } = opts;
         const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
         outputSuccess(await getManagementClient().plans.update(key, cleaned));
+      } catch (err) { outputError(err); }
+    });
+
+  registerPriceCommands(plan);
+  registerQuotaCommands(plan);
+}
+
+// ── plan price (recurring prices) ────────────────────────────────────────────
+
+function registerPriceCommands(plan: Command): void {
+  const price = plan
+    .command('price')
+    .description("Manage a plan's recurring prices (one per currency + interval)");
+
+  price.command('set')
+    .description('Add or update a price on a plan (idempotent by currency + interval)')
+    .argument('<key>', 'Plan key')
+    .requiredOption('--amount <amount>', 'Price amount (>= 0)', parseFloat)
+    .requiredOption('--interval <interval>', `Billing interval: ${VALID_INTERVALS.join(' | ')}`)
+    .option('--currency <currency>', 'Currency (default USD)', 'USD')
+    .action(async (key: string, opts) => {
+      try {
+        const entry = buildPriceEntry({
+          amount: opts.amount,
+          interval: opts.interval,
+          currency: opts.currency,
+        });
+        const { prices } = await getPlan(key);
+        const next = upsertPrice(prices, entry);
+        outputSuccess(await getManagementClient().plans.update(key, { prices: next }));
+      } catch (err) { outputError(err); }
+    });
+
+  price.command('rm')
+    .description('Remove a price from a plan by interval (+ currency)')
+    .argument('<key>', 'Plan key')
+    .requiredOption('--interval <interval>', `Billing interval: ${VALID_INTERVALS.join(' | ')}`)
+    .option('--currency <currency>', 'Currency (default USD)', 'USD')
+    .action(async (key: string, opts) => {
+      try {
+        const currency = String(opts.currency ?? 'USD').trim().toUpperCase();
+        const interval = opts.interval as RecurrenceInterval;
+        const { prices } = await getPlan(key);
+        const next = prices.filter(
+          (p) => !(p.currency === currency && p.recurrenceInterval === interval),
+        );
+        if (next.length === prices.length) {
+          throw new Error(`No ${currency} ${interval} price on plan "${key}".`);
+        }
+        outputSuccess(await getManagementClient().plans.update(key, { prices: next }));
+      } catch (err) { outputError(err); }
+    });
+}
+
+// ── plan quota (usage caps) ──────────────────────────────────────────────────
+
+function registerQuotaCommands(plan: Command): void {
+  const quota = plan
+    .command('quota')
+    .description('Manage a plan\'s usage quotas (hard | metered caps)');
+
+  quota.command('list')
+    .description('List the usage quotas on a plan')
+    .argument('<key>', 'Plan key')
+    .action(async (key: string) => {
+      try {
+        const { quotas } = await getPlan(key);
+        outputSuccess(quotas);
+      } catch (err) { outputError(err); }
+    });
+
+  quota.command('set')
+    .description('Add or update a usage quota on a plan')
+    .argument('<key>', 'Plan key')
+    .requiredOption('--metric <metric>', 'Metric key (e.g. num.clicks)')
+    .requiredOption('--limit <n>', 'Limit (integer >= 0)', parseInt)
+    .requiredOption('--policy <policy>', `Cap policy: ${QUOTA_POLICIES.join(' | ')}`)
+    .action(async (key: string, opts) => {
+      try {
+        const entry = validateQuotaEntry({ metric: opts.metric, limit: opts.limit, policy: opts.policy });
+        const { quotas } = await getPlan(key);
+        const next = upsertQuota(quotas, entry);
+        outputSuccess(await getManagementClient().plans.update(key, { quotas: next } as never));
+      } catch (err) { outputError(err); }
+    });
+
+  quota.command('rm')
+    .description('Remove a usage quota from a plan')
+    .argument('<key>', 'Plan key')
+    .requiredOption('--metric <metric>', 'Metric key to remove')
+    .action(async (key: string, opts) => {
+      try {
+        const { quotas } = await getPlan(key);
+        const next = quotas.filter((q) => q.metric !== opts.metric);
+        if (next.length === quotas.length) {
+          throw new Error(`No quota for metric "${opts.metric}" on plan "${key}".`);
+        }
+        outputSuccess(await getManagementClient().plans.update(key, { quotas: next } as never));
       } catch (err) { outputError(err); }
     });
 }

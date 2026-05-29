@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { outputSuccess, outputError } from '../output.js';
 
 const MASTER_PROMPT_GITHUB_URL =
-  'https://raw.githubusercontent.com/nebulr-group/bridge-cli/main/prompts/master-integration-prompt.md';
+  'https://raw.githubusercontent.com/nebulr-group/bridge-cli/main/prompts/auth-master-integration-prompt.md';
 
 export function registerIntegrateCommand(program: Command): void {
   program
@@ -26,7 +26,7 @@ async function fetchMasterPrompt(): Promise<string> {
   const localDir = process.env.BRIDGE_GUIDE_LOCAL_DIR;
   if (localDir) {
     // The master prompt lives alongside the CLI, not in a plugin repo
-    const localPath = join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', 'master-integration-prompt.md');
+    const localPath = join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', 'auth-master-integration-prompt.md');
     try {
       return await readFile(localPath, 'utf-8');
     } catch {
@@ -37,7 +37,7 @@ async function fetchMasterPrompt(): Promise<string> {
   // Try bundled copy (relative to dist/)
   try {
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const bundledPath = join(__dirname, '..', 'prompts', 'master-integration-prompt.md');
+    const bundledPath = join(__dirname, '..', 'prompts', 'auth-master-integration-prompt.md');
     return await readFile(bundledPath, 'utf-8');
   } catch {
     // Fall through to remote fetch

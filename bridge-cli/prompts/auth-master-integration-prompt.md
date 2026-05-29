@@ -1,6 +1,14 @@
-# Bridge Integration — Master Prompt
+# Bridge Auth — Master Integration Prompt
 
-You are integrating The Bridge into a user's application. The Bridge provides authentication, tenant management, feature flags, and payments. Your job is to detect the project structure, identify the technologies, and apply the right integration for each.
+You are integrating **Bridge Authentication** (auth, tenant management, RBAC) into a user's application. Your job is to detect the project structure, identify the technologies, and apply the right per-framework integration for each.
+
+This prompt is framework-agnostic. It orchestrates discovery, confirmation, and verification — the actual install commands, file shapes, and code snippets live in the per-framework guides fetched in Step 4.
+
+> **Related master prompts** — if the user asked for flags or billing specifically (not auth), stop here and route them:
+> - Feature Flags 2.0 only → `bridge guide flags`
+> - Billing 2.0 only → `bridge guide billing`
+>
+> If they want auth + flags + billing wired together, run this prompt first, then chain `bridge guide flags` and `bridge guide billing` at the end (or whichever subset they want).
 
 ## Step 0 — Authenticate
 
@@ -61,7 +69,7 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 
 4. **Detect existing auth** (from `dependencies` + `devDependencies`):
    - `@nebulr/nblocks-svelte`, `@nebulr/nblocks-react`, etc. → **nblocks (predecessor to Bridge — migration needed)**
-   - `@nebulr-group/bridge-svelte`, `@nebulr-group/bridge-react`, etc. → **Bridge already installed — check if wiring is complete**
+   - `@nebulr-group/bridge-svelte`, `@nebulr-group/bridge-react`, `@nebulr-group/bridge-nestjs`, etc. → **Bridge already installed — check if wiring is complete (see Step 1b)**
    - `next-auth`, `@auth0/*`, `@clerk/*`, `lucia`, `passport` → **third-party auth present — warn user**
 
 5. **Record for each project:**
@@ -73,38 +81,25 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 
 ## Step 1b — Check if Bridge is already integrated
 
-If Step 1 detected `@nebulr-group/bridge-svelte` (or another Bridge plugin) in `dependencies`, check whether the integration is complete. **Audit both layout wiring AND the auth route files** — a layout-only audit produces false positives, where login and signup work but the signup verification email lands on a 404.
+If Step 1 detected a Bridge plugin (`@nebulr-group/bridge-<framework>`) in `dependencies`, the integration may already be partially or fully complete. Don't guess from the dependency alone — audit the wiring.
 
-**Layout wiring (all three required):**
+**Delegate the audit to the per-framework guide.** Each plugin's guide ships an "Integration audit" section that lists the exact files / providers / route shapes the framework requires. Run:
 
-1. Does `src/routes/+layout.ts` (or equivalent) call `bridgeBootstrap()`?
-2. Does `src/routes/+layout.svelte` render `<BridgeBootstrap>`?
-3. Is `VITE_BRIDGE_APP_ID` set in `.env` (or `.env.local`, `.env.example`)?
+```
+bridge guide <framework>              # hosted-auth audit checklist
+bridge guide <framework> sdk-auth     # SDK-auth audit checklist (in-app forms)
+```
 
-**SDK auth route files (all seven required when `loginRoute` is set in `BridgeConfig` — i.e., SDK auth, not hosted auth):**
+The framework guide tells you precisely what must exist (bootstrap call, provider wrapping, callback routes, environment variables). Apply that checklist to the project on disk.
 
-If the project's `BridgeConfig` includes `loginRoute` (in `+layout.ts`), it is using SDK auth and **all seven** of these route files must exist:
+**General decision matrix** (independent of framework):
 
-4. `src/routes/auth/login/+page.svelte`
-5. `src/routes/auth/signup/+page.svelte`
-6. `src/routes/auth/oauth-callback/+page.svelte`
-7. `src/routes/auth/set-password/[token]/+page.svelte` — **critical:** signup verification emails land here. Missing this silently breaks 100% of new signups.
-8. `src/routes/auth/forgot-password/+page.svelte`
-9. `src/routes/auth/magic-link/+page.svelte`
-10. `src/routes/auth/setup-passkey/[token]/+page.svelte`
+- **Wiring complete AND all required auth routes present** → Bridge is fully integrated. Skip to **Step 6b** and output the success message.
+- **Bootstrap wiring complete BUT auth routes missing** → Bridge is partially integrated. The missing routes silently break signup verification, password reset, or SSO callback. Tell the user explicitly which files are missing (the framework guide lists them by name). Add only what's missing — do not regenerate existing routes.
+- **Bootstrap wiring incomplete** (regardless of route state) → Offer to complete the initial setup (proceed to Step 4).
+- **Bridge is NOT installed** → Continue with Steps 2–6 for fresh setup.
 
-Routes 6–10 must exist even if the corresponding feature (SSO, magic link, passkeys) is currently disabled in the Bridge admin config — the admin config toggles UI visibility, not route presence. If a feature is enabled later in production, the route must already be there.
-
-If the project's `BridgeConfig` has no `loginRoute`, it is using hosted auth — only check #4 (login redirect target) and #6 (oauth-callback for SSO).
-
-**Decision matrix:**
-
-- **Layout wiring complete AND all required auth routes present:** Bridge is fully integrated. Skip to **Step 6b** to output the success message.
-- **Layout wiring complete BUT auth routes missing:** Bridge is partially integrated — the missing routes will silently break signup or password reset. Offer to fetch the SDK auth guide (`bridge guide svelte sdk-auth`) and add only the missing files. Do not regenerate routes that already exist.
-- **Layout wiring incomplete (regardless of route state):** Offer to complete the initial setup (proceed to Step 4).
-- **Bridge is NOT installed:** Continue with Steps 2–6 for fresh setup.
-
-When you find missing routes, list each missing path explicitly when you tell the user — they need to know exactly what's broken and why (e.g., "your `auth/set-password/[token]` route is missing — every new signup is currently hitting a 404 after clicking the verification email link").
+When you find missing pieces, list each one explicitly to the user — they need to know what's broken and why (e.g., "the signup verification email route is missing — every new signup is currently hitting a 404 after clicking the verification link").
 
 ## Step 2 — Present findings and confirm
 
@@ -136,8 +131,8 @@ Which auth approach do you want for the frontend?
 ```
 
 Note the user's choice. It determines which guide to fetch in Step 4:
-- **Hosted** → `bridge guide svelte` (default)
-- **SDK** → `bridge guide svelte sdk-auth`
+- **Hosted** → `bridge guide <framework>` (default)
+- **SDK** → `bridge guide <framework> sdk-auth`
 
 ## Step 3 — Get Bridge app context
 
@@ -157,7 +152,7 @@ If `bridge` CLI is not available or not configured, ask the user for the `appId`
 
 ## Step 3b — Configure the Bridge app for the frontend
 
-Detect the frontend URL from dev scripts in package.json (e.g., `--port 3000`). **Show the detected URL to the user and ask for confirmation before proceeding.** Then configure the Bridge app so it accepts OAuth callbacks and CORS requests from the frontend:
+Detect the frontend URL from dev scripts in `package.json` (e.g., `--port 3000`, `--port 5173`). **Show the detected URL to the user and ask for confirmation before proceeding.** Then configure the Bridge app so it accepts OAuth callbacks and CORS requests from the frontend:
 
 ```bash
 bridge app update \
@@ -167,7 +162,7 @@ bridge app update \
   --allowed-origins <frontend-url>
 ```
 
-If the hosted cloud-views UI is on a different origin (e.g., `http://localhost:3091` in local dev), add it to `--allowed-origins` as well:
+If the hosted cloud-views UI is on a different origin (e.g., `http://localhost:3091` in local dev, `https://app.thebridge.dev` in prod), add it to `--allowed-origins` as well:
 
 ```bash
 bridge app update --allowed-origins <frontend-url>,<hosted-url>
@@ -175,7 +170,7 @@ bridge app update --allowed-origins <frontend-url>,<hosted-url>
 
 Without this, the Bridge API will reject the OAuth redirect (invalid redirect_uri) and block CORS requests from the frontend (origin not allowed).
 
-## Step 4 — Fetch and apply plugin prompts
+## Step 4 — Fetch and apply per-framework guides
 
 For each confirmed project, fetch the framework-specific integration prompt.
 
@@ -195,7 +190,7 @@ For each confirmed project, fetch the framework-specific integration prompt.
 | NestJS | `bridge guide nestjs` |
 | Express | `bridge guide express` |
 
-Follow the plugin prompt instructions. Pass these values from Step 3:
+Follow the per-framework guide instructions verbatim. Pass these values from Step 3:
 - `appId` — same for all projects
 - `packageManager` — detected in Step 1 (use it for all install commands)
 
@@ -213,7 +208,7 @@ When setting up route protection, apply these sensible defaults:
 **Backend:**
 - `guard.global: true` with `defaultAccess: 'protected'`
 - Mark as public: health check endpoints, public read-only APIs
-- Add `@CurrentUser()` decorator to endpoints that need user identity
+- Use the framework's current-user accessor on endpoints that need user identity (the per-framework guide names it: `@CurrentUser()` for NestJS, `req.user` for Express, etc.)
 
 Tell the user: "I've set up default route protection. You can refine which routes are public or protected using the Bridge CLI (`bridge role list`, `bridge flag list`) or by editing the route config directly."
 
@@ -245,3 +240,12 @@ Run `bridge guide integration-success` to fetch the success message template, th
 - **If the build is broken** or auth doesn't actually work end-to-end, prepend a single "Heads up:" line before the banner. Never bury bad news under it.
 
 After delivering the message, the integration is complete.
+
+## Step 7 — Offer follow-on tracks
+
+After auth is wired and the success banner is printed, the developer commonly wants flags and billing next. Mention these one-liners so they know how to continue:
+
+- **Feature Flags 2.0** → `bridge guide flags` (auto-detects framework, sets up flag evaluation, telemetry, realtime)
+- **Billing 2.0** → `bridge guide billing` (subscriptions, plan selector, quota banners, webhook receiver)
+
+Do not run them automatically — the developer decides when they want each track.

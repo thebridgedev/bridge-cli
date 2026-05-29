@@ -27,11 +27,11 @@
   ──────────────────────────────────────────────
     The control center gives you even more powers.
 
-      ›  Billing            Stripe plans & subscriptions
-      ›  Feature flags      Per-user, per-plan toggles
-      ›  Team management    Invites, roles, orgs
+      ›  Billing            Stripe plans & subscriptions    →  bridge guide [framework] payments
+      ›  Feature flags      Per-user, per-plan toggles      →  bridge guide flags
+      ›  Team management    Invites, roles, orgs            →  bridge guide [framework] team
 
-    Add any whenever you're ready.
+    Run any of those when you're ready.
 
     Go build the thing that actually matters.
 
@@ -54,6 +54,13 @@ PLACEHOLDER: project-name
     2. The `name` field in package.json if it's descriptive
   If both frontend and backend were integrated, combine them:
     "my-saas-app + my-saas-api" or just the shared root folder name if obvious.
+
+PLACEHOLDER: framework
+  In the "control center" next-steps lines, replace `[framework]` with the
+  framework slug used by `bridge guide` (`svelte`, `react`, `nextjs`, `angular`,
+  `nestjs`, `express`). Use the frontend framework when both frontend and
+  backend were integrated. Leave `bridge guide flags` unchanged — that command
+  auto-detects the framework from `package.json`.
 
 PLACEHOLDER: token-description
   One short line — the key identifiers the developer uses to access the
