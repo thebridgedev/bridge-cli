@@ -1,6 +1,6 @@
 {
   "name": "@nebulr-group/bridge-cli",
-  "version": "0.1.4",
+  "version": "0.4.0-beta.0",
   "description": "Bridge platform CLI for AI coding agents and developers",
   "author": "Nebulr Group",
   "license": "MIT",
@@ -16,14 +16,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy:prompts",
+    "copy:prompts": "node -e \"const fs=require('fs'),path=require('path');function cp(s,d){if(fs.statSync(s).isDirectory()){fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s))cp(path.join(s,f),path.join(d,f));}else fs.copyFileSync(s,d);}fs.rmSync('dist/prompts',{recursive:true,force:true});cp('prompts','dist/prompts');console.log('Copied prompts/ -> dist/prompts/');\"",
     "prepublishOnly": "npm run build",
     "test": "jest --passWithNoTests",
     "test:coverage": "jest --coverage",
     "publish:local": "npm run build && node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')),v=p.version.match(/^(\\d+\\.\\d+\\.\\d+)-alpha\\.(\\d+)$/);if(v){p.version=v[1]+'-alpha.'+(+v[2]+1);}else{p.version=p.version+'-alpha.0';}fs.writeFileSync('package.json',JSON.stringify(p,null,'  ')+'\\n');console.log('Version bumped to '+p.version);\" && npm publish --registry http://host.docker.internal:4873 --no-git-checks --ignore-scripts && npm dist-tag add @nebulr-group/bridge-cli@$(node -p \"require('./package.json').version\") alpha --registry http://host.docker.internal:4873"
   },
   "dependencies": {
-    "@nebulr-group/bridge-auth-core": "^0.1.0",
+    "@nebulr-group/bridge-auth-core": "0.4.0-beta.0",
     "commander": "^12.0.0"
   },
   "devDependencies": {

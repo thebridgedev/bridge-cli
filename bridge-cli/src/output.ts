@@ -6,6 +6,17 @@ export function outputSuccess(data: unknown): void {
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
 }
 
+/**
+ * Emit a prompt body verbatim to stdout — used by `bridge guide …` commands
+ * whose output is intended to be read by a human or pasted to an AI agent.
+ * Wrapping the markdown in a JSON envelope makes it unreadable in a terminal
+ * and forces scripts to parse JSON to recover the original text. Use the
+ * `--json` flag on each guide command if the envelope is needed for tooling.
+ */
+export function outputPrompt(content: string): void {
+  process.stdout.write(content.endsWith('\n') ? content : content + '\n');
+}
+
 export function outputError(error: unknown): void {
   let code = 'UNKNOWN_ERROR';
   let message = 'An unknown error occurred';

@@ -22,6 +22,7 @@ export function registerAppCommands(program: Command): void {
     .option('--mfa-enabled <bool>', 'Enable MFA', parseBool)
     .option('--passkeys-enabled <bool>', 'Enable passkeys', parseBool)
     .option('--magic-link-enabled <bool>', 'Enable magic links', parseBool)
+    .option('--payments-auto-redirect <bool>', 'Force new users to pick a plan before entering the app (billing paywall)', parseBool)
     .option('--redirect-uris <uris>', 'Comma-separated list of allowed OAuth callback URIs', parseList)
     .option('--allowed-origins <origins>', 'Comma-separated list of allowed CORS origins', parseList)
     .option('--default-callback-uri <uri>', 'Default OAuth callback URI')
@@ -36,6 +37,7 @@ export function registerAppCommands(program: Command): void {
           mfaEnabled: opts.mfaEnabled,
           passkeysEnabled: opts.passkeysEnabled,
           magicLinkEnabled: opts.magicLinkEnabled,
+          paymentsAutoRedirect: opts.paymentsAutoRedirect,
           redirectUris: opts.redirectUris,
           allowedOrigins: opts.allowedOrigins,
           defaultCallbackUri: opts.defaultCallbackUri,
