@@ -1,32 +1,25 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { commandsDir } from './runtime-dir.js';
 import { outputSuccess, outputPrompt, outputError } from '../output.js';
 import { readCredentials, isExpired } from '../credentials.js';
 import { runLogin } from './auth/login.command.js';
 
 /**
- * Locate the directory containing this module on disk. Built CLI: dist/commands.
- * In jest (ts-jest CommonJS transform), `import.meta` isn't available — fall
- * back to the CommonJS `__dirname` global which ts-jest exposes.
+ * Locate the directory containing this module on disk so the bundled prompts
+ * (shipped at `dist/prompts/`) can be read relative to it. The `import.meta`
+ * resolution is isolated in `runtime-dir.ts` (and stubbed for jest) — see that
+ * file for the dual-runtime rationale.
  *
- * The `import.meta.url` reference is wrapped in `new Function(...)` so the
- * parser doesn't choke when the file is transpiled to CommonJS.
+ * The previous in-line `new Function('return import.meta.url')()` trick could
+ * never work: a Function-constructor body runs in global *script* scope where
+ * `import.meta` is a SyntaxError, so it threw even under ESM and silently fell
+ * through to a `process.cwd()`-based branch — which only resolved correctly by
+ * accident when the CWD happened to be the package root.
  */
 function thisDir(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-    const url: string = new Function('return import.meta.url')();
-    return dirname(fileURLToPath(url));
-  } catch {
-    // CommonJS / jest path.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cjs = (globalThis as any).__dirname;
-    if (typeof cjs === 'string') return cjs;
-    // Best-effort: jest sets process.cwd() to the package root.
-    return join(process.cwd(), 'src', 'commands');
-  }
+  return commandsDir;
 }
 
 const GUIDE_BASE_URL = 'https://raw.githubusercontent.com/thebridgedev';
