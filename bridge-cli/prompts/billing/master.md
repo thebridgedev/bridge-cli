@@ -142,14 +142,21 @@ bridge plan price set pro --amount 29 --currency usd --interval month
 bridge plan price set pro --amount 290 --currency usd --interval year
 ```
 
-Then create quotas and entitlements from the confirmed tables:
+Then create usage quotas from the confirmed table. A `hard` quota blocks the
+feature at the cap (entitlement flips off); a `metered` quota bills overage per
+unit and never blocks — it requires a per-unit price:
 
 ```bash
-bridge plan quota set <plan> --metric <key> --limit <n> --policy <hard|metered>
-bridge plan entitlement set <plan> --key <key> --value <true|false>
+# Hard cap (block at the limit)
+bridge plan quota set <plan> --metric <key> --limit <n> --policy hard
+
+# Metered: first <limit> units free, then --price-amount per unit (limit 0 = pure
+# per-unit, billed from unit 1). Currency defaults to the plan's price currency.
+bridge plan quota set <plan> --metric <key> --limit <n> --policy metered --price-amount <perUnit> [--price-currency <cur>]
 ```
 
-Run one command per row.
+Run one command per row. (There is no `plan entitlement set` command —
+entitlements are derived from `hard` quotas automatically; do not invent one.)
 
 ## Step 4 — Fetch and apply the per-framework guide
 
