@@ -10,10 +10,18 @@ import { outputSuccess, outputError } from '../output.js';
 
 export type QuotaPolicy = 'hard' | 'metered';
 
+/** TBP-275 — per-unit price for a metered quota. */
+export interface QuotaPricing {
+  amount: number;
+  currency: string;
+}
+
 export interface Quota {
   metric: string;
   limit: number;
   policy: QuotaPolicy;
+  /** Required for `metered`, forbidden for `hard`. */
+  pricing?: QuotaPricing;
 }
 
 const QUOTA_POLICIES: ReadonlyArray<QuotaPolicy> = ['hard', 'metered'];
@@ -22,6 +30,8 @@ export function validateQuotaEntry(entry: {
   metric?: string;
   limit?: number;
   policy?: string;
+  priceAmount?: number;
+  currency?: string;
 }): Quota {
   const metric = (entry.metric ?? '').trim();
   if (!metric) throw new Error('--metric is required and must be non-empty.');
@@ -43,6 +53,26 @@ export function validateQuotaEntry(entry: {
     );
   }
 
+  // TBP-275 — metered quotas carry a per-unit price; hard quotas must not.
+  if (policy === 'metered') {
+    const amount = entry.priceAmount;
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new Error(
+        `--price-amount must be a number > 0 for metered quotas, got "${entry.priceAmount}".`,
+      );
+    }
+    const currency = (entry.currency ?? '').trim().toUpperCase();
+    if (!currency) {
+      throw new Error(
+        'A currency is required for metered pricing. The plan has no single price currency to derive from — pass --price-currency.',
+      );
+    }
+    return { metric, limit, policy, pricing: { amount, currency } };
+  }
+
+  if (entry.priceAmount !== undefined) {
+    throw new Error('--price-amount is only valid with --policy metered.');
+  }
   return { metric, limit, policy };
 }
 
@@ -248,12 +278,28 @@ function registerQuotaCommands(plan: Command): void {
     .description('Add or update a usage quota on a plan')
     .argument('<key>', 'Plan key')
     .requiredOption('--metric <metric>', 'Metric key (e.g. num.clicks)')
-    .requiredOption('--limit <n>', 'Limit (integer >= 0)', parseInt)
+    .requiredOption('--limit <n>', 'Limit (integer >= 0). 0 = pure per-unit metered (billed from unit 1)', parseInt)
     .requiredOption('--policy <policy>', `Cap policy: ${QUOTA_POLICIES.join(' | ')}`)
+    .option('--price-amount <n>', 'Per-unit price for metered quotas (required with --policy metered)', parseFloat)
+    .option('--price-currency <currency>', 'Currency for the metered price (defaults to the plan\'s price currency when unambiguous)')
     .action(async (key: string, opts) => {
       try {
-        const entry = validateQuotaEntry({ metric: opts.metric, limit: opts.limit, policy: opts.policy });
-        const { quotas } = await getPlan(key);
+        const { quotas, prices } = await getPlan(key);
+        // Derive the metered currency from the plan's prices when not given and
+        // unambiguous; the backend enforces currency == a plan price currency.
+        const planCurrencies = [
+          ...new Set(prices.map((p) => p.currency?.toUpperCase()).filter(Boolean)),
+        ];
+        const currency =
+          (opts.priceCurrency as string | undefined)?.toUpperCase() ??
+          (planCurrencies.length === 1 ? planCurrencies[0] : undefined);
+        const entry = validateQuotaEntry({
+          metric: opts.metric,
+          limit: opts.limit,
+          policy: opts.policy,
+          priceAmount: opts.priceAmount,
+          currency,
+        });
         const next = upsertQuota(quotas, entry);
         outputSuccess(await getManagementClient().plans.update(key, { quotas: next } as never));
       } catch (err) { outputError(err); }
