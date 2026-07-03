@@ -43,7 +43,7 @@ export function registerAuthLoginCommand(auth: Command): void {
   auth
     .command('login')
     .description('Authenticate via browser (loopback PKCE) and save credentials')
-    .option('--app <id|name>', 'Pin to a specific app (skips the picker on the consent screen)')
+    .option('--app <id|name>', 'Pin to a specific app: an app id skips the picker entirely; an app name is resolved on the consent screen (falls back to the picker if not found)')
     .option('--label <text>', 'Friendly label stored on the token (default: "bridge-cli")')
     .option('--no-browser', 'Print the authorization URL instead of opening a browser')
     .option('--reauth', 'Force the consent screen to sign you out and prompt for credentials again')
