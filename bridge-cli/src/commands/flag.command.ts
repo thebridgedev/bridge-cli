@@ -1,4 +1,4 @@
-// TBP-192 — Flag CLI parity for FF 2.0.
+// TBP-192 / TBP-236 — Flag CLI parity for FF 2.0.
 //
 // The CLI's `flag` subcommand exposes the 2.0 mental model:
 //   - Three-state model: off | on | on-with-rule
@@ -7,62 +7,47 @@
 //   - Scheduling (data-only; the runner is TBP-189 — we just set/clear the field)
 //   - Local eval helper for debugging
 //
-// Types are now first-class via @nebulr-group/bridge-auth-core 0.2.0-wt3.0:
-// `FlagResponse`, `CreateFlagInput`, `UpdateFlagInput`, `FlagSchedule`,
-// `FlagState`, and `FlagValueType` all describe the FF 2.0 management surface
-// directly, so the SDK-boundary `as never` / `as unknown as Record<string,
-// unknown>[]` casts from the 0.1.x era are gone. The local CLI rule shape
-// (`Condition`, `Branch`, `Rule` below) is intentionally kept distinct from
-// the package's `Rule`/`Condition` — see the note above the local interfaces.
+// TBP-236: the CLI's rule format is now the canonical auth-core one. The
+// `Rule` / `Branch` / `Condition` types and the `evaluateRule` / `validateRule`
+// evaluator are imported from @nebulr-group/bridge-auth-core — there is no
+// CLI-local rule shape anymore. Conditions always carry a plural `values`
+// array on the wire, and operators come from the package's locked vocabulary
+// (`OPERATORS`: eq | neq | contains | not_contains | in | not_in | gt | lt |
+// between | regex | exists | not_exists). Legacy CLI inputs (singular
+// `value`, operator names like `equals` / `starts_with` / `gte`) are migrated
+// at parse time by `normalizeRuleInput()` below, with a deprecation warning
+// on stderr for legacy operator names.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Command } from 'commander';
+import {
+  OPERATORS,
+  evaluateRule,
+  isOperator,
+  validateRule,
+} from '@nebulr-group/bridge-auth-core';
 import type {
+  CachedFlag,
+  Condition,
+  ConditionValue,
   CreateFlagInput,
+  EvalContext,
+  EvalResult,
   FlagResponse,
   FlagSchedule,
   FlagState,
   FlagValueType,
+  Operator,
+  Rule,
   UpdateFlagInput,
 } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { registerFlagInitCommand } from './flag-init.command.js';
 
-// ── Local rule shape ────────────────────────────────────────────────────────
-//
-// The CLI accepts rule JSON with conditions of shape
-//   { attribute, operator, value }
-// and operator names like 'equals' | 'not_equals' | 'starts_with' | ...
-//
-// The published auth-core 0.2.0-wt3.0 evaluator types describe a different
-// shape:
-//   { attribute, operator, values: ReadonlyArray<ConditionValue> }
-// with a locked operator union ('eq' | 'neq' | 'contains' | 'in' | ...).
-//
-// These are two genuinely-different rule wire formats — bridge-api currently
-// accepts the singular-`value` shape that the CLI ships. Until the CLI input
-// parser is migrated (separate ticket — see report), we keep CLI-local
-// `Condition` / `Branch` / `Rule` interfaces here so the local validator and
-// debug evaluator stay typed against the format the CLI actually produces.
-
-interface Condition {
-  attribute: string;
-  operator: string;
-  value?: unknown;
-}
-
-interface Branch {
-  conditions: Condition[];
-  returnValue: unknown;
-}
-
-interface Rule {
-  branches: Branch[];
-  otherwiseValue: unknown;
-  rolloutPct: number;
-  groupRef?: string;
-}
+// Re-export the canonical validator so existing consumers/tests keep a single
+// import site for rule validation alongside the CLI parse helpers.
+export { validateRule };
 
 const FLAG_STATES: ReadonlyArray<FlagState> = ['off', 'on', 'on-with-rule'];
 const FLAG_VALUE_TYPES: ReadonlyArray<FlagValueType> = ['boolean', 'string', 'number', 'json'];
@@ -307,10 +292,9 @@ function registerEval(flag: Command): void {
           valueType: found.valueType ?? 'boolean',
           offValue: found.offValue ?? false,
           onValue: found.onValue ?? true,
-          // Bridge from auth-core's package `Rule` shape (plural `values`) to
-          // the CLI-local `Rule` shape (singular `value`). See note above the
-          // local interfaces.
-          rule: (found.rule as unknown as Rule | undefined) ?? undefined,
+          // `FlagResponse.rule` is the canonical auth-core `Rule` — no
+          // bridging cast needed (TBP-236).
+          rule: found.rule ?? undefined,
         };
 
         const result = evaluateLocally(cached, ctx);
@@ -443,13 +427,23 @@ export function validateFlagDoc(input: unknown, index: number): FlagDoc {
       `flags[${index}] ("${d.key}") invalid valueType "${String(d.valueType)}". One of ${FLAG_VALUE_TYPES.join(', ')}.`,
     );
   }
+  let rule: Rule | null | undefined = d.rule as Rule | null | undefined;
   if (d.rule !== undefined && d.rule !== null) {
-    const errs = validateRule(d.rule);
+    let normalized: Rule;
+    try {
+      normalized = normalizeRuleInput(d.rule);
+    } catch (err) {
+      throw new Error(
+        `flags[${index}] ("${d.key}") rule failed validation:\n  - ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const errs = validateRule(normalized);
     if (errs.length > 0) {
       throw new Error(
         `flags[${index}] ("${d.key}") rule failed validation:\n${errs.map((e) => `  - ${e.message}`).join('\n')}`,
       );
     }
+    rule = normalized;
   }
   return {
     key: d.key,
@@ -458,7 +452,7 @@ export function validateFlagDoc(input: unknown, index: number): FlagDoc {
     valueType,
     offValue: d.offValue,
     onValue: d.onValue,
-    rule: d.rule as Rule | null | undefined,
+    rule,
     schedule: d.schedule,
   };
 }
@@ -707,13 +701,189 @@ export function parseRuleArg(raw: string): Rule {
       `--rule must be valid JSON. Parse error: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  const errors = validateRule(parsed);
+  let rule: Rule;
+  try {
+    rule = normalizeRuleInput(parsed);
+  } catch (err) {
+    throw new Error(
+      `--rule failed validation:\n  - ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const errors = validateRule(rule);
   if (errors.length > 0) {
     throw new Error(
       `--rule failed validation:\n${errors.map((e) => `  - ${e.message}`).join('\n')}`,
     );
   }
-  return parsed as Rule;
+  return rule;
+}
+
+// ── Parse-time rule normalization (TBP-236) ─────────────────────────────────
+//
+// The CLI historically accepted conditions of shape { attribute, operator,
+// value } with operator names like 'equals' / 'starts_with' / 'gte'. The
+// canonical auth-core format is { attribute, operator, values: [...] } with
+// the locked operator vocabulary in `OPERATORS`. `normalizeRuleInput` migrates
+// legacy input to the canonical shape at parse time:
+//   - scalar `value` → plural `values` array (`"value": "pro"` → `values: ["pro"]`)
+//   - legacy operator names → canonical ones (deprecation warning on stderr)
+// Structurally invalid input (non-object rule, missing otherwiseValue, ...)
+// throws; unknown operators are passed through for `validateRule` to report.
+
+/** Legacy operator names that map 1:1 onto a canonical operator. */
+const LEGACY_OPERATOR_ALIASES: Readonly<Record<string, Operator>> = {
+  equals: 'eq',
+  equal: 'eq',
+  not_equals: 'neq',
+  not_equal: 'neq',
+  notEquals: 'neq',
+  does_not_contain: 'not_contains',
+  notContains: 'not_contains',
+  greater_than: 'gt',
+  greaterThan: 'gt',
+  less_than: 'lt',
+  lessThan: 'lt',
+  matches: 'regex',
+};
+
+function warnDeprecatedOperator(legacy: string, canonical: Operator, note?: string): void {
+  process.stderr.write(
+    `Warning: rule operator "${legacy}" is deprecated; mapped to "${canonical}"${note ? ` (${note})` : ''}. ` +
+      `Canonical operators: ${OPERATORS.join(', ')}.\n`,
+  );
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Map a (possibly legacy) operator name + values to the canonical vocabulary.
+ * Some legacy operators have no 1:1 canonical equivalent and are rewritten
+ * with adjusted values:
+ *   starts_with x → regex ^x        ends_with x → regex x$
+ *   gte x         → between [x, Number.MAX_VALUE]
+ *   lte x         → between [-Number.MAX_VALUE, x]
+ * Unknown names are passed through so validateRule reports them.
+ */
+function resolveOperator(
+  op: string,
+  values: ConditionValue[],
+): { operator: Operator; values: ConditionValue[] } {
+  if (isOperator(op)) return { operator: op, values };
+
+  const alias = LEGACY_OPERATOR_ALIASES[op];
+  if (alias) {
+    warnDeprecatedOperator(op, alias);
+    return { operator: alias, values };
+  }
+
+  switch (op) {
+    case 'starts_with':
+    case 'startsWith':
+    case 'begins_with':
+    case 'beginsWith':
+      warnDeprecatedOperator(op, 'regex', 'value rewritten to an anchored ^… pattern');
+      return { operator: 'regex', values: [`^${escapeRegExp(String(values[0] ?? ''))}`] };
+    case 'ends_with':
+    case 'endsWith':
+      warnDeprecatedOperator(op, 'regex', 'value rewritten to an anchored …$ pattern');
+      return { operator: 'regex', values: [`${escapeRegExp(String(values[0] ?? ''))}$`] };
+    case 'gte':
+    case 'greater_than_or_equal':
+    case 'greaterThanOrEqual':
+      warnDeprecatedOperator(op, 'between', 'rewritten to between [value, Number.MAX_VALUE]');
+      return { operator: 'between', values: [values[0] ?? null, Number.MAX_VALUE] };
+    case 'lte':
+    case 'less_than_or_equal':
+    case 'lessThanOrEqual':
+      warnDeprecatedOperator(op, 'between', 'rewritten to between [-Number.MAX_VALUE, value]');
+      return { operator: 'between', values: [-Number.MAX_VALUE, values[0] ?? null] };
+    default:
+      // Unknown operator — pass through; validateRule will flag it.
+      return { operator: op as Operator, values };
+  }
+}
+
+function normalizeConditionInput(input: unknown, bi: number, ci: number): Condition {
+  if (!input || typeof input !== 'object') {
+    throw new Error(`Branch ${bi} condition ${ci} must be an object.`);
+  }
+  const c = input as Record<string, unknown>;
+  if (typeof c.attribute !== 'string' || c.attribute.length === 0) {
+    throw new Error(`Branch ${bi} condition ${ci} missing 'attribute'.`);
+  }
+  if (typeof c.operator !== 'string' || c.operator.length === 0) {
+    throw new Error(`Branch ${bi} condition ${ci} missing 'operator'.`);
+  }
+
+  let values: ConditionValue[];
+  if (c.values !== undefined) {
+    if (!Array.isArray(c.values)) {
+      throw new Error(`Branch ${bi} condition ${ci} 'values' must be an array.`);
+    }
+    values = [...(c.values as ConditionValue[])];
+  } else if ('value' in c) {
+    // Legacy singular `value` — migrate to plural `values` at parse time.
+    const v = c.value;
+    values = Array.isArray(v) ? [...(v as ConditionValue[])] : [v as ConditionValue];
+  } else {
+    values = [];
+  }
+
+  const resolved = resolveOperator(c.operator, values);
+  return { attribute: c.attribute, operator: resolved.operator, values: resolved.values };
+}
+
+/**
+ * Normalize untrusted rule input (from --rule JSON or a flags file) to the
+ * canonical auth-core `Rule` shape. Throws on structural problems; operator
+ * validity is left to `validateRule` on the returned rule.
+ */
+export function normalizeRuleInput(input: unknown): Rule {
+  if (!input || typeof input !== 'object') {
+    throw new Error('Rule must be an object.');
+  }
+  const r = input as Record<string, unknown>;
+
+  if (!('otherwiseValue' in r)) {
+    throw new Error('Rule missing otherwiseValue.');
+  }
+
+  const rawBranches = r.branches ?? [];
+  if (!Array.isArray(rawBranches)) {
+    throw new Error('`branches` must be an array.');
+  }
+  const branches = rawBranches.map((branch, bi) => {
+    if (!branch || typeof branch !== 'object') {
+      throw new Error(`Branch ${bi} must be an object.`);
+    }
+    const b = branch as Record<string, unknown>;
+    if (!('returnValue' in b)) {
+      throw new Error(`Branch ${bi} is missing returnValue.`);
+    }
+    const rawConds = b.conditions ?? [];
+    if (!Array.isArray(rawConds)) {
+      throw new Error(`Branch ${bi} 'conditions' must be an array.`);
+    }
+    return {
+      conditions: rawConds.map((c, ci) => normalizeConditionInput(c, bi, ci)),
+      returnValue: b.returnValue,
+    };
+  });
+
+  const rule: Rule = {
+    branches,
+    otherwiseValue: r.otherwiseValue,
+    // Canonical `Rule` carries rolloutPct explicitly; default to 100 (full
+    // rollout) when the input omits it. Out-of-range values are kept so
+    // validateRule reports them.
+    rolloutPct: r.rolloutPct === undefined ? 100 : (r.rolloutPct as number),
+  };
+  if (typeof r.groupRef === 'string' && r.groupRef.length > 0) {
+    rule.groupRef = r.groupRef;
+  }
+  return rule;
 }
 
 export function parseAttributes(pairs: string[]): Record<string, unknown> {
@@ -741,142 +911,7 @@ async function resolveFlagId(key: string): Promise<string> {
   return found.id;
 }
 
-// ── Rule validation (mirrors auth-core's validateRule) ──────────────────────
-
-interface RuleValidationError {
-  branchIndex: number;
-  conditionIndex: number;
-  message: string;
-}
-
-const RULE_CONDITIONS_HARD_MAX = 50;
-
-export function validateRule(rule: unknown): RuleValidationError[] {
-  const errors: RuleValidationError[] = [];
-
-  if (!rule || typeof rule !== 'object') {
-    return [{ branchIndex: -1, conditionIndex: -1, message: 'Rule must be an object.' }];
-  }
-
-  const r = rule as Partial<Rule>;
-  const branches = r.branches ?? [];
-
-  if (!Array.isArray(branches)) {
-    return [{ branchIndex: -1, conditionIndex: -1, message: '`branches` must be an array.' }];
-  }
-
-  let totalConditions = 0;
-  branches.forEach((branch, bi) => {
-    if (!branch || typeof branch !== 'object') {
-      errors.push({
-        branchIndex: bi,
-        conditionIndex: -1,
-        message: `Branch ${bi} must be an object.`,
-      });
-      return;
-    }
-    if (!('returnValue' in branch)) {
-      errors.push({
-        branchIndex: bi,
-        conditionIndex: -1,
-        message: `Branch ${bi} is missing returnValue.`,
-      });
-    }
-    const conds = (branch as Branch).conditions ?? [];
-    if (!Array.isArray(conds) || conds.length === 0) {
-      errors.push({
-        branchIndex: bi,
-        conditionIndex: -1,
-        message: `Branch ${bi} has no conditions.`,
-      });
-      return;
-    }
-    conds.forEach((c, ci) => {
-      totalConditions++;
-      if (!c || typeof c !== 'object') {
-        errors.push({
-          branchIndex: bi,
-          conditionIndex: ci,
-          message: `Branch ${bi} condition ${ci} must be an object.`,
-        });
-        return;
-      }
-      if (typeof c.attribute !== 'string' || c.attribute.length === 0) {
-        errors.push({
-          branchIndex: bi,
-          conditionIndex: ci,
-          message: `Branch ${bi} condition ${ci} missing 'attribute'.`,
-        });
-      }
-      if (typeof c.operator !== 'string' || c.operator.length === 0) {
-        errors.push({
-          branchIndex: bi,
-          conditionIndex: ci,
-          message: `Branch ${bi} condition ${ci} missing 'operator'.`,
-        });
-      }
-    });
-  });
-
-  if (totalConditions > RULE_CONDITIONS_HARD_MAX) {
-    errors.push({
-      branchIndex: -1,
-      conditionIndex: -1,
-      message: `Rule has ${totalConditions} conditions; max is ${RULE_CONDITIONS_HARD_MAX}.`,
-    });
-  }
-
-  if (r.rolloutPct !== undefined) {
-    if (typeof r.rolloutPct !== 'number' || r.rolloutPct < 0 || r.rolloutPct > 100) {
-      errors.push({
-        branchIndex: -1,
-        conditionIndex: -1,
-        message: `rolloutPct must be a number in [0, 100], got ${r.rolloutPct}.`,
-      });
-    }
-  }
-
-  if (!('otherwiseValue' in r)) {
-    errors.push({
-      branchIndex: -1,
-      conditionIndex: -1,
-      message: 'Rule missing otherwiseValue.',
-    });
-  }
-
-  if (r.groupRef && branches.length > 0) {
-    errors.push({
-      branchIndex: -1,
-      conditionIndex: -1,
-      message: 'Rule cannot have both inline branches and a groupRef.',
-    });
-  }
-
-  return errors;
-}
-
-// ── Local evaluator (mirrors auth-core's evaluator semantics) ───────────────
-
-interface EvalContext {
-  identity?: string;
-  attributes: Record<string, unknown>;
-}
-
-interface EvalResult {
-  value: unknown;
-  variantIndex: number;
-  matched: boolean;
-  excludedByRollout: boolean;
-}
-
-interface CachedFlag {
-  key: string;
-  state: FlagState;
-  valueType: FlagValueType;
-  offValue: unknown;
-  onValue: unknown;
-  rule?: Rule;
-}
+// ── Local evaluator (delegates to auth-core's canonical evaluator) ──────────
 
 export function evaluateLocally(cached: CachedFlag, ctx: EvalContext): EvalResult {
   switch (cached.state) {
@@ -905,124 +940,6 @@ export function evaluateLocally(cached: CachedFlag, ctx: EvalContext): EvalResul
       }
       return evaluateRule(cached.rule, cached.key, ctx);
   }
-}
-
-function evaluateRule(rule: Rule, flagKey: string, ctx: EvalContext): EvalResult {
-  const rolloutPct = clampPct(rule.rolloutPct ?? 100);
-
-  if (rolloutPct < 100) {
-    if (!ctx.identity) {
-      return {
-        value: rule.otherwiseValue,
-        variantIndex: -1,
-        matched: false,
-        excludedByRollout: true,
-      };
-    }
-    if (bucket(flagKey, ctx.identity) >= rolloutPct) {
-      return {
-        value: rule.otherwiseValue,
-        variantIndex: -1,
-        matched: false,
-        excludedByRollout: true,
-      };
-    }
-  }
-
-  const branches = rule.branches ?? [];
-  for (let i = 0; i < branches.length; i++) {
-    if (evaluateBranch(branches[i], ctx)) {
-      return {
-        value: branches[i].returnValue,
-        variantIndex: i,
-        matched: true,
-        excludedByRollout: false,
-      };
-    }
-  }
-  return {
-    value: rule.otherwiseValue,
-    variantIndex: -1,
-    matched: false,
-    excludedByRollout: false,
-  };
-}
-
-function evaluateBranch(branch: Branch, ctx: EvalContext): boolean {
-  if (!branch.conditions || branch.conditions.length === 0) return false;
-  return branch.conditions.every((c) => evaluateCondition(c, resolveAttribute(ctx, c.attribute)));
-}
-
-function resolveAttribute(ctx: EvalContext, attribute: string): unknown {
-  if (Object.prototype.hasOwnProperty.call(ctx.attributes, attribute)) {
-    return ctx.attributes[attribute];
-  }
-  const parts = attribute.split('.');
-  let current: unknown = ctx.attributes;
-  for (const part of parts) {
-    if (current === undefined || current === null) return undefined;
-    if (typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
-function evaluateCondition(c: Condition, actual: unknown): boolean {
-  const expected = c.value;
-  switch (c.operator) {
-    case 'equals':
-    case 'eq':
-      return actual === expected;
-    case 'not_equals':
-    case 'neq':
-      return actual !== expected;
-    case 'in':
-      return Array.isArray(expected) && (expected as unknown[]).includes(actual);
-    case 'not_in':
-      return Array.isArray(expected) && !(expected as unknown[]).includes(actual);
-    case 'contains':
-      return typeof actual === 'string' && typeof expected === 'string' && actual.includes(expected);
-    case 'starts_with':
-      return (
-        typeof actual === 'string' && typeof expected === 'string' && actual.startsWith(expected)
-      );
-    case 'ends_with':
-      return (
-        typeof actual === 'string' && typeof expected === 'string' && actual.endsWith(expected)
-      );
-    case 'gt':
-      return typeof actual === 'number' && typeof expected === 'number' && actual > expected;
-    case 'gte':
-      return typeof actual === 'number' && typeof expected === 'number' && actual >= expected;
-    case 'lt':
-      return typeof actual === 'number' && typeof expected === 'number' && actual < expected;
-    case 'lte':
-      return typeof actual === 'number' && typeof expected === 'number' && actual <= expected;
-    case 'exists':
-      return actual !== undefined && actual !== null;
-    case 'not_exists':
-      return actual === undefined || actual === null;
-    default:
-      // Unknown operator → no match (defensive; validateRule should catch).
-      return false;
-  }
-}
-
-function bucket(flagKey: string, identity: string): number {
-  const input = `${flagKey}|${identity}`;
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = (hash + (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24)) >>> 0;
-  }
-  return hash % 100;
-}
-
-function clampPct(p: number): number {
-  if (!Number.isFinite(p)) return 100;
-  if (p < 0) return 0;
-  if (p > 100) return 100;
-  return p;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

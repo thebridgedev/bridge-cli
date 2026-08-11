@@ -22,4 +22,17 @@ module.exports = {
     '(^|/)runtime-dir(\\.js)?$': '<rootDir>/src/commands/runtime-dir.stub.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
+  // @nebulr-group/bridge-auth-core ships ESM-only. Transform its dist JS to
+  // CJS with ts-jest (allowJs) so tests can requireActual the canonical rule
+  // evaluator/operators modules (TBP-236) instead of reimplementing them.
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {}],
+    '^.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true } }],
+  },
+  // Whitelisting auth-core alone is not enough: it transforms fine and then
+  // dies on `import … from 'jose'`. Since auth-core 0.4.0-beta.11 its jose
+  // dependency is jose 6, which dropped its CommonJS build and is ESM-only
+  // (TBP-225), so jose must be transformed too. Mirrors the same fix in
+  // bridge-express and bridge-nestjs.
+  transformIgnorePatterns: ['/node_modules/(?!(@nebulr-group|jose)/)'],
 };
