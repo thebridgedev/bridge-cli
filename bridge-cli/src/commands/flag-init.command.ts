@@ -2,9 +2,18 @@
 //
 // `bridge flag init` (alias for the eventual `bridge init --flags-only`).
 // Detects the project framework from package.json and prints:
-//   - The appropriate `bridge.flag(...)` setup snippet for the framework
+//   - The framework's REAL flag-reading setup snippet
 //   - A `bridge-flags.config.json` next to package.json with appId + baseUrl
 //     + suggested provider config
+//
+// TBP-206 — every snippet below MUST correspond to a symbol that actually
+// exists in the named package at an import specifier that actually resolves.
+// The previous revision invented `createBridgeFlags()` middleware for express,
+// `BridgeFlagsProvider` for react/nextjs and `provideBridgeFlags` for angular,
+// and pointed every framework at a `/flags` subpath — several of which are not
+// declared in the package's `exports` map. Agents followed the scaffold and
+// wrote code that could not resolve, let alone run. If you change a snippet,
+// re-verify it against the package source first.
 //
 // The command is deliberately NON-destructive: it never overwrites source
 // files. The "scaffold" is text output (snippet + config file) for the agent
@@ -127,13 +136,26 @@ interface SnippetCtx {
 }
 
 export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): string {
+  // Import specifiers that actually resolve for each framework (TBP-206).
+  //
+  //   svelte / react  — declare "./flags" in their package.json `exports` map.
+  //   nextjs          — has NO "./flags" and NO "." key; FF 2.0 is folded into
+  //                     "./client", server-side flags live under "./server".
+  //   angular         — ships a single ng-packagr entry point; everything comes
+  //                     from the bare specifier.
+  //   nestjs          — has no `exports` map at all, so `<pkg>/flags` falls
+  //                     back to legacy resolution and 404s (the published
+  //                     tarball only ships `dist/`). `dist/flags` is the only
+  //                     specifier that resolves today.
+  //   express         — no `exports` map and no flags entry point; the flag
+  //                     surface is on the bare specifier.
   const pkgFor: Record<Exclude<FlagsFramework, 'unknown'>, string> = {
     svelte: '@nebulr-group/bridge-svelte/flags',
     react: '@nebulr-group/bridge-react/flags',
-    nextjs: '@nebulr-group/bridge-nextjs/flags',
-    angular: '@nebulr-group/bridge-angular/flags',
-    nestjs: '@nebulr-group/bridge-nestjs/flags',
-    express: '@nebulr-group/bridge-express/flags',
+    nextjs: '@nebulr-group/bridge-nextjs/client',
+    angular: '@nebulr-group/bridge-angular',
+    nestjs: '@nebulr-group/bridge-nestjs/dist/flags',
+    express: '@nebulr-group/bridge-express',
   };
 
   if (framework === 'unknown') {
@@ -145,14 +167,22 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
       '```ts',
       `import { BridgeFlags } from '@nebulr-group/bridge-auth-core';`,
       ``,
-      `export const bridge = new BridgeFlags();`,
-      `bridge.setContext({ identity: 'user-id', attributes: { /* ... */ } });`,
+      `// 'backend' refuses to bucket rollout flags without an identity;`,
+      `// use 'frontend' in a browser runtime.`,
+      `export const bridge = new BridgeFlags({ mode: 'backend' });`,
       ``,
-      `// Read a flag — type is inferred from defaultValue.`,
-      `const newDashboard = bridge.flag('new-dashboard', false);`,
+      `// Load the rule set for your app (or let a framework SDK do it for you).`,
+      `const res = await fetch(`,
+      `  '${ctx.baseUrl}/admin/flags-internal/flags-cache/${ctx.appId}',`,
+      `);`,
+      `bridge.hydrate(await res.json());`,
+      ``,
+      `bridge.setContext({ identity: 'user-id', attributes: { /* plan, role, ... */ } });`,
+      ``,
+      `// Read a flag — T is inferred from defaultValue (boolean | string | number | json).`,
+      `// Returns FlagEvalResult<T> = { value, passed }, NOT a bare value.`,
+      `const { value: newDashboard } = bridge.flag('new-dashboard', false);`,
       '```',
-      ``,
-      `Then point the SDK at appId=${ctx.appId} via ${ctx.baseUrl}/cloud-views/flags.`,
     ].join('\n');
   }
 
@@ -169,17 +199,39 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '   bun add @nebulr-group/bridge-svelte',
         '   ```',
         '',
-        '2. In `src/routes/+layout.ts`:',
-        '   ```ts',
-        `   import { BridgeFlags } from '${pkg}';`,
+        '2. Configure + mount the runtime once — `src/routes/+layout.svelte`:',
+        '   ```svelte',
+        '   <script lang="ts">',
+        `     import { BridgeProvider, bridgeConfig } from '@nebulr-group/bridge-svelte';`,
         '',
-        '   export const bridge = new BridgeFlags();',
-        `   bridge.configure({ appId: '${ctx.appId}', baseUrl: '${ctx.baseUrl}' });`,
+        '     bridgeConfig.initConfig({',
+        `       appId: '${ctx.appId}',`,
+        `       apiBaseUrl: '${ctx.baseUrl}',`,
+        '     });',
+        '',
+        '     let { children } = $props();',
+        '   </script>',
+        '',
+        '   <BridgeProvider>{@render children()}</BridgeProvider>',
         '   ```',
         '',
-        '3. Use anywhere:',
-        '   ```ts',
-        '   const enabled = bridge.flag("new-dashboard", false);',
+        '3. Read a flag in any component under the provider:',
+        '   ```svelte',
+        '   <script lang="ts">',
+        `     import { useFlag } from '${pkg}';`,
+        '',
+        '     // Sync rune. Returns { value, passed } — NOT a bare value.',
+        '     // T is inferred from the default: boolean | string | number | json.',
+        `     const newDashboard = useFlag('new-dashboard', false);`,
+        '   </script>',
+        '',
+        '   {#if newDashboard.value}<V2 />{:else}<V1 />{/if}',
+        '   ```',
+        '',
+        '   Or declaratively:',
+        '   ```svelte',
+        `   import { FeatureFlag } from '${pkg}';`,
+        '   <FeatureFlag flag="new-dashboard">…</FeatureFlag>',
         '   ```',
       ].join('\n');
 
@@ -192,24 +244,24 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '   bun add @nebulr-group/bridge-react',
         '   ```',
         '',
-        '2. In `src/main.tsx`:',
+        '2. In `src/main.tsx` — flags ride on the core Bridge runtime, so mount',
+        '   `<BridgeProvider>` (there is no separate flags provider):',
         '   ```tsx',
-        `   import { BridgeFlagsProvider } from '${pkg}';`,
+        `   import { BridgeProvider } from '@nebulr-group/bridge-react';`,
         '',
-        '   <BridgeFlagsProvider',
-        `     appId="${ctx.appId}"`,
-        `     baseUrl="${ctx.baseUrl}"`,
-        '   >',
+        `   <BridgeProvider config={{ appId: '${ctx.appId}', apiBaseUrl: '${ctx.baseUrl}' }}>`,
         '     <App />',
-        '   </BridgeFlagsProvider>',
+        '   </BridgeProvider>',
         '   ```',
+        '   (`VITE_BRIDGE_APP_ID` / `VITE_BRIDGE_API_BASE_URL` override the props.)',
         '',
         '3. Use the hook in any component:',
         '   ```tsx',
         `   import { useFlag } from '${pkg}';`,
         '',
         '   function NewDashboard() {',
-        '     const enabled = useFlag("new-dashboard", false);',
+        '     // Sync. Returns { value, passed } — destructure `value`.',
+        `     const { value: enabled } = useFlag('new-dashboard', false);`,
         '     return enabled ? <V2 /> : <V1 />;',
         '   }',
         '   ```',
@@ -224,31 +276,42 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '   bun add @nebulr-group/bridge-nextjs',
         '   ```',
         '',
-        '2. Client side — `app/providers.tsx`:',
+        '2. Client side — `app/providers.tsx`. FF 2.0 is folded into the',
+        '   `./client` entry point; there is no `/flags` subpath and no separate',
+        '   flags provider:',
         '   ```tsx',
         `   "use client";`,
-        `   import { BridgeFlagsProvider } from '${pkg}';`,
+        `   import { BridgeProvider } from '${pkg}';`,
         '',
         '   export function Providers({ children }: { children: React.ReactNode }) {',
         '     return (',
-        '       <BridgeFlagsProvider',
-        `         appId="${ctx.appId}"`,
-        `         baseUrl="${ctx.baseUrl}"`,
-        '       >',
+        `       <BridgeProvider config={{ appId: '${ctx.appId}', apiBaseUrl: '${ctx.baseUrl}' }}>`,
         '         {children}',
-        '       </BridgeFlagsProvider>',
+        '       </BridgeProvider>',
         '     );',
         '   }',
         '   ```',
         '',
-        '3. Server side — anywhere in a Server Component / Route Handler:',
+        '   Then in any client component:',
+        '   ```tsx',
+        `   import { useFlag } from '${pkg}';`,
+        `   const { value: enabled } = useFlag('new-dashboard', false);`,
+        '   ```',
+        '',
+        '3. Server side — Server Component / Route Handler / middleware. The',
+        '   server flag surface is a singleton, and every read is async and takes',
+        '   the `NextRequest` (that is where identity comes from):',
         '   ```ts',
-        `   import { getServerBridgeFlags } from '${pkg}/server';`,
-        '   const bridge = await getServerBridgeFlags({',
+        `   import { FeatureFlagServer } from '@nebulr-group/bridge-nextjs/server';`,
+        '',
+        '   // Once at boot:',
+        '   FeatureFlagServer.getInstance().init({',
         `     appId: '${ctx.appId}',`,
-        `     baseUrl: '${ctx.baseUrl}',`,
+        `     apiBaseUrl: '${ctx.baseUrl}',`,
         '   });',
-        '   const enabled = bridge.flag("new-dashboard", false);',
+        '',
+        '   // Per request — evaluated locally in-process, no round trip per flag:',
+        `   const enabled = await FeatureFlagServer.getInstance().flagServer('new-dashboard', false, request);`,
         '   ```',
       ].join('\n');
 
@@ -261,27 +324,32 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '   bun add @nebulr-group/bridge-angular',
         '   ```',
         '',
-        '2. In `app.config.ts`:',
+        '2. In `app.config.ts` — one provider covers auth + flags (the package',
+        '   ships a single entry point, so import from the bare specifier):',
         '   ```ts',
-        `   import { provideBridgeFlags } from '${pkg}';`,
+        `   import { provideBridge } from '${pkg}';`,
         '',
         '   export const appConfig: ApplicationConfig = {',
         '     providers: [',
-        '       provideBridgeFlags({',
+        '       provideBridge({',
         `         appId: '${ctx.appId}',`,
-        `         baseUrl: '${ctx.baseUrl}',`,
+        `         apiBaseUrl: '${ctx.baseUrl}',`,
         '       }),',
         '     ],',
         '   };',
         '   ```',
         '',
-        '3. Inject the service:',
+        '3. Inject `BridgeService` — `flag()` returns a Signal of { value, passed }:',
         '   ```ts',
-        `   import { BridgeFlagsService } from '${pkg}';`,
+        `   import { BridgeService } from '${pkg}';`,
         '',
-        '   constructor(private flags: BridgeFlagsService) {}',
+        '   private bridge = inject(BridgeService);',
         '',
-        '   newDashboard = this.flags.flag("new-dashboard", false);',
+        `   newDashboard = this.bridge.flag('new-dashboard', false);`,
+        '   // template: {{ newDashboard().value }}',
+        '',
+        '   // One-shot, non-reactive read:',
+        `   // const { value } = this.bridge.evaluate('new-dashboard', false);`,
         '   ```',
       ].join('\n');
 
@@ -294,16 +362,18 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '   bun add @nebulr-group/bridge-nestjs',
         '   ```',
         '',
-        '2. Import the module in `app.module.ts`:',
+        '2. Import the module in `app.module.ts`. NOTE: the package declares no',
+        '   `exports` map, so `@nebulr-group/bridge-nestjs/flags` does not resolve',
+        '   — import from `/dist/flags` until that is fixed:',
         '   ```ts',
         `   import { BridgeFlagsModule } from '${pkg}';`,
         '',
         '   @Module({',
         '     imports: [',
         '       BridgeFlagsModule.forRoot({',
-        `         appId: '${ctx.appId}',`,
-        `         baseUrl: '${ctx.baseUrl}',`,
-        '         mode: "backend",',
+        `         apiBaseUrl: '${ctx.baseUrl}',`,
+        `         apiKey: '${ctx.appId}',`,
+        `         mode: 'backend',`,
         '       }),',
         '     ],',
         '   })',
@@ -316,10 +386,11 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '',
         '   constructor(private flags: BridgeFlagsService) {}',
         '',
-        '   async handleRequest(req) {',
-        '     const enabled = this.flags.flag("new-checkout", false, {',
-        '       identity: req.user?.id,',
-        '       attributes: { plan: req.user?.plan },',
+        '   handleRequest(req) {',
+        '     // Sync, evaluated locally in-process. Returns T directly.',
+        `     const enabled = this.flags.flag('new-checkout', false, {`,
+        '       identity: req.bridgeUser?.id,',
+        '       attributes: { plan: req.bridgeUser?.plan },',
         '     });',
         '   }',
         '   ```',
@@ -327,7 +398,11 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
 
     case 'express':
       return [
-        '# Bridge Flags — Express (flags-only, backend mode)',
+        '# Bridge Flags — Express',
+        '',
+        '   NOTE: express does not have a standalone flags runtime. Flags are',
+        '   part of the auth middleware, are boolean-only, require a user JWT,',
+        '   and are evaluated remotely by the Bridge API (see TBP-516).',
         '',
         `1. Install:`,
         '   ```bash',
@@ -336,22 +411,40 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '',
         '2. At app bootstrap:',
         '   ```ts',
-        `   import { createBridgeFlags } from '${pkg}';`,
+        `   import { createBridge } from '${pkg}';`,
         '',
-        '   const bridge = createBridgeFlags({',
+        '   const bridge = createBridge({',
         `     appId: '${ctx.appId}',`,
-        `     baseUrl: '${ctx.baseUrl}',`,
-        '     mode: "backend",',
+        `     apiBaseUrl: '${ctx.baseUrl}',`,
+        '     guard: { defaultAccess: \'protected\' },',
         '   });',
         '',
-        '   app.use(bridge.middleware());',
+        '   app.use(bridge.auth());',
         '   ```',
         '',
-        '3. In a handler:',
+        '3. Gate a route on a flag — `featureFlag` accepts',
+        '   `string | { any: string[] } | { all: string[] }`; a miss is a 403:',
         '   ```ts',
-        '   app.get("/", (req, res) => {',
-        '     const enabled = req.bridge.flag("new-home", false);',
-        '     res.send(enabled ? "v2" : "v1");',
+        `   app.get('/beta', bridge.protect({ featureFlag: 'new-home' }), (req, res) => {`,
+        `     res.send('v2');`,
+        '   });',
+        '',
+        '   // Or centrally, via guard.rules:',
+        `   // { path: '/beta/**', privilege: 'AUTHENTICATED', featureFlag: { any: ['new-home', 'beta'] } }`,
+        '   ```',
+        '',
+        '4. Read a flag inside a handler:',
+        '   ```ts',
+        `   import { BridgeConfigService, FeatureFlagService } from '${pkg}';`,
+        '',
+        '   const flags = new FeatureFlagService(',
+        `     new BridgeConfigService({ appId: '${ctx.appId}', apiBaseUrl: '${ctx.baseUrl}' }),`,
+        '   );',
+        '',
+        `   app.get('/', bridge.protect(), async (req, res) => {`,
+        '     // Boolean only. Async — remote evaluation, cached 5 min per token.',
+        `     const enabled = await flags.isEnabled('new-home', req.bridgeAccessToken!);`,
+        `     res.send(enabled ? 'v2' : 'v1');`,
         '   });',
         '   ```',
       ].join('\n');
@@ -361,7 +454,19 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
 // ── Provider config + next-steps blurbs ─────────────────────────────────────
 
 function suggestedProviderConfig(framework: FlagsFramework): Record<string, unknown> {
-  if (framework === 'nestjs' || framework === 'express') {
+  // Keys mirror the real option names on the framework's flags runtime
+  // (`createBridgeFlags` / `BridgeFlagsModule.forRoot`) — `mode` is
+  // `'frontend' | 'backend'`, `telemetry` is a partial TelemetryBatcherConfig.
+  if (framework === 'express') {
+    // express has no BridgeFlags runtime — nothing to configure. Flags are
+    // enforced through `bridge.protect({ featureFlag })` and evaluated remotely
+    // by the Bridge API. See TBP-516.
+    return {
+      runtime: 'none',
+      note: 'bridge-express evaluates flags remotely inside the auth middleware; there is no local flags provider to configure.',
+    };
+  }
+  if (framework === 'nestjs') {
     return { mode: 'backend', telemetry: { enabled: true, flushIntervalMs: 5000 } };
   }
   return { mode: 'frontend', telemetry: { enabled: true, flushIntervalMs: 5000 } };
