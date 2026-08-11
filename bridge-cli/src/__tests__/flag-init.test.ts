@@ -22,7 +22,7 @@ jest.mock(
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detectFramework, renderSnippet } from '../commands/flag-init.command';
+import { detectFramework, renderSnippet, type FlagsFramework } from '../commands/flag-init.command';
 
 async function makeProjectWith(deps: Record<string, string>): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'bridge-cli-flag-init-'));
@@ -97,43 +97,81 @@ describe('renderSnippet', () => {
     const s = renderSnippet('svelte', ctx);
     expect(s).toMatch(/SvelteKit/);
     expect(s).toMatch(/@nebulr-group\/bridge-svelte\/flags/);
+    expect(s).toMatch(/useFlag/);
+    expect(s).toMatch(/bridgeConfig\.initConfig/);
     expect(s).toMatch(/app-123/);
   });
 
-  it('renders a React snippet', () => {
+  it('renders a React snippet using BridgeProvider + useFlag', () => {
     const s = renderSnippet('react', ctx);
-    expect(s).toMatch(/BridgeFlagsProvider/);
+    expect(s).toMatch(/<BridgeProvider/);
     expect(s).toMatch(/@nebulr-group\/bridge-react\/flags/);
+    expect(s).toMatch(/const \{ value: enabled \} = useFlag/);
   });
 
   it('renders a Next.js snippet covering client + server', () => {
     const s = renderSnippet('nextjs', ctx);
     expect(s).toMatch(/app\/providers\.tsx/);
-    expect(s).toMatch(/getServerBridgeFlags/);
-    expect(s).toMatch(/@nebulr-group\/bridge-nextjs\/flags/);
+    expect(s).toMatch(/@nebulr-group\/bridge-nextjs\/client/);
+    expect(s).toMatch(/@nebulr-group\/bridge-nextjs\/server/);
+    expect(s).toMatch(/FeatureFlagServer\.getInstance\(\)/);
+    expect(s).toMatch(/flagServer\(/);
   });
 
   it('renders a NestJS snippet with backend mode', () => {
     const s = renderSnippet('nestjs', ctx);
     expect(s).toMatch(/BridgeFlagsModule/);
-    expect(s).toMatch(/mode: "backend"/);
+    expect(s).toMatch(/mode: 'backend'/);
+    expect(s).toMatch(/apiBaseUrl:/);
+    expect(s).toMatch(/apiKey:/);
   });
 
-  it('renders an Express snippet with middleware', () => {
+  it('renders an Express snippet using createBridge + protect', () => {
     const s = renderSnippet('express', ctx);
-    expect(s).toMatch(/createBridgeFlags/);
-    expect(s).toMatch(/middleware/);
+    expect(s).toMatch(/createBridge\(/);
+    expect(s).toMatch(/bridge\.auth\(\)/);
+    expect(s).toMatch(/bridge\.protect\(\{ featureFlag: 'new-home' \}\)/);
+    expect(s).toMatch(/FeatureFlagService/);
+    expect(s).toMatch(/isEnabled\(/);
   });
 
-  it('renders an Angular snippet with provideBridgeFlags', () => {
+  it('renders an Angular snippet with provideBridge + BridgeService', () => {
     const s = renderSnippet('angular', ctx);
-    expect(s).toMatch(/provideBridgeFlags/);
-    expect(s).toMatch(/@nebulr-group\/bridge-angular\/flags/);
+    expect(s).toMatch(/provideBridge\(\{/);
+    expect(s).toMatch(/BridgeService/);
+    expect(s).toMatch(/this\.bridge\.flag\(/);
   });
 
   it('returns a generic fallback for unknown', () => {
     const s = renderSnippet('unknown', ctx);
     expect(s).toMatch(/generic setup/i);
     expect(s).toMatch(/BridgeFlags/);
+    expect(s).toMatch(/\{ value: newDashboard \} = bridge\.flag/);
   });
+
+  // TBP-206 regression guard: every snippet must reference only import
+  // specifiers and symbols that actually exist. These were all emitted by the
+  // pre-fix scaffold and none of them resolve.
+  const PHANTOM_SYMBOLS = [
+    'createBridgeFlags(',
+    'BridgeFlagsProvider',
+    'provideBridgeFlags',
+    'getServerBridgeFlags',
+    'req.bridge.flag',
+    '@nebulr-group/bridge-express/flags',
+    '@nebulr-group/bridge-nextjs/flags',
+    '@nebulr-group/bridge-angular/flags',
+    // bridge-nestjs has no `exports` map, so this specifier 404s at runtime.
+    "'@nebulr-group/bridge-nestjs/flags'",
+  ];
+
+  it.each<FlagsFramework>(['svelte', 'react', 'nextjs', 'angular', 'nestjs', 'express', 'unknown'])(
+    'the %s snippet references no non-existent API',
+    (framework) => {
+      const s = renderSnippet(framework, ctx);
+      for (const phantom of PHANTOM_SYMBOLS) {
+        expect(s).not.toContain(phantom);
+      }
+    },
+  );
 });
