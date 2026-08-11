@@ -161,7 +161,12 @@ bridge plan price set pro --amount 290 --currency usd --interval year
 bridge plan price rm  pro --interval year
 
 # Usage quotas (hard | metered caps)
+# hard = block at the cap; metered = bill overage per unit (needs --price-amount)
 bridge plan quota set pro --metric ai_completions --limit 1000 --policy hard
+# Metered: first 1000 free, then $0.002/unit (currency from the plan's price)
+bridge plan quota set pro --metric ai_completions --limit 1000 --policy metered --price-amount 0.002
+# Pure per-unit (billed from unit 1)
+bridge plan quota set pro --metric api_calls --limit 0 --policy metered --price-amount 0.01 --price-currency usd
 bridge plan quota rm  pro --metric ai_completions
 ```
 
