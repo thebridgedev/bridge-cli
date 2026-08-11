@@ -29,5 +29,10 @@ module.exports = {
     '^.+\\.tsx?$': ['ts-jest', {}],
     '^.+\\.js$': ['ts-jest', { tsconfig: { allowJs: true } }],
   },
-  transformIgnorePatterns: ['/node_modules/(?!@nebulr-group/)'],
+  // Whitelisting auth-core alone is not enough: it transforms fine and then
+  // dies on `import … from 'jose'`. Since auth-core 0.4.0-beta.11 its jose
+  // dependency is jose 6, which dropped its CommonJS build and is ESM-only
+  // (TBP-225), so jose must be transformed too. Mirrors the same fix in
+  // bridge-express and bridge-nestjs.
+  transformIgnorePatterns: ['/node_modules/(?!(@nebulr-group|jose)/)'],
 };
