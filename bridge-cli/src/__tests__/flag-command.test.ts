@@ -22,12 +22,15 @@
 // actual rule semantics. The dist files are ESM; jest.config.cjs transforms
 // @nebulr-group files to CJS via ts-jest (allowJs).
 jest.mock('@nebulr-group/bridge-auth-core', () => {
-  const operators = jest.requireActual(
-    '../../node_modules/@nebulr-group/bridge-auth-core/dist/flags/operators.js',
-  );
-  const evaluator = jest.requireActual(
-    '../../node_modules/@nebulr-group/bridge-auth-core/dist/flags/evaluator.js',
-  );
+  // Resolve the package's real location rather than assuming a relative
+  // node_modules path: npm workspaces hoist deps to the repo root in CI, so
+  // '../../node_modules/...' exists locally but not there. The exports map
+  // only publishes '.' and './backend', so deep specifiers can't be resolved
+  // directly — derive dist/ from the resolved entry point instead.
+  const path = require('path');
+  const distDir = path.dirname(require.resolve('@nebulr-group/bridge-auth-core'));
+  const operators = jest.requireActual(path.join(distDir, 'flags/operators.js'));
+  const evaluator = jest.requireActual(path.join(distDir, 'flags/evaluator.js'));
   return {
     __esModule: true,
     BridgeManagement: jest.fn(),
