@@ -185,6 +185,18 @@ function buildAuthorizeUrl(
   // existing browser session and re-prompt for credentials" so users who just
   // ran `bridge auth logout` aren't dropped straight into the workspace picker.
   if (params.reauth) url.searchParams.set('prompt', 'login');
+  // TBP-474 — mark the CLI as the origin of anything that starts here.
+  //
+  // Downloading the CLI and signing up through it is a channel in its own
+  // right, so a workspace created off the back of this browser hop should not
+  // be indistinguishable from someone who typed the URL. The consent screen
+  // reads these and carries them into the signup attribution.
+  //
+  // Note this is a MARKETING source, distinct from the `cli` mechanism marker
+  // that `bridge tenant create` would need — that is headless operator
+  // provisioning and a separate concern.
+  url.searchParams.set('utm_source', 'cli');
+  url.searchParams.set('utm_medium', 'referral');
   return url.toString();
 }
 
