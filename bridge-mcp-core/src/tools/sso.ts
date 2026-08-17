@@ -24,8 +24,9 @@ export const setupSsoTool: BridgeToolDefinition<{
     'saml, discoveryUrl for oidc. THE ACTIONABLE OUTPUT IS THE RETURNED callbackUrl: the user ' +
     "must register it in the provider's console (e.g. Google Cloud OAuth credentials, GitHub " +
     'OAuth app settings) or logins will fail with a redirect mismatch — always surface the ' +
-    'callbackUrl and that instruction to the user. This is the ONLY way to enable social ' +
-    'providers; update_auth_methods only covers MFA/passkeys/magic-link toggles.',
+    'callbackUrl and that instruction to the user. This is the ONLY way to CONFIGURE a social ' +
+    'provider (credentials + callback URL); update_auth_methods can flip the enable flags but ' +
+    'never saves credentials.',
   inputSchema: {
     provider: z.enum(['google', 'azure', 'github', 'linkedin', 'facebook', 'saml', 'oidc']),
     clientId: z.string().min(1).optional().describe('OAuth client ID from the provider.'),

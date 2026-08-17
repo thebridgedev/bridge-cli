@@ -6,12 +6,14 @@
  *   - `logout`          (TBP-113): revoke + delete credentials.
  *   - `status`          (TBP-113): show current login state.
  *   - `config`/`mfa`/`password-policy`: pre-existing app auth-config commands.
+ *   - `methods`         (TBP-547): aggregated login-method list/enable/disable.
  */
 import type { Command } from 'commander';
 import { registerAuthLoginCommand } from './auth/login.command.js';
 import { registerAuthLogoutCommand } from './auth/logout.command.js';
 import { registerAuthStatusCommand } from './auth/status.command.js';
 import { registerAuthConfigCommands } from './auth/config.command.js';
+import { registerAuthMethodsCommands } from './auth/methods.command.js';
 
 export function registerAuthCommands(program: Command): void {
   const auth = program
@@ -25,4 +27,7 @@ export function registerAuthCommands(program: Command): void {
 
   // Pre-existing — app-level auth configuration.
   registerAuthConfigCommands(auth);
+
+  // TBP-547 — aggregated login-method management.
+  registerAuthMethodsCommands(auth);
 }

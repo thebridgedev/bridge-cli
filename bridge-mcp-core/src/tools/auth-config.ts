@@ -55,52 +55,104 @@ export const getAuthConfigTool: BridgeToolDefinition<{}> = {
 
 // ── Auth-method write tool (projection of `bridge app update`) ──────────────
 
+/** Every login-method boolean on UpdateAppRequest (TBP-547 parity with the CLI). */
+const AUTH_METHOD_TOGGLES = [
+  'mfaEnabled',
+  'passkeysEnabled',
+  'magicLinkEnabled',
+  'googleSsoEnabled',
+  'linkedinSsoEnabled',
+  'azureAdSsoEnabled',
+  'appleSsoEnabled',
+  'githubSsoEnabled',
+  'facebookSsoEnabled',
+] as const;
+
+const SOCIAL_TOGGLES: ReadonlySet<string> = new Set([
+  'googleSsoEnabled',
+  'linkedinSsoEnabled',
+  'azureAdSsoEnabled',
+  'appleSsoEnabled',
+  'githubSsoEnabled',
+  'facebookSsoEnabled',
+]);
+
 /**
- * Toggle the app's login-method switches. Only the three toggles that exist on
- * the app-update surface today; social providers are enabled via setup_sso.
+ * Toggle the app's login-method switches — every boolean that exists on the
+ * app-update surface, including the six social provider flags (TBP-547 parity
+ * with `bridge auth methods enable|disable`). Flipping a social flag does not
+ * configure provider credentials; that stays setup_sso's job.
  */
 export const updateAuthMethodsTool: BridgeToolDefinition<{
   mfaEnabled: z.ZodOptional<z.ZodBoolean>;
   passkeysEnabled: z.ZodOptional<z.ZodBoolean>;
   magicLinkEnabled: z.ZodOptional<z.ZodBoolean>;
+  googleSsoEnabled: z.ZodOptional<z.ZodBoolean>;
+  linkedinSsoEnabled: z.ZodOptional<z.ZodBoolean>;
+  azureAdSsoEnabled: z.ZodOptional<z.ZodBoolean>;
+  appleSsoEnabled: z.ZodOptional<z.ZodBoolean>;
+  githubSsoEnabled: z.ZodOptional<z.ZodBoolean>;
+  facebookSsoEnabled: z.ZodOptional<z.ZodBoolean>;
 }> = {
   name: 'update_auth_methods',
   description:
     "Toggle the app's login methods. Only the fields you pass are changed: mfaEnabled (MFA " +
     'as a second factor), passkeysEnabled (WebAuthn passkeys), magicLinkEnabled (email magic ' +
-    'links). Email + password login is always available on Bridge and has no toggle. Social ' +
-    'login providers (Google, GitHub, Azure, …) are NOT toggled here — enabling one requires ' +
-    'provider credentials, so use setup_sso instead. Returns the updated login-method ' +
-    'configuration (same projection as get_auth_config).',
+    'links), and the social provider flags (googleSsoEnabled, linkedinSsoEnabled, ' +
+    'azureAdSsoEnabled, appleSsoEnabled, githubSsoEnabled, facebookSsoEnabled). Email + ' +
+    'password login is always available on Bridge and has no toggle. IMPORTANT: enabling a ' +
+    'social flag only flips the switch — it does NOT save provider credentials; to configure ' +
+    'a provider end-to-end (credentials + enable + callback URL) use setup_sso instead. ' +
+    'Returns the updated login-method configuration (same projection as get_auth_config).',
   inputSchema: {
     mfaEnabled: z.boolean().optional().describe('Enable MFA (second factor).'),
     passkeysEnabled: z.boolean().optional().describe('Enable WebAuthn passkeys.'),
     magicLinkEnabled: z.boolean().optional().describe('Enable email magic-link login.'),
+    googleSsoEnabled: z.boolean().optional().describe('Enable Google SSO (flag only — credentials via setup_sso).'),
+    linkedinSsoEnabled: z.boolean().optional().describe('Enable LinkedIn SSO (flag only — credentials via setup_sso).'),
+    azureAdSsoEnabled: z.boolean().optional().describe('Enable Azure AD SSO (flag only — credentials via setup_sso, provider "azure").'),
+    appleSsoEnabled: z.boolean().optional().describe('Enable Apple sign-in (flag only — credentials via the Bridge dashboard).'),
+    githubSsoEnabled: z.boolean().optional().describe('Enable GitHub SSO (flag only — credentials via setup_sso).'),
+    facebookSsoEnabled: z.boolean().optional().describe('Enable Facebook SSO (flag only — credentials via setup_sso).'),
   },
   handler: async (ctx, args) => {
     try {
-      const data: { mfaEnabled?: boolean; passkeysEnabled?: boolean; magicLinkEnabled?: boolean } =
-        {};
-      if (args.mfaEnabled !== undefined) data.mfaEnabled = args.mfaEnabled as boolean;
-      if (args.passkeysEnabled !== undefined) data.passkeysEnabled = args.passkeysEnabled as boolean;
-      if (args.magicLinkEnabled !== undefined) data.magicLinkEnabled = args.magicLinkEnabled as boolean;
+      const data: Record<string, boolean> = {};
+      for (const key of AUTH_METHOD_TOGGLES) {
+        if (args[key] !== undefined) data[key] = args[key] as boolean;
+      }
       if (Object.keys(data).length === 0) {
         return {
           success: false,
           error: {
             code: 'NO_FIELDS',
             message: 'No login-method toggles were provided; nothing to update.',
-            fix: 'Pass at least one of mfaEnabled, passkeysEnabled, magicLinkEnabled.',
+            fix: `Pass at least one of ${AUTH_METHOD_TOGGLES.join(', ')}.`,
           },
         };
       }
       const app = await ctx.management.app.update(data);
+      const enabledSocial = Object.keys(data).filter((k) => SOCIAL_TOGGLES.has(k) && data[k]);
       return {
         success: true,
         data: {
           mfaEnabled: app.mfaEnabled,
           passkeysEnabled: app.passkeysEnabled,
           magicLinkEnabled: app.magicLinkEnabled,
+          googleSsoEnabled: app.googleSsoEnabled,
+          linkedinSsoEnabled: app.linkedinSsoEnabled,
+          azureAdSsoEnabled: app.azureAdSsoEnabled,
+          appleSsoEnabled: app.appleSsoEnabled,
+          githubSsoEnabled: app.githubSsoEnabled,
+          facebookSsoEnabled: app.facebookSsoEnabled,
+          ...(enabledSocial.length > 0
+            ? {
+                warning:
+                  `Enabling ${enabledSocial.join(', ')} only flips the flag — provider ` +
+                  'credentials are not configured or verified here. Use setup_sso (or the ' +
+                  'Bridge dashboard for Apple) if the provider is not set up yet.',
+              }
+            : {}),
         },
       };
     } catch (err) {

@@ -689,32 +689,80 @@ describe('update_role', () => {
 describe('update_auth_methods', () => {
   const schema = schemaOf(updateAuthMethodsTool);
 
+  const FULL_APP = {
+    mfaEnabled: false,
+    passkeysEnabled: true,
+    magicLinkEnabled: true,
+    googleSsoEnabled: true,
+    linkedinSsoEnabled: false,
+    azureAdSsoEnabled: false,
+    appleSsoEnabled: false,
+    githubSsoEnabled: false,
+    facebookSsoEnabled: false,
+  };
+
   it('schema rejects a non-boolean toggle', () => {
     expect(schema.safeParse({ mfaEnabled: 'yes' }).success).toBe(false);
+    expect(schema.safeParse({ googleSsoEnabled: 'yes' }).success).toBe(false);
   });
 
-  it('sends only the provided toggles and returns the projection', async () => {
+  it('schema accepts every social toggle (TBP-547 parity with the CLI)', () => {
+    expect(
+      schema.safeParse({
+        googleSsoEnabled: true,
+        linkedinSsoEnabled: false,
+        azureAdSsoEnabled: true,
+        appleSsoEnabled: false,
+        githubSsoEnabled: true,
+        facebookSsoEnabled: false,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('sends only the provided toggles and returns the full projection', async () => {
     const ctx = mockCtx({
-      app: {
-        update: jest.fn().mockResolvedValue({
-          mfaEnabled: false,
-          passkeysEnabled: true,
-          magicLinkEnabled: true,
-        }),
-      },
+      app: { update: jest.fn().mockResolvedValue(FULL_APP) },
     });
     const result = await updateAuthMethodsTool.handler(ctx, { passkeysEnabled: true });
     expect(ctx.management.app.update).toHaveBeenCalledWith({ passkeysEnabled: true });
-    expect(result).toEqual({
-      success: true,
-      data: { mfaEnabled: false, passkeysEnabled: true, magicLinkEnabled: true },
-    });
+    expect(result).toEqual({ success: true, data: FULL_APP });
   });
 
-  it('fails with NO_FIELDS when no toggle is passed', async () => {
+  it('flips a social flag and warns that credentials are not configured here', async () => {
+    const ctx = mockCtx({
+      app: { update: jest.fn().mockResolvedValue(FULL_APP) },
+    });
+    const result = await updateAuthMethodsTool.handler(ctx, { githubSsoEnabled: true });
+    expect(ctx.management.app.update).toHaveBeenCalledWith({ githubSsoEnabled: true });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const data = result.data as Record<string, unknown>;
+      expect(String(data.warning)).toContain('githubSsoEnabled');
+      expect(String(data.warning)).toMatch(/only flips the flag/);
+      expect(String(data.warning)).toContain('setup_sso');
+    }
+  });
+
+  it('disabling a social flag carries no warning', async () => {
+    const ctx = mockCtx({
+      app: { update: jest.fn().mockResolvedValue(FULL_APP) },
+    });
+    const result = await updateAuthMethodsTool.handler(ctx, { googleSsoEnabled: false });
+    expect(ctx.management.app.update).toHaveBeenCalledWith({ googleSsoEnabled: false });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as Record<string, unknown>).warning).toBeUndefined();
+    }
+  });
+
+  it('fails with NO_FIELDS when no toggle is passed, naming every toggle', async () => {
     const ctx = mockCtx();
     const result = await updateAuthMethodsTool.handler(ctx, {});
     expectFailure(result, 'NO_FIELDS');
+    if (!result.success) {
+      expect(result.error.fix).toContain('googleSsoEnabled');
+      expect(result.error.fix).toContain('facebookSsoEnabled');
+    }
     expect(ctx.management.app.update).not.toHaveBeenCalled();
   });
 
