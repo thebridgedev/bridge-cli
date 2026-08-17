@@ -1,25 +1,84 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
-import type { AnyBridgeToolDefinition, ToolContext, ToolResult } from './types.js';
-import { getAppTool } from './tools/app.js';
-import { listFeatureFlagsTool } from './tools/flags.js';
-import { listPlansTool } from './tools/plans.js';
-import { listRolesTool } from './tools/roles.js';
-import { getAuthConfigTool } from './tools/auth-config.js';
+import type {
+  AnyBridgeToolDefinition,
+  BridgeToolDefinition,
+  ToolContext,
+  ToolResult,
+} from './types.js';
+import { addRedirectUriTool, getAppTool, removeRedirectUriTool } from './tools/app.js';
+import {
+  createFeatureFlagTool,
+  listFeatureFlagsTool,
+  toggleFeatureFlagTool,
+  updateFeatureFlagTool,
+} from './tools/flags.js';
+import {
+  createPlanTool,
+  listPlansTool,
+  removePlanPriceTool,
+  removePlanQuotaTool,
+  setPlanPriceTool,
+  setPlanQuotaTool,
+  updatePlanTool,
+} from './tools/plans.js';
+import { createRoleTool, listRolesTool, updateRoleTool } from './tools/roles.js';
+import { getAuthConfigTool, updateAuthMethodsTool } from './tools/auth-config.js';
 import { getEnvironmentInfoTool } from './tools/environment.js';
+import { updateBrandingTool } from './tools/branding.js';
+import { setupSsoTool } from './tools/sso.js';
+import { createTenantTool } from './tools/tenants.js';
+import { inviteUserTool } from './tools/users.js';
+
+/**
+ * Erase a fully-typed tool definition down to the registry's `AnyBridgeToolDefinition`.
+ *
+ * A handler typed against a shape with REQUIRED keys (e.g. `key: z.ZodString`)
+ * is not structurally assignable to the erased handler signature (`args:
+ * { [x: string]: any }` does not prove `key` present), so the erasure needs an
+ * explicit cast. It is safe by construction: the registration loop below (and
+ * the official MCP SDK) validate incoming arguments against the tool's own
+ * `inputSchema` before the handler runs.
+ */
+function eraseTool<S extends z.ZodRawShape>(tool: BridgeToolDefinition<S>): AnyBridgeToolDefinition {
+  return tool as unknown as AnyBridgeToolDefinition;
+}
 
 /**
  * The Bridge tool registry. Transport shells never enumerate tools
  * themselves — they call `registerBridgeTools` and get whatever this array
  * contains. Adding a tool to the platform means adding it here.
+ *
+ * Deliberately NO destructive tools (deletes, user removal, token revocation)
+ * — those stay CLI-only where a human is at the keyboard.
  */
 export const bridgeTools: AnyBridgeToolDefinition[] = [
+  // Read tools
   getAppTool,
   listFeatureFlagsTool,
   listPlansTool,
   listRolesTool,
   getAuthConfigTool,
   getEnvironmentInfoTool,
+  // Write tools (TBP-539 step 2b)
+  eraseTool(createFeatureFlagTool),
+  eraseTool(updateFeatureFlagTool),
+  eraseTool(toggleFeatureFlagTool),
+  eraseTool(createPlanTool),
+  eraseTool(updatePlanTool),
+  eraseTool(setPlanPriceTool),
+  eraseTool(removePlanPriceTool),
+  eraseTool(setPlanQuotaTool),
+  eraseTool(removePlanQuotaTool),
+  eraseTool(createRoleTool),
+  eraseTool(updateRoleTool),
+  eraseTool(updateAuthMethodsTool),
+  eraseTool(updateBrandingTool),
+  eraseTool(setupSsoTool),
+  eraseTool(addRedirectUriTool),
+  eraseTool(removeRedirectUriTool),
+  eraseTool(createTenantTool),
+  eraseTool(inviteUserTool),
 ];
 
 /**

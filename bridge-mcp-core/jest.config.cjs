@@ -9,4 +9,11 @@ module.exports = {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
+  // auth-core ships ESM-only, and the write tools import VALUES from it
+  // (OPERATORS, validateRule) — not just types — so jest's CJS runtime must
+  // transform it. Un-ignore it and let ts-jest compile its .js to CJS.
+  transformIgnorePatterns: ['/node_modules/(?!@nebulr-group/bridge-auth-core/)'],
+  transform: {
+    '^.+\\.[tj]s$': ['ts-jest', { tsconfig: { allowJs: true } }],
+  },
 };

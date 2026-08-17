@@ -12,6 +12,26 @@ export function registerRoleCommands(program: Command): void {
       catch (err) { outputError(err); }
     });
 
+  role.command('get')
+    .description('Get a role by ID or key (includes privileges)')
+    .argument('<idOrKey>', 'Role ID or role key (e.g. ADMIN)')
+    .action(async (idOrKey: string) => {
+      try {
+        // The management roles API only exposes list(); resolve the single
+        // role client-side by id first, then key (same pattern as `plan get`).
+        const roles = await getManagementClient().roles.list();
+        const found = roles.find((r) => r.id === idOrKey) ?? roles.find((r) => r.key === idOrKey);
+        if (!found) {
+          throw new Error(
+            `Role not found: ${idOrKey}. Known role keys: ${
+              roles.length ? roles.map((r) => r.key).join(', ') : '(none)'
+            }`,
+          );
+        }
+        outputSuccess(found);
+      } catch (err) { outputError(err); }
+    });
+
   role.command('create')
     .description('Create a new access role')
     .requiredOption('--name <name>', 'Role name')
