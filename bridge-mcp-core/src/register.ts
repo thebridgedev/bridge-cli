@@ -2,13 +2,25 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { z } from 'zod';
 import type { AnyBridgeToolDefinition, ToolContext, ToolResult } from './types.js';
 import { getAppTool } from './tools/app.js';
+import { listFeatureFlagsTool } from './tools/flags.js';
+import { listPlansTool } from './tools/plans.js';
+import { listRolesTool } from './tools/roles.js';
+import { getAuthConfigTool } from './tools/auth-config.js';
+import { getEnvironmentInfoTool } from './tools/environment.js';
 
 /**
  * The Bridge tool registry. Transport shells never enumerate tools
  * themselves — they call `registerBridgeTools` and get whatever this array
  * contains. Adding a tool to the platform means adding it here.
  */
-export const bridgeTools: AnyBridgeToolDefinition[] = [getAppTool];
+export const bridgeTools: AnyBridgeToolDefinition[] = [
+  getAppTool,
+  listFeatureFlagsTool,
+  listPlansTool,
+  listRolesTool,
+  getAuthConfigTool,
+  getEnvironmentInfoTool,
+];
 
 /**
  * Register every Bridge tool on an official-SDK McpServer.
