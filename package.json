@@ -4,7 +4,8 @@
   "private": true,
   "description": "Bridge CLI workspace",
   "workspaces": [
-    "bridge-cli"
+    "bridge-cli",
+    "bridge-mcp-core"
   ],
   "scripts": {
     "build": "npm run build --workspace=bridge-cli",
