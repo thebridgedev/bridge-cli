@@ -17,7 +17,6 @@ import { registerInfoCommands } from './commands/info.command.js';
 import { registerGuideCommands } from './commands/guide.command.js';
 import { registerOpsCommands } from './commands/ops.command.js';
 import { registerStripeCommands } from './commands/stripe.command.js';
-import { registerMcpCommands } from './commands/mcp.command.js';
 
 // Read version from package.json so `bridge --version` never drifts from the
 // published package. dist/cli.js lives at <pkg>/dist/cli.js, so `../package.json`
@@ -47,4 +46,3 @@ registerInfoCommands(program);
 registerGuideCommands(program);
 registerOpsCommands(program);
 registerStripeCommands(program);
-registerMcpCommands(program, version);

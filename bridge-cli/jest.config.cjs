@@ -20,10 +20,6 @@ module.exports = {
     // modules importing it stay loadable in tests. Must precede the `.js`-suffix
     // stripper below to win the first-match.
     '(^|/)runtime-dir(\\.js)?$': '<rootDir>/src/commands/runtime-dir.stub.ts',
-    // Workspace sibling: resolve the mcp-core package to its TS source so the
-    // suite runs regardless of whether node_modules carries a workspace
-    // symlink (local in-container installs use --workspaces=false).
-    '^@nebulr-group/bridge-mcp-core$': '<rootDir>/../bridge-mcp-core/src/index.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   // @nebulr-group/bridge-auth-core ships ESM-only. Transform its dist JS to
