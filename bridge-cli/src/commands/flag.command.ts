@@ -43,6 +43,7 @@ import type {
 } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
+import { resolveFlagId } from '../resolve.js';
 import { registerFlagInitCommand } from './flag-init.command.js';
 
 // Re-export the canonical validator so existing consumers/tests keep a single
@@ -199,9 +200,10 @@ function registerCreate(flag: Command): void {
 function registerUpdate(flag: Command): void {
   flag
     .command('update')
-    .description('Update a feature flag (2.0 fields)')
-    .requiredOption('--id <id>', 'Flag ID')
-    .option('--key <key>', 'Flag key')
+    .description('Update a feature flag by --key or --id (2.0 fields)')
+    .option('--key <key>', 'Flag key to address (alternative to --id)')
+    .option('--id <id>', 'Flag ID to address (alternative to --key)')
+    .option('--new-key <key>', 'Rename the flag to this key')
     .option('--description <desc>', 'Description')
     .option('--state <state>', `Three-state model: ${FLAG_STATES.join(' | ')}`)
     .option('--value-type <type>', `Flag value type: ${FLAG_VALUE_TYPES.join(' | ')}`)
@@ -214,8 +216,23 @@ function registerUpdate(flag: Command): void {
     .option('--default-value <bool>', 'Legacy: default value', (v) => v === 'true')
     .action(async (opts) => {
       try {
-        const { id } = opts;
-        const payload = buildFlagWritePayload(opts, { partial: true }) as UpdateFlagInput;
+        // TBP-586. `--key` is overloaded here for backwards compatibility:
+        // before key-addressing existed, `flag update --id X --key Y` renamed
+        // the flag to Y, and that still works. So `--key` means "address this
+        // flag" only when `--id` is absent; alongside `--id` it keeps its old
+        // rename meaning. `--new-key` renames in either addressing mode.
+        const addressedById = opts.id !== undefined;
+        const renameTo = opts.newKey !== undefined
+          ? opts.newKey
+          : (addressedById ? opts.key : undefined);
+        const id = await resolveFlagId({
+          id: opts.id,
+          key: addressedById ? undefined : opts.key,
+        });
+        const payload = buildFlagWritePayload(
+          { ...opts, key: renameTo },
+          { partial: true },
+        ) as UpdateFlagInput;
         if (opts.clearRule) {
           payload.rule = null;
         }
@@ -232,12 +249,14 @@ function registerUpdate(flag: Command): void {
 function registerToggle(flag: Command): void {
   flag
     .command('toggle')
-    .description('Quick toggle a flag on or off (does not affect rule)')
-    .requiredOption('--id <id>', 'Flag ID')
+    .description('Quick toggle a flag on or off by --key or --id (does not affect rule)')
+    .option('--key <key>', 'Flag key to address (alternative to --id)')
+    .option('--id <id>', 'Flag ID to address (alternative to --key)')
     .requiredOption('--enabled <bool>', 'true or false', (v) => v === 'true')
     .action(async (opts) => {
       try {
-        const result = await getManagementClient().flags.toggle(opts.id, opts.enabled);
+        const id = await resolveFlagId({ id: opts.id, key: opts.key });
+        const result = await getManagementClient().flags.toggle(id, opts.enabled);
         outputSuccess(result);
       } catch (err) {
         outputError(err);
@@ -250,12 +269,14 @@ function registerToggle(flag: Command): void {
 function registerDelete(flag: Command): void {
   flag
     .command('delete')
-    .description('Delete a feature flag')
-    .requiredOption('--id <id>', 'Flag ID')
+    .description('Delete a feature flag by --key or --id')
+    .option('--key <key>', 'Flag key to address (alternative to --id)')
+    .option('--id <id>', 'Flag ID to address (alternative to --key)')
     .action(async (opts) => {
       try {
-        await getManagementClient().flags.delete(opts.id);
-        outputSuccess({ deleted: true, id: opts.id });
+        const id = await resolveFlagId({ id: opts.id, key: opts.key });
+        await getManagementClient().flags.delete(id);
+        outputSuccess({ deleted: true, id });
       } catch (err) {
         outputError(err);
       }
@@ -335,7 +356,7 @@ function registerSchedule(flag: Command): void {
           throw new Error(`Invalid --at: ${opts.at} is not a valid ISO-8601 timestamp.`);
         }
 
-        const id = await resolveFlagId(key);
+        const id = await resolveFlagId({ key });
         const schedule: FlagSchedule = { at: at.toISOString(), state: opts.state as FlagState };
         const update: UpdateFlagInput = { schedule };
         const result = await getManagementClient().flags.update(id, update);
@@ -351,7 +372,7 @@ function registerSchedule(flag: Command): void {
     .description('Clear an existing schedule')
     .action(async (key: string) => {
       try {
-        const id = await resolveFlagId(key);
+        const id = await resolveFlagId({ key });
         const update: UpdateFlagInput = { schedule: null };
         const result = await getManagementClient().flags.update(id, update);
         outputSuccess(result);
@@ -902,13 +923,6 @@ export function parseAttributes(pairs: string[]): Record<string, unknown> {
     }
   }
   return out;
-}
-
-async function resolveFlagId(key: string): Promise<string> {
-  const all = await getManagementClient().flags.list();
-  const found = all.find((f) => f.key === key);
-  if (!found) throw new Error(`Flag not found: ${key}`);
-  return found.id;
 }
 
 // ── Local evaluator (delegates to auth-core's canonical evaluator) ──────────

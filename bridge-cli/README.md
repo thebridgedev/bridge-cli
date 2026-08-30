@@ -74,6 +74,33 @@ All output is JSON by default for management commands. AI agents parse it direct
 bridge <command> <subcommand> [options]
 ```
 
+### Addressing a resource
+
+Every command that acts on a single resource takes **either** its opaque id
+**or** its human-readable identifier — you never have to run a `list` first just
+to look up an id.
+
+| Noun | Human-readable option | Id option |
+|---|---|---|
+| flag | `--key <key>` (or a positional `<key>` on `get` / `eval` / `schedule`) | `--id` |
+| role | `--key <key>` (or a positional `<idOrKey>` on `get`) | `--id` |
+| plan | positional `<key>` — plans are key-native, no id anywhere | — |
+| tenant | `--name <name>` | `--id` |
+| user | `--email <email>` | `--user-id` |
+| token | `--name <name>` | `--id` |
+
+Rules, the same for every noun:
+
+- Pass exactly one. Both together, or neither, is an error.
+- An identifier that matches nothing fails and names the `list` command to run.
+- An identifier that matches **more than one** resource fails, lists the
+  candidates, and changes nothing. The CLI never picks one for you — pass `--id`
+  to disambiguate.
+
+`--name` and `--email` exist because tenants, users and tokens have no key
+field. Of those, only a user's email is unique; tenant and token names are free
+text, which is exactly why the ambiguity check is a hard failure.
+
 ### Auth (interactive credentials)
 
 ```bash
@@ -104,11 +131,20 @@ bridge app update --name "My App" --mfa-enabled true
 
 ```bash
 bridge tenant list
-bridge tenant get --id <tenant-id>
+bridge tenant get --name "Acme Corp"              # or --id <tenant-id>
 bridge tenant create --owner-email admin@acme.com --name "Acme Corp" --plan enterprise
-bridge tenant update --id <tenant-id> --name "Acme Corp Updated"
-bridge tenant delete --id <tenant-id>
+bridge tenant update --name "Acme Corp" --locale sv
+bridge tenant update --name "Acme Corp" --new-name "Acme Corp Updated"
+bridge tenant delete --name "Acme Corp"           # or --id <tenant-id>
 ```
+
+Tenants have no key field, so they are addressed by `--name`. Names are **not**
+enforced unique — if two tenants share one, the command fails and lists both
+rather than guessing. Use `--id` to disambiguate.
+
+`tenant update --name` addresses the tenant when `--id` is absent; passed
+alongside `--id` it keeps its original meaning and renames the tenant.
+`--new-name` always renames, whichever way you addressed it.
 
 ### Users
 
@@ -116,19 +152,23 @@ Requires tenant context via `--tenant-id` or `BRIDGE_TENANT_ID`.
 
 ```bash
 bridge user list --tenant-id <tenant-id>
-bridge user get --user-id <user-id> --tenant-id <tenant-id>
+bridge user get --email alice@acme.com --tenant-id <tenant-id>      # or --user-id <user-id>
 bridge user invite --email alice@acme.com --role ADMIN --tenant-id <tenant-id>
-bridge user update --user-id <user-id> --role OWNER --tenant-id <tenant-id>
-bridge user remove --user-id <user-id> --tenant-id <tenant-id>
+bridge user update --email alice@acme.com --role OWNER --tenant-id <tenant-id>
+bridge user remove --email alice@acme.com --tenant-id <tenant-id>
 ```
+
+Users have no key field either; `--email` is the human-readable address and is
+unique within a tenant (matched case-insensitively).
 
 ### Access Roles
 
 ```bash
 bridge role list
+bridge role get ADMIN
 bridge role create --name Editor --key editor --privileges READ,WRITE
-bridge role update --id <role-id> --privileges READ,WRITE,DELETE
-bridge role delete --id <role-id>
+bridge role update --key editor --privileges READ,WRITE,DELETE     # or --id <role-id>
+bridge role delete --key editor                                    # or --id <role-id>
 ```
 
 ### Feature Flags
@@ -136,10 +176,15 @@ bridge role delete --id <role-id>
 ```bash
 bridge flag list
 bridge flag create --key dark-mode --description "Dark mode UI" --enabled
-bridge flag update --id <flag-id> --enabled true
-bridge flag toggle --id <flag-id> --enabled true
-bridge flag delete --id <flag-id>
+bridge flag update --key dark-mode --state on                      # or --id <flag-id>
+bridge flag update --key dark-mode --new-key dark-theme            # rename
+bridge flag toggle --key dark-mode --enabled true                  # or --id <flag-id>
+bridge flag delete --key dark-mode                                 # or --id <flag-id>
 ```
+
+`flag update --key` addresses the flag when `--id` is absent; passed alongside
+`--id` it keeps its original meaning and renames the flag. `--new-key` always
+renames, whichever way you addressed it.
 
 ### Branding
 
@@ -175,8 +220,11 @@ bridge plan quota rm  pro --metric ai_completions
 ```bash
 bridge token list
 bridge token create --name "CI Token" --privileges USER_READ,TENANT_READ
-bridge token revoke --id <token-id>
+bridge token revoke --name "CI Token"             # or --id <token-id>
 ```
+
+Token names are free text and not enforced unique — a duplicate name fails and
+lists the candidates instead of revoking one at random.
 
 ### Events
 
