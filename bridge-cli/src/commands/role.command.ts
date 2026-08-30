@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
-import { resolveRoleId } from '../resolve.js';
+import { resolvePrivilegeIds, resolveRoleId } from '../resolve.js';
 
 export function registerRoleCommands(program: Command): void {
   const role = program.command('role').description('Manage access roles');
@@ -18,15 +18,19 @@ export function registerRoleCommands(program: Command): void {
     .requiredOption('--name <name>', 'Role name')
     .requiredOption('--key <key>', 'Role key')
     .option('--description <desc>', 'Description')
-    .option('--privileges <list>', 'Comma-separated privilege keys', (v) => v.split(','))
+    .option('--privileges <list>', 'Comma-separated privilege keys (ids also accepted)', (v) => v.split(','))
     .option('--is-default', 'Set as default role', false)
     .action(async (opts) => {
       try {
+        // TBP-592: --privileges is documented as taking KEYS, but the API
+        // stores ObjectIds and silently drops anything that isn't one. Resolve
+        // here so the documented behaviour is the real behaviour.
+        const privileges = await resolvePrivilegeIds(opts.privileges ?? []);
         outputSuccess(await getManagementClient().roles.create({
           name: opts.name,
           key: opts.key,
           description: opts.description,
-          privileges: opts.privileges ?? [],
+          privileges,
           isDefault: opts.isDefault,
         }));
       } catch (err) { outputError(err); }
@@ -38,7 +42,7 @@ export function registerRoleCommands(program: Command): void {
     .option('--id <id>', 'Role ID to address (alternative to --key)')
     .option('--name <name>', 'Role name')
     .option('--description <desc>', 'Description')
-    .option('--privileges <list>', 'Comma-separated privilege keys', (v) => v.split(','))
+    .option('--privileges <list>', 'Comma-separated privilege keys (ids also accepted)', (v) => v.split(','))
     .action(async (opts) => {
       try {
         // TBP-586: `--key`/`--id` are addressing only — strip both out of the
@@ -46,6 +50,12 @@ export function registerRoleCommands(program: Command): void {
         const { id: _id, key: _key, ...data } = opts;
         const roleId = await resolveRoleId({ id: opts.id, key: opts.key });
         const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+        // TBP-592: same key->id resolution as `create`. Only when the caller
+        // actually passed --privileges: an absent key must stay absent so an
+        // update that renames a role does not blank its privileges.
+        if (opts.privileges !== undefined) {
+          cleaned.privileges = await resolvePrivilegeIds(opts.privileges);
+        }
         outputSuccess(await getManagementClient().roles.update(roleId, cleaned));
       } catch (err) { outputError(err); }
     });
