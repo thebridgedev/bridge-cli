@@ -23,6 +23,8 @@ import { startLoopback, LoopbackError } from '../../auth/loopback.js';
 import { openBrowser } from '../../auth/browser-open.js';
 import { createCliApiClient, CliAuthApiError } from '../../auth/api-client.js';
 
+import { SCOPE_MANAGEMENT, SCOPE_MANAGEMENT_ADMIN } from '../../auth/scopes.js';
+
 const DEFAULT_API_BASE_URL = 'https://api.thebridge.dev';
 const DEFAULT_AUTH_BASE_URL = 'https://auth.thebridge.dev';
 
@@ -35,7 +37,11 @@ interface LoginOptions {
    */
   browser?: boolean;
   reauth?: boolean;
+  /** TBP-593 — request the elevated `management:admin` scope. */
+  admin?: boolean;
 }
+
+
 
 export { runLogin };
 
@@ -47,6 +53,7 @@ export function registerAuthLoginCommand(auth: Command): void {
     .option('--label <text>', 'Friendly label stored on the token (default: "bridge-cli")')
     .option('--no-browser', 'Print the authorization URL instead of opening a browser')
     .option('--reauth', 'Force the consent screen to sign you out and prompt for credentials again')
+    .option('--admin', 'Also request delete authority and the ability to create API tokens. Needed for `bridge token create`, `bridge role delete` and `bridge tenant delete`. Without this the token can read, create and update but cannot delete anything.')
     .action(async (opts: LoginOptions) => {
       try {
         await runLogin(opts);
@@ -92,6 +99,7 @@ async function runLogin(opts: LoginOptions): Promise<void> {
     appId: opts.app,
     label: opts.label,
     reauth: opts.reauth === true,
+    admin: opts.admin === true,
   });
 
   // 3. Open browser (or print URL if --no-browser or open fails).
@@ -172,13 +180,14 @@ function buildAuthorizeUrl(
     appId?: string;
     label?: string;
     reauth?: boolean;
+    admin?: boolean;
   },
 ): string {
   const url = new URL(`${authBaseUrl}/cli/authorize`);
   url.searchParams.set('challenge', params.challenge);
   url.searchParams.set('redirect', params.redirect);
   url.searchParams.set('state', params.state);
-  url.searchParams.set('scope', 'management');
+  url.searchParams.set('scope', params.admin ? SCOPE_MANAGEMENT_ADMIN : SCOPE_MANAGEMENT);
   if (params.appId) url.searchParams.set('app_id', params.appId);
   if (params.label) url.searchParams.set('label', params.label);
   // OAuth-style `prompt=login` — the consent screen reads this as "clear any

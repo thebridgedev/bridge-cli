@@ -1,5 +1,6 @@
 import { HttpError } from '@nebulr-group/bridge-auth-core';
 import { ConfigError } from './config.js';
+import { ADMIN_SCOPE_PRIVILEGES } from './auth/scopes.js';
 
 export function outputSuccess(data: unknown): void {
   const output = { success: true, data };
@@ -17,10 +18,29 @@ export function outputPrompt(content: string): void {
   process.stdout.write(content.endsWith('\n') ? content : content + '\n');
 }
 
+
+/**
+ * Turn "Privilege 'TOKEN_WRITE' required" into something the reader can act
+ * on. Without this the message is a dead end: it names a privilege but not how
+ * to obtain one, and the answer ("log in again, differently") is not guessable.
+ */
+export function privilegeHint(message: string): string | undefined {
+  const match = /Privilege '([A-Z_]+)' required/.exec(message);
+  const privilege = match?.[1];
+  if (!privilege || !ADMIN_SCOPE_PRIVILEGES.has(privilege)) return undefined;
+  return (
+    `Your login token does not carry ${privilege}. ` +
+    'Re-authenticate with `bridge auth login --admin` to request delete authority ' +
+    'and the ability to create API tokens. The default login deliberately omits ' +
+    'them — the token is stored on disk and lives for 10 days.'
+  );
+}
+
 export function outputError(error: unknown): void {
   let code = 'UNKNOWN_ERROR';
   let message = 'An unknown error occurred';
   let details: unknown = undefined;
+  let hint: string | undefined;
   let exitCode = 1;
 
   if (error instanceof ConfigError) {
@@ -37,6 +57,16 @@ export function outputError(error: unknown): void {
     if (typeof error.body === 'object' && error.body && 'nblocksCode' in error.body) {
       code = (error.body as Record<string, string>).nblocksCode;
     }
+
+    if (error.status === 403) {
+      // The server's message is the authoritative one; check the body too,
+      // since the privilege name sometimes only appears there.
+      const bodyMessage =
+        typeof error.body === 'object' && error.body && 'message' in error.body
+          ? String((error.body as Record<string, unknown>).message)
+          : '';
+      hint = privilegeHint(message) ?? privilegeHint(bodyMessage);
+    }
   } else if (error instanceof Error) {
     message = error.message;
     // TBP-586: errors that carry their own machine-readable `code` (e.g.
@@ -48,7 +78,15 @@ export function outputError(error: unknown): void {
     }
   }
 
-  const output = { success: false, error: { code, message, ...(details !== undefined ? { details } : {}) } };
+  const output = {
+    success: false,
+    error: {
+      code,
+      message,
+      ...(hint !== undefined ? { hint } : {}),
+      ...(details !== undefined ? { details } : {}),
+    },
+  };
   process.stderr.write(JSON.stringify(output, null, 2) + '\n');
   process.exitCode = exitCode;
 }
