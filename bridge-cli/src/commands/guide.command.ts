@@ -5,6 +5,7 @@ import { commandsDir } from './runtime-dir.js';
 import { outputSuccess, outputPrompt, outputError } from '../output.js';
 import { readCredentials, isExpired } from '../credentials.js';
 import { runLogin } from './auth/login.command.js';
+import { AUTH_MASTER_PROMPT_FILENAME, AUTH_MASTER_PROMPT_URL, pluginGuideUrl } from '../prompt-urls.js';
 
 /**
  * Locate the directory containing this module on disk so the bundled prompts
@@ -22,7 +23,6 @@ function thisDir(): string {
   return commandsDir;
 }
 
-const GUIDE_BASE_URL = 'https://raw.githubusercontent.com/thebridgedev';
 const GUIDE_REPOS: Record<string, string> = {
   react: 'bridge-react/main',
   svelte: 'bridge-svelte/main',
@@ -381,7 +381,7 @@ async function fetchGuide(tech: string, feature?: string): Promise<string> {
     }
   }
 
-  const url = `${GUIDE_BASE_URL}/${repoPrefix}/mcp/${filename}`;
+  const url = pluginGuideUrl(repoPrefix, filename);
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -394,11 +394,8 @@ async function fetchGuide(tech: string, feature?: string): Promise<string> {
   return content;
 }
 
-const MASTER_PROMPT_GITHUB_URL =
-  'https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/bridge-cli/prompts/auth-master-integration-prompt.md';
-
 async function fetchMasterPrompt(): Promise<string> {
-  const filename = 'auth-master-integration-prompt.md';
+  const filename = AUTH_MASTER_PROMPT_FILENAME;
 
   // Local override for development
   const localDir = process.env.BRIDGE_GUIDE_LOCAL_DIR;
@@ -424,7 +421,7 @@ async function fetchMasterPrompt(): Promise<string> {
   }
 
   // Remote fetch
-  const response = await fetch(MASTER_PROMPT_GITHUB_URL);
+  const response = await fetch(AUTH_MASTER_PROMPT_URL);
   if (!response.ok) {
     throw new Error(`Auth master integration prompt not available (HTTP ${response.status})`);
   }

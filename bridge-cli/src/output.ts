@@ -39,6 +39,13 @@ export function outputError(error: unknown): void {
     }
   } else if (error instanceof Error) {
     message = error.message;
+    // TBP-586: errors that carry their own machine-readable `code` (e.g.
+    // ResolveError's FLAG_NOT_FOUND / TENANT_AMBIGUOUS / INVALID_OPTIONS)
+    // report it instead of collapsing to UNKNOWN_ERROR.
+    const carried = (error as { code?: unknown }).code;
+    if (typeof carried === 'string' && carried.length > 0) {
+      code = carried;
+    }
   }
 
   const output = { success: false, error: { code, message, ...(details !== undefined ? { details } : {}) } };

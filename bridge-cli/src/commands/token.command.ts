@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
+import { resolveTokenIdByName } from '../resolve.js';
 
 export function registerTokenCommands(program: Command): void {
   const token = program.command('token').description('Manage API tokens');
@@ -28,12 +29,14 @@ export function registerTokenCommands(program: Command): void {
     });
 
   token.command('revoke')
-    .description('Revoke an API token')
-    .requiredOption('--id <id>', 'Token ID')
+    .description('Revoke an API token by --name or --id')
+    .option('--name <name>', 'Token name to address (alternative to --id; fails if not unique)')
+    .option('--id <id>', 'Token ID to address (alternative to --name)')
     .action(async (opts) => {
       try {
-        await getManagementClient().tokens.revoke(opts.id);
-        outputSuccess({ revoked: true, id: opts.id });
+        const id = await resolveTokenIdByName({ id: opts.id, key: opts.name });
+        await getManagementClient().tokens.revoke(id);
+        outputSuccess({ revoked: true, id });
       } catch (err) { outputError(err); }
     });
 }
