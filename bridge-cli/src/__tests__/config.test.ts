@@ -26,9 +26,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 // Mock the auth-core package before any import resolves it. We capture the
-// constructor calls so each test can introspect what was passed. The package
-// may not be installed in node_modules during isolated test runs, so we mark
-// the mock as `virtual` to bypass module resolution.
+// constructor calls so each test can introspect what was passed.
+//
+// TBP-595 — do NOT add `{ virtual: true }` here (or to any other mock in this
+// suite). `virtual` is for modules that do not exist. auth-core is a real,
+// installed dependency, and marking a resolvable module virtual made the mock
+// win or lose depending on whether something else in the same worker had
+// already resolved the real one. Symptom: adding ANY 17th test file made six
+// tests in this file fail intermittently, with `ManagementMock` never called
+// — the real BridgeManagement was being constructed instead. It cost real
+// debugging time precisely because the trigger looked unrelated to the cause.
 const ManagementMock = jest.fn();
 jest.mock(
   '@nebulr-group/bridge-auth-core',
@@ -36,7 +43,6 @@ jest.mock(
     __esModule: true,
     BridgeManagement: ManagementMock,
   }),
-  { virtual: true },
 );
 
 describe('getManagementClient (bridge-cli config)', () => {
@@ -92,7 +98,6 @@ describe('getManagementClient (bridge-cli config)', () => {
           __esModule: true,
           BridgeManagement: ManagementMock,
         }),
-        { virtual: true },
       );
       mod = require('../config');
     });

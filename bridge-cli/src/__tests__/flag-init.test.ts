@@ -16,7 +16,6 @@ jest.mock(
     BridgeManagement: jest.fn(),
     HttpError: class HttpError extends Error {},
   }),
-  { virtual: true },
 );
 
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
