@@ -5,8 +5,8 @@
 
 // plan.command.ts imports config/output at module load; stub them so importing
 // the pure helpers has no side effects (no real management client).
-jest.mock('../config.js', () => ({ getManagementClient: jest.fn() }), { virtual: true });
-jest.mock('../output.js', () => ({ outputSuccess: jest.fn(), outputError: jest.fn() }), { virtual: true });
+jest.mock('../config.js', () => ({ getManagementClient: jest.fn() }));
+jest.mock('../output.js', () => ({ outputSuccess: jest.fn(), outputError: jest.fn() }));
 
 import { validateQuotaEntry, upsertQuota, type Quota } from '../commands/plan.command.js';
 

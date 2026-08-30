@@ -32,7 +32,6 @@ jest.mock(
     validateRule: () => [],
     evaluateRule: () => ({ value: null, variantIndex: -1, matched: false, excludedByRollout: false }),
   }),
-  { virtual: true },
 );
 
 jest.mock('../config.js', () => ({

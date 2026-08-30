@@ -13,7 +13,6 @@
 jest.mock(
   '@nebulr-group/bridge-auth-core',
   () => ({ __esModule: true, BridgeManagement: jest.fn() }),
-  { virtual: true },
 );
 
 import { Command } from 'commander';
