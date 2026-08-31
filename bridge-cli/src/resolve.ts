@@ -266,6 +266,24 @@ export async function resolvePrivilegeIds(identifiers: string[]): Promise<string
 }
 
 /**
+ * `bridge privilege …` — privilege keys are unique within an app, so a key
+ * addresses exactly one. Same shape as `resolveRoleId`.
+ */
+export function resolvePrivilegeId(target: ResolveTarget): Promise<string> {
+  return resolveResourceId(target, {
+    noun: 'Privilege',
+    idOption: '--id',
+    keyOption: '--key',
+    keyLabel: 'key',
+    listCommand: 'bridge privilege list',
+    list: () => getManagementClient().roles.listPrivileges(),
+    idOf: (p) => p.id,
+    keyOf: (p) => p.key,
+    describe: (p) => `${p.key}${p.description ? ` — ${p.description}` : ''} (id ${p.id})`,
+  });
+}
+
+/**
  * `bridge token …` — API tokens have no key; `name` is free text and is NOT
  * enforced unique, so two tokens can legitimately share one.
  */
