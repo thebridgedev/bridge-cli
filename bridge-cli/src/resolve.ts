@@ -207,6 +207,83 @@ export function resolveUserId(target: ResolveTarget, tenantId: string): Promise<
 }
 
 /**
+ * TBP-592 — turn privilege KEYS into the ids `POST/PUT /account/role` stores.
+ *
+ * `--privileges` is documented as taking keys, and keys are the only form a
+ * human or agent has: they are what `bridge role list` prints and what the app
+ * is designed around. But `role.model.ts` types `privileges` as
+ * `Types.ObjectId[]` and resolves them with `findByIdsAndApp`, so a key
+ * resolved to nothing, the array came back empty, and the model's pre-save
+ * hook threw "A role needs at least one privilege".
+ *
+ * That error is the real cost. It reads as "you passed none" when the truth is
+ * "the ones you passed were dropped", and nothing in it points at keys-vs-ids —
+ * the only way to find out was to read the model.
+ *
+ * So: resolve here, and make an unknown identifier a hard failure that NAMES
+ * the offenders. Silently dropping one privilege out of ten would create a role
+ * that looks right and under-permits, which is worse than any error.
+ *
+ * Ids are still accepted and passed through untouched. Mixed input works. That
+ * keeps `--privileges` honest for scripts that already pass ids, and means no
+ * caller has to know which form the API wants.
+ */
+export async function resolvePrivilegeIds(identifiers: string[]): Promise<string[]> {
+  const wanted = identifiers.map((v) => v.trim()).filter((v) => v !== '');
+  if (wanted.length === 0) return [];
+
+  const privileges = await getManagementClient().roles.listPrivileges();
+  const byKey = new Map(privileges.map((p) => [p.key, p.id]));
+  const knownIds = new Set(privileges.map((p) => p.id));
+
+  const resolved: string[] = [];
+  const unknown: string[] = [];
+
+  for (const identifier of wanted) {
+    const id = byKey.get(identifier);
+    if (id !== undefined) {
+      resolved.push(id);
+    } else if (knownIds.has(identifier)) {
+      resolved.push(identifier); // already an id
+    } else {
+      unknown.push(identifier);
+    }
+  }
+
+  if (unknown.length > 0) {
+    const available = privileges.map((p) => p.key).sort();
+    throw new ResolveError(
+      'PRIVILEGE_NOT_FOUND',
+      `Unknown privilege${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}.\n` +
+        `Nothing was changed. Available privileges: ${available.join(', ') || '(none defined)'}.\n` +
+        `Run \`bridge role list\` to see which roles use them.`,
+    );
+  }
+
+  // De-duplicate: two spellings of the same privilege (its key and its id) must
+  // not produce a doubled entry in the stored array.
+  return [...new Set(resolved)];
+}
+
+/**
+ * `bridge privilege …` — privilege keys are unique within an app, so a key
+ * addresses exactly one. Same shape as `resolveRoleId`.
+ */
+export function resolvePrivilegeId(target: ResolveTarget): Promise<string> {
+  return resolveResourceId(target, {
+    noun: 'Privilege',
+    idOption: '--id',
+    keyOption: '--key',
+    keyLabel: 'key',
+    listCommand: 'bridge privilege list',
+    list: () => getManagementClient().roles.listPrivileges(),
+    idOf: (p) => p.id,
+    keyOf: (p) => p.key,
+    describe: (p) => `${p.key}${p.description ? ` — ${p.description}` : ''} (id ${p.id})`,
+  });
+}
+
+/**
  * `bridge token …` — API tokens have no key; `name` is free text and is NOT
  * enforced unique, so two tokens can legitimately share one.
  */
