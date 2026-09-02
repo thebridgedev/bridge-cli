@@ -160,9 +160,28 @@ describe('renderSnippet', () => {
     '@nebulr-group/bridge-express/flags',
     '@nebulr-group/bridge-nextjs/flags',
     '@nebulr-group/bridge-angular/flags',
-    // bridge-nestjs has no `exports` map, so this specifier 404s at runtime.
-    "'@nebulr-group/bridge-nestjs/flags'",
+    // NOTE: `@nebulr-group/bridge-nestjs/flags` was on this list because the
+    // package shipped no `exports` map and the specifier 404'd at runtime.
+    // bridge-nestjs 0.6.0 declares `./flags` (TBP-613), so it is now the
+    // correct path and the scaffolder emits it. The deep path it replaced
+    // takes its place here — that one is genuinely unreachable now, since
+    // 0.6.0 removes `./dist/*` from the exports map rather than aliasing it.
+    '@nebulr-group/bridge-nestjs/dist/flags',
   ];
+
+  // TBP-613 — the nestjs snippet reached into the build directory because
+  // `<pkg>/flags` did not resolve. It does now, and bridge-nestjs 0.6.0 drops
+  // `./dist/*` from its exports map entirely, so scaffolding the old path
+  // would generate projects that fail with ERR_PACKAGE_PATH_NOT_EXPORTED.
+  //
+  // Both directions asserted on purpose: the old path absent AND the new one
+  // present. Checking only for the absence of `/dist/` would pass if the
+  // import were dropped altogether.
+  it('scaffolds the nestjs flags import from the package subpath, not from dist', () => {
+    const s = renderSnippet('nestjs', ctx);
+    expect(s).toContain("'@nebulr-group/bridge-nestjs/flags'");
+    expect(s).not.toContain('bridge-nestjs/dist');
+  });
 
   it.each<FlagsFramework>(['svelte', 'react', 'nextjs', 'angular', 'nestjs', 'express', 'unknown'])(
     'the %s snippet references no non-existent API',
