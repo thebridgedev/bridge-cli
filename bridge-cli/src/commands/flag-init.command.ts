@@ -143,10 +143,13 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
   //                     "./client", server-side flags live under "./server".
   //   angular         — ships a single ng-packagr entry point; everything comes
   //                     from the bare specifier.
-  //   nestjs          — has no `exports` map at all, so `<pkg>/flags` falls
-  //                     back to legacy resolution and 404s (the published
-  //                     tarball only ships `dist/`). `dist/flags` is the only
-  //                     specifier that resolves today.
+  //   nestjs          — declares "./flags" since 0.6.0 (TBP-613). Before that
+  //                     it had no `exports` map, so `<pkg>/flags` fell back to
+  //                     legacy resolution and 404'd, and this scaffolder
+  //                     emitted `<pkg>/dist/flags` instead. Reaching into the
+  //                     build directory was never right — it froze the dist
+  //                     layout into a public contract — and generating it here
+  //                     is how the wrong path spread. Requires >= 0.6.0.
   //   express         — no `exports` map and no flags entry point; the flag
   //                     surface is on the bare specifier.
   const pkgFor: Record<Exclude<FlagsFramework, 'unknown'>, string> = {
@@ -154,7 +157,7 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
     react: '@nebulr-group/bridge-react/flags',
     nextjs: '@nebulr-group/bridge-nextjs/client',
     angular: '@nebulr-group/bridge-angular',
-    nestjs: '@nebulr-group/bridge-nestjs/dist/flags',
+    nestjs: '@nebulr-group/bridge-nestjs/flags',
     express: '@nebulr-group/bridge-express',
   };
 
@@ -362,9 +365,7 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '   bun add @nebulr-group/bridge-nestjs',
         '   ```',
         '',
-        '2. Import the module in `app.module.ts`. NOTE: the package declares no',
-        '   `exports` map, so `@nebulr-group/bridge-nestjs/flags` does not resolve',
-        '   — import from `/dist/flags` until that is fixed:',
+        '2. Import the module in `app.module.ts` (requires bridge-nestjs >= 0.6.0):',
         '   ```ts',
         `   import { BridgeFlagsModule } from '${pkg}';`,
         '',
