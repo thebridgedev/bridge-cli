@@ -66,6 +66,37 @@ export BRIDGE_TENANT_ID=<tenant-id>                 # for user commands
 export BRIDGE_DEBUG=true                            # enable debug logging
 ```
 
+### 3. Targeting a local stack
+
+Two exports, then log in as usual — the browser flow works against a local
+stack the same way it does against production:
+
+```bash
+export BRIDGE_BASE_URL=http://localhost:3200        # bridge-api
+export BRIDGE_AUTH_BASE_URL=http://localhost:3091   # consent screen (cloud-views)
+
+bridge auth login
+```
+
+`BRIDGE_BASE_URL` is where commands send their API calls; `BRIDGE_AUTH_BASE_URL`
+is where `bridge auth login` opens the consent screen. Set the second one too,
+or you will authenticate against production and then issue commands against
+your local API with a token it does not accept.
+
+There is deliberately **no config file to source** (TBP-121). A sourceable file
+mixed CLI settings with two demo apps' settings, pinned an undocumented app id,
+and kept a long-lived API key on disk in plaintext; two exports cover the same
+ground without any of that. For CI, use `BRIDGE_API_KEY` as described above.
+
+One more, for working on the integration guides themselves:
+
+```bash
+export BRIDGE_GUIDE_LOCAL_DIR=/path/to/thebridge-platform/bridge-plugins
+```
+
+`bridge guide` and `bridge integrate` then read prompts from that directory
+instead of fetching them from GitHub, so edits show up without a release.
+
 ## Usage
 
 All output is JSON by default for management commands. AI agents parse it directly; humans can pipe through `jq`. The `bridge auth status` and `bridge auth login` commands print human-readable text, since their primary audience is a human in a terminal.
