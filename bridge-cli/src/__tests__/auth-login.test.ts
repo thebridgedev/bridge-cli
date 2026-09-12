@@ -168,13 +168,22 @@ describe('bridge auth login', () => {
       // eslint-disable-next-line no-bitwise
       expect(stat.mode & 0o777).toBe(0o600);
     }
+    // TBP-628 — the file is a keyed map plus an `active` pointer, not a bare
+    // credential. Asserting the envelope AND the pointer, because a login that
+    // stored the credential without activating it would leave the user's next
+    // command running against whichever app was active before.
     const written = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    expect(written.apiKey).toBe('fake-jwt-login');
-    expect(written.expiresAt).toBe('2099-01-01T00:00:00.000Z');
-    expect(written.app).toEqual({ id: 'app-99', name: 'Test App' });
-    expect(written.user).toEqual({ id: 'user-99', email: 'login@acme.com' });
-    expect(written.baseUrl).toBe('https://api.example.com');
-    expect(typeof written.issuedAt).toBe('string');
+    expect(written.version).toBe(2);
+    expect(written.active).toBe('app-99');
+    expect(Object.keys(written.credentials)).toEqual(['app-99']);
+
+    const stored = written.credentials['app-99'];
+    expect(stored.apiKey).toBe('fake-jwt-login');
+    expect(stored.expiresAt).toBe('2099-01-01T00:00:00.000Z');
+    expect(stored.app).toEqual({ id: 'app-99', name: 'Test App' });
+    expect(stored.user).toEqual({ id: 'user-99', email: 'login@acme.com' });
+    expect(stored.baseUrl).toBe('https://api.example.com');
+    expect(typeof stored.issuedAt).toBe('string');
 
     // Assert: confirmation line printed.
     const stdout = stdoutChunks.join('');

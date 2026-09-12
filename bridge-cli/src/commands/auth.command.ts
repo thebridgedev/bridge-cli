@@ -5,12 +5,14 @@
  *   - `login`           (TBP-113): browser-based PKCE auth.
  *   - `logout`          (TBP-113): revoke + delete credentials.
  *   - `status`          (TBP-113): show current login state.
+ *   - `use`             (TBP-628): switch the default app, offline.
  *   - `config`/`mfa`/`password-policy`: pre-existing app auth-config commands.
  */
 import type { Command } from 'commander';
 import { registerAuthLoginCommand } from './auth/login.command.js';
 import { registerAuthLogoutCommand } from './auth/logout.command.js';
 import { registerAuthStatusCommand } from './auth/status.command.js';
+import { registerAuthUseCommand } from './auth/use.command.js';
 import { registerAuthConfigCommands } from './auth/config.command.js';
 
 export function registerAuthCommands(program: Command): void {
@@ -22,6 +24,9 @@ export function registerAuthCommands(program: Command): void {
   registerAuthLoginCommand(auth);
   registerAuthLogoutCommand(auth);
   registerAuthStatusCommand(auth);
+
+  // TBP-628 — several apps side by side; switch without a browser round-trip.
+  registerAuthUseCommand(auth);
 
   // Pre-existing — app-level auth configuration.
   registerAuthConfigCommands(auth);

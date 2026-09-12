@@ -27,9 +27,47 @@ bridge auth login
 Opens your default browser, runs through a PKCE-secured loopback flow (RFC 8252), and stores a 10-day token at `~/.config/bridge/credentials.json` (mode `0600`). After that, every subsequent `bridge` command picks the token up automatically — no env vars needed.
 
 ```bash
-bridge auth status   # show who you're logged in as and when the token expires
-bridge auth logout   # revoke the token and delete the credentials file
+bridge auth status   # show every stored app, and which one is active
+bridge auth logout   # revoke the active token and remove it locally
 ```
+
+#### Several apps at once
+
+The credentials file holds one credential per app, so you can log in to your
+local, stage and prod apps and move between them without a browser round-trip —
+the tokens are already on disk with days left on them.
+
+```bash
+bridge auth login --label northwhistle-local     # once per app
+bridge auth login --label northwhistle-prod
+
+bridge auth status                               # lists both, marks the active one
+bridge auth use northwhistle-local               # switch the default, offline
+bridge --profile northwhistle-prod app get       # target ONE command, default untouched
+```
+
+A profile is selected by its `--label`, its app id, or its app name, in that
+order. An ambiguous name is an error rather than a guess. `BRIDGE_PROFILE` does
+the same thing as `--profile` for a whole shell session.
+
+Prefer `--profile` over `bridge auth use` in scripts and long-running agent
+sessions: `use` mutates state another process may be reading, `--profile` does
+not.
+
+Every command prints one line to **stderr** naming the app that answered:
+
+```
+bridge: northwhistle-prod (606b4416fabdc800087d09ec) · https://api.thebridge.dev · via saved default
+```
+
+stdout stays pure JSON, so this does not disturb anything parsing it. Silence it
+with `BRIDGE_NO_BANNER=true` if you are already certain which app you are on.
+
+`bridge auth logout` removes the active app only. Use `--profile <name>` for a
+specific one, or `--all` to clear the file.
+
+Existing single-app credentials files keep working and are upgraded in place the
+next time something writes.
 
 #### `bridge auth login` flags
 
@@ -56,7 +94,17 @@ For non-interactive contexts (CI/CD pipelines, Docker images, headless agents) s
 export BRIDGE_API_KEY=<your-api-token>
 ```
 
-If you have logged in via `bridge auth login`, the credentials file always wins — a fresh login takes effect immediately, even when `BRIDGE_API_KEY` is still exported in your shell. `BRIDGE_API_KEY` is only used when no credentials file is present (the typical CI runner shape). To switch back to env-var auth on a developer machine, run `bridge auth logout` first.
+If you have logged in via `bridge auth login`, the credentials file always wins — a fresh login takes effect immediately, even when `BRIDGE_API_KEY` is still exported in your shell. `BRIDGE_API_KEY` is only used when no credentials file is present (the typical CI runner shape). To switch back to env-var auth on a developer machine, run `bridge auth logout --all` first.
+
+Because that trips people up, the CLI now says so at the moment it happens: with
+both present you get a line on stderr telling you `BRIDGE_API_KEY` is set and
+being ignored, and what to do instead. To point the CLI at a different app, use
+`--profile`, not the env vars.
+
+**`BRIDGE_APP_ID` has no effect on any path.** The app is carried by the
+credential itself — a login token and an API key are both already scoped to one
+app, so there is nothing for it to change. It is called out on stderr whenever it
+is set, rather than being quietly ignored.
 
 Optional configuration (applies to both auth paths):
 
@@ -139,8 +187,11 @@ bridge auth login                # default: open browser, complete PKCE flow
 bridge auth login --app acme     # pin to a specific app
 bridge auth login --label "work laptop"
 bridge auth login --no-browser   # print the URL (headless / SSH)
-bridge auth status               # show current login state
-bridge auth logout               # revoke token + delete local file
+bridge auth status               # show every stored app, active one marked
+bridge auth use <label|app-id>   # switch the default app, no browser
+bridge auth logout               # revoke + remove the active app
+bridge auth logout --all         # ...or every stored app
+bridge --profile <label> <cmd>   # target one app for one command
 ```
 
 ### Auth Configuration (app-level — separate from `auth login`)

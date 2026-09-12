@@ -111,11 +111,17 @@ describe('bridge auth status', () => {
     expect(stdout).toMatch(/service-account/);
   });
 
-  it('warns when BRIDGE_API_KEY is also set alongside a creds file', async () => {
+  it('says BRIDGE_API_KEY is IGNORED when a creds file exists', async () => {
+    // This note used to claim the opposite — that the env var took precedence.
+    // The credentials file has always won, and believing the note is how a
+    // session comes to think it retargeted the CLI when it did not (TBP-628).
     writeCredentials(sampleCreds());
     process.env.BRIDGE_API_KEY = 'env-fake-key';
     const { stdout } = await runStatus();
     expect(stdout).toContain('Logged in as alice@acme.com');
-    expect(stdout).toMatch(/BRIDGE_API_KEY is also set/);
+    expect(stdout).toMatch(/BRIDGE_API_KEY is set in your environment but is IGNORED/);
+    // And the note has to say what to do about it, or it is just a fact.
+    expect(stdout).toMatch(/bridge auth logout --all/);
+    expect(stdout).toMatch(/--profile/);
   });
 });
