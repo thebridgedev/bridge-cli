@@ -1,6 +1,6 @@
 {
   "name": "@nebulr-group/bridge-cli",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Bridge platform CLI for AI coding agents and developers",
   "author": "Nebulr Group",
   "license": "MIT",
