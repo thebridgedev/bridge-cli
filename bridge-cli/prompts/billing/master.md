@@ -127,6 +127,9 @@ If any plan will have a price, connect Stripe **before** setting prices (so each
 bridge stripe status
 ```
 
+If it reports `webhookHealthy: false`, checkout still works but subscription changes, cancellations
+and payment failures will not sync. Tell the developer and follow the repair hint in `message`.
+
 If not connected, ask the developer for their Stripe keys (from `dashboard.stripe.com/apikeys`):
 
 ```bash
