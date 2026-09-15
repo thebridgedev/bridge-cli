@@ -319,9 +319,19 @@ bridge event list --type USER_CREATED --since 24h --limit 50
 
 ```bash
 bridge setup sso --provider google --client-id <id> --client-secret <secret>
+bridge setup sso --provider azure --client-id <id> --client-secret <secret> --tenant-id <entra-directory-id>
 bridge setup payments --stripe-key sk_test_xxx
-bridge setup communication --provider sendgrid --api-key <key> --from-address noreply@acme.com
+bridge setup communication --from-address noreply@acme.com --from-name "Acme"
 ```
+
+`setup sso` supports google, github, linkedin, facebook and azure (azure also
+needs the Entra ID Directory (tenant) ID). SAML and OIDC are not supported by
+the Bridge API; set them up in the Bridge admin UI. The command prints the
+callback URL to register in the provider's console.
+
+`setup communication` sets only the sender name and address. Bridge sends all
+email through its own provider, so there is no provider or API key to
+configure. A new sender address is verified by email before Bridge uses it.
 
 ### Info (context for AI agents)
 
