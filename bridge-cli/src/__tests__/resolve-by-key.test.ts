@@ -96,7 +96,11 @@ function makeClient(overrides: Partial<Record<keyof MockClient, unknown>> = {}):
   const client: MockClient = {
     flags: {
       list: jest.fn().mockResolvedValue(FLAGS),
-      update: jest.fn().mockImplementation((id: string) => Promise.resolve({ id })),
+      // Echo the payload back, the way the API does: `flag toggle` verifies
+      // the state it asked for actually came back (TBP-548).
+      update: jest
+        .fn()
+        .mockImplementation((id: string, data: object) => Promise.resolve({ id, ...data })),
       toggle: jest.fn().mockImplementation((id: string) => Promise.resolve({ id })),
       delete: jest.fn().mockResolvedValue(undefined),
     },
@@ -260,31 +264,36 @@ describe('bridge flag delete', () => {
 });
 
 describe('bridge flag toggle', () => {
-  it('resolves --key and toggles', async () => {
+  it('resolves --key and writes state=on', async () => {
     const client = makeClient();
 
     const res = await runCli('flag', 'toggle', '--key', 'beta-ui', '--enabled', 'true');
 
     expect(res.stderr).toBe('');
-    expect(client.flags.toggle).toHaveBeenCalledWith('flag-id-1', true);
+    expect(client.flags.update).toHaveBeenCalledWith('flag-id-1', { state: 'on' });
+    expect(client.flags.toggle).not.toHaveBeenCalled();
   });
 
-  it('still accepts --id', async () => {
+  it('still accepts --id — now with a list() call, to read the current state first', async () => {
     const client = makeClient();
 
+    // TBP-548: the id path used to skip list() entirely. It reads the flag now
+    // because the on-with-rule refusal needs the state before it writes.
     await runCli('flag', 'toggle', '--id', 'flag-id-2', '--enabled', 'false');
 
-    expect(client.flags.toggle).toHaveBeenCalledWith('flag-id-2', false);
-    expect(client.flags.list).not.toHaveBeenCalled();
+    expect(client.flags.update).toHaveBeenCalledWith('flag-id-2', { state: 'off' });
+    expect(client.flags.list).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects both options without toggling', async () => {
+  it('rejects both options without toggling — and before any network call', async () => {
     const client = makeClient();
 
     const res = await runCli('flag', 'toggle', '--key', 'beta-ui', '--id', 'x', '--enabled', 'true');
 
     expect(errorOf(res).code).toBe('INVALID_OPTIONS');
+    expect(client.flags.update).not.toHaveBeenCalled();
     expect(client.flags.toggle).not.toHaveBeenCalled();
+    expect(client.flags.list).not.toHaveBeenCalled();
   });
 
   it('rejects neither option without toggling', async () => {
@@ -293,7 +302,18 @@ describe('bridge flag toggle', () => {
     const res = await runCli('flag', 'toggle', '--enabled', 'true');
 
     expect(errorOf(res).code).toBe('INVALID_OPTIONS');
+    expect(client.flags.update).not.toHaveBeenCalled();
     expect(client.flags.toggle).not.toHaveBeenCalled();
+    expect(client.flags.list).not.toHaveBeenCalled();
+  });
+
+  it('reports an --id that matches no flag instead of PUTting to it', async () => {
+    const client = makeClient();
+
+    const res = await runCli('flag', 'toggle', '--id', 'ghost', '--enabled', 'false');
+
+    expect(errorOf(res).code).toBe('FLAG_NOT_FOUND');
+    expect(client.flags.update).not.toHaveBeenCalled();
   });
 });
 
