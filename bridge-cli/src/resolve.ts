@@ -14,6 +14,7 @@
 //     the candidates. Never guess. Silently deleting the wrong tenant because
 //     two of them share a name is the worst outcome this module can produce.
 
+import type { FlagResponse } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from './config.js';
 
 /**
@@ -133,19 +134,52 @@ export async function resolveResourceId<T>(
 // One function per noun so no command hand-rolls a `list().find()`. Each is a
 // thin `resolveResourceId` call describing where that noun's key lives.
 
-/** `bridge flag …` — flag keys are unique. */
-export function resolveFlagId(target: ResolveTarget): Promise<string> {
-  return resolveResourceId(target, {
+function flagSpec(list: () => Promise<FlagResponse[]>): ResolveSpec<FlagResponse> {
+  return {
     noun: 'Flag',
     idOption: '--id',
     keyOption: '--key',
     keyLabel: 'key',
     listCommand: 'bridge flag list',
-    list: () => getManagementClient().flags.list(),
+    list,
     idOf: (f) => f.id,
     keyOf: (f) => f.key,
     describe: (f) => `${f.key} (id ${f.id})`,
-  });
+  };
+}
+
+/** `bridge flag …` — flag keys are unique. */
+export function resolveFlagId(target: ResolveTarget): Promise<string> {
+  return resolveResourceId(target, flagSpec(() => getManagementClient().flags.list()));
+}
+
+/**
+ * Resolve to the whole flag record rather than just its id.
+ *
+ * TBP-548. `flag toggle` has to read the flag's current `state` before it
+ * writes: turning a `state: "on-with-rule"` flag fully on would widen it from
+ * the rule's audience to everyone, which is not what a switch labelled
+ * "toggle" is understood to do. One `list()` serves both the resolution and
+ * that check, and it costs the `--id` path its previous no-network property —
+ * deliberately, since an `--id` that matches nothing now fails here by name
+ * instead of as an opaque server 404.
+ */
+export async function resolveFlag(target: ResolveTarget): Promise<FlagResponse> {
+  // Memoised so a bad `--id`/`--key` combination still fails before any
+  // network call, and the key path lists exactly once.
+  let cached: FlagResponse[] | undefined;
+  const list = async () => (cached ??= await getManagementClient().flags.list());
+
+  const id = await resolveResourceId(target, flagSpec(list));
+  const flags = await list();
+  const found = flags.find((f) => f.id === id);
+  if (!found) {
+    throw new ResolveError(
+      'FLAG_NOT_FOUND',
+      `Flag not found: ${id}. Run \`bridge flag list\` to see existing flags.`,
+    );
+  }
+  return found;
 }
 
 /** `bridge role …` — role keys are unique (e.g. ADMIN). */

@@ -43,7 +43,7 @@ import type {
 } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
-import { resolveFlagId } from '../resolve.js';
+import { resolveFlag, resolveFlagId } from '../resolve.js';
 import { registerFlagInitCommand } from './flag-init.command.js';
 
 // Re-export the canonical validator so existing consumers/tests keep a single
@@ -245,18 +245,79 @@ function registerUpdate(flag: Command): void {
 }
 
 // ── toggle (kept from 1.0; convenience for state on/off without typing JSON) ─
+//
+// TBP-548. The command used to call `flags.toggle()`, which PUT the FF 1.0
+// `{ enabled }` boolean. FF 2.0 dropped that field from the flag document and
+// evaluates on `state` alone, and the server's write DTO strips undeclared
+// keys — so the body arrived empty, the API answered 200 with the untouched
+// flag, and the CLI printed `success: true` for a flag that had not moved.
+//
+// The mapping below is the one the MCP `toggle_feature_flag` tool settled on
+// (TBP-587), so the two surfaces over the same endpoint agree:
+//
+//   --enabled true   → state "on"    (everyone gets onValue)
+//   --enabled false  → state "off"   (everyone gets offValue)
+//
+// with one refusal: a flag already at "on-with-rule" is not turned ON here.
+// "on" stops the rule being consulted and hands onValue to every caller, which
+// widens the audience instead of flipping a switch — `flag update --state on`
+// is where you say that deliberately. Turning such a flag OFF stays allowed:
+// the rule document is preserved, so it is reversible.
+
+/** Error carrying a machine-readable `code` for `outputError` to report. */
+class FlagCommandError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'FlagCommandError';
+    this.code = code;
+  }
+}
 
 function registerToggle(flag: Command): void {
   flag
     .command('toggle')
-    .description('Quick toggle a flag on or off by --key or --id (does not affect rule)')
+    .description(
+      'Quick toggle a flag on or off by --key or --id — sets state=on / state=off (the rule is kept)',
+    )
     .option('--key <key>', 'Flag key to address (alternative to --id)')
     .option('--id <id>', 'Flag ID to address (alternative to --key)')
-    .requiredOption('--enabled <bool>', 'true or false', (v) => v === 'true')
+    .requiredOption('--enabled <bool>', 'true = state on, false = state off', (v) => v === 'true')
     .action(async (opts) => {
       try {
-        const id = await resolveFlagId({ id: opts.id, key: opts.key });
-        const result = await getManagementClient().flags.toggle(id, opts.enabled);
+        const enabled: boolean = opts.enabled;
+        const current = await resolveFlag({ id: opts.id, key: opts.key });
+        const currentState = current.state ?? deriveState(current);
+
+        if (currentState === 'on-with-rule' && enabled) {
+          throw new FlagCommandError(
+            'FLAG_HAS_TARGETING',
+            `Flag '${current.key}' is state=on-with-rule: a targeting rule decides who gets it. ` +
+              'Turning it fully on would give it to everyone and stop the rule being consulted, ' +
+              'so nothing was changed. It is already on for whoever the rule matches. To widen it ' +
+              'to everyone deliberately, run `bridge flag update --key ' +
+              `${current.key} --state on\` (the rule is preserved and you can set it back to ` +
+              'on-with-rule later).',
+          );
+        }
+
+        const wanted: FlagState = enabled ? 'on' : 'off';
+        const result = await getManagementClient().flags.update(current.id, { state: wanted });
+
+        // Read the write back rather than trusting the 200. The original bug
+        // was invisible precisely because nobody checked that it landed.
+        const resultingState = result?.state ?? (result ? deriveState(result) : undefined);
+        if (resultingState !== wanted) {
+          throw new FlagCommandError(
+            'TOGGLE_NOT_APPLIED',
+            `Requested state='${wanted}' for '${current.key}' but the flag came back as ` +
+              `state='${resultingState ?? 'unknown'}'. The change did NOT take effect. ` +
+              'Re-read it with `bridge flag get ' +
+              `${current.key}\`, then set the state explicitly with \`bridge flag update\`.`,
+          );
+        }
+
         outputSuccess(result);
       } catch (err) {
         outputError(err);
