@@ -279,12 +279,14 @@ bridge branding update --bg-color "#ffffff" --text-color "#000000"
 
 ```bash
 bridge plan list
-bridge plan create --key pro --name "Pro Plan"
+# A plan needs at least one price — `create` takes the first one.
+# A free tier is a zero-amount price: --amount 0
+bridge plan create --key pro --name "Pro Plan" --amount 29 --interval month
 bridge plan update --key pro --name "Pro Plan v2"
 
 # Prices — a plan can have several (one per currency + interval). Idempotent.
-bridge plan price set pro --amount 29 --currency usd --interval month
 bridge plan price set pro --amount 290 --currency usd --interval year
+# Removing the last price is refused: a priceless plan can't be assigned.
 bridge plan price rm  pro --interval year
 
 # Usage quotas (hard | metered caps)
