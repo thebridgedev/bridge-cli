@@ -112,11 +112,13 @@ If there are no per-plan limits or feature differences, the quotas and entitleme
 
 ## Step 3b — Create plans, connect Stripe, then set prices
 
-Once confirmed, create the plans (no prices here — `plan create` never takes a price):
+Once confirmed, create the plans. **Every plan needs at least one price** — a plan with no
+prices cannot be assigned to a workspace, so `plan create` takes the first one. A free tier is
+a **zero-amount** price, not the absence of a price:
 
 ```bash
-bridge plan create --key free --name "Free"
-bridge plan create --key pro --name "Pro" --trial --trial-days 14
+bridge plan create --key free --name "Free" --amount 0 --interval month
+bridge plan create --key pro --name "Pro" --amount 29 --interval month --trial --trial-days 14
 ```
 
 Verify: `bridge plan list`
@@ -136,9 +138,9 @@ If not connected, ask the developer for their Stripe keys (from `dashboard.strip
 bridge stripe connect --secret-key sk_test_... --publishable-key pk_test_...
 ```
 
-Now set prices — **one command per Prices-table row**. `plan price set` is idempotent
-(keyed on currency + interval), so a tier with monthly **and** yearly pricing is just two
-calls against the same plan key:
+Now set any **remaining** prices — one command per Prices-table row not already covered by the
+`plan create` call above. `plan price set` is idempotent (keyed on currency + interval), so a
+tier with monthly **and** yearly pricing is just one more call against the same plan key:
 
 ```bash
 bridge plan price set pro --amount 29 --currency usd --interval month

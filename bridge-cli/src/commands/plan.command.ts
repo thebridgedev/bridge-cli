@@ -122,6 +122,61 @@ export function buildPriceEntry(opts: {
   return { amount, currency, recurrenceInterval: interval };
 }
 
+/**
+ * TBP-617 — build the price list for `plan create`.
+ *
+ * The server rejects an explicitly empty `prices` array (a plan with no prices
+ * can never be assigned to a workspace), so `plan create` must never send one.
+ * Mirrors the MCP `create_plan` tool, which takes one flat price up front as
+ * `amount` / `interval` / `currency`; further prices go through `plan price set`.
+ *
+ * Fails client-side when no price flags were passed, so the user gets the flags
+ * that fix it instead of a `BAD_USER_INPUT` from the API.
+ */
+export function buildCreatePlanPrices(opts: {
+  amount?: number;
+  currency?: string;
+  interval?: string;
+}): PlanPriceInput[] {
+  if (opts.amount === undefined && opts.interval === undefined) {
+    throw new Error(
+      'A plan needs at least one price. Pass --amount and --interval ' +
+        `(one of ${VALID_INTERVALS.join(', ')}), e.g. --amount 29 --interval month. ` +
+        'Use --amount 0 for a free or contact-sales tier; --currency defaults to USD.',
+    );
+  }
+  return [buildPriceEntry(opts)];
+}
+
+/**
+ * TBP-617 — remove one price by currency + interval.
+ *
+ * Throws when the price is absent, and when it is the plan's LAST price: the
+ * server rejects an empty price list with a 400 the user cannot act on, so say
+ * why here. Mirrors the MCP `remove_plan_price` `LAST_PRICE` guard. Pure.
+ */
+export function removePrice(
+  prices: PlanPriceInput[],
+  entry: { currency: string; interval: RecurrenceInterval },
+  planKey: string,
+): PlanPriceInput[] {
+  const currency = entry.currency.trim().toUpperCase();
+  const next = prices.filter(
+    (p) => !(p.currency === currency && p.recurrenceInterval === entry.interval),
+  );
+  if (next.length === prices.length) {
+    throw new Error(`No ${currency} ${entry.interval} price on plan "${planKey}".`);
+  }
+  if (next.length === 0) {
+    throw new Error(
+      `Cannot remove the only price on plan "${planKey}": a plan needs at least one price. ` +
+        `Add the replacement first with \`bridge plan price set ${planKey} --amount <n> --interval <interval>\`, ` +
+        'or set this price to --amount 0 for a free tier.',
+    );
+  }
+  return next;
+}
+
 /** Upsert a price by (currency + interval): replace if present, append otherwise. Pure. */
 export function upsertPrice(
   prices: PlanPriceInput[],
@@ -172,23 +227,31 @@ export function registerPlanCommands(program: Command): void {
     });
 
   plan.command('create')
-    .description('Create a new plan (no prices — add them with `plan price set`)')
+    .description('Create a new plan with its first price (add more with `plan price set`)')
     .requiredOption('--key <key>', 'Plan key')
     .requiredOption('--name <name>', 'Plan name')
+    .option('--amount <amount>', 'First price amount (>= 0). Use 0 for a free or contact-sales tier', parseFloat)
+    .option('--interval <interval>', `Billing interval for the first price: ${VALID_INTERVALS.join(' | ')}`)
+    .option('--currency <currency>', 'Currency for the first price (default USD)')
     .option('--description <desc>', 'Description')
     .option('--trial', 'Include trial period', false)
     .option('--trial-days <days>', 'Trial period in days', parseInt)
     .action(async (opts) => {
       try {
+        // TBP-617 — the server rejects an explicitly empty price list, so build
+        // (and validate) the first price here rather than sending `prices: []`.
+        const prices = buildCreatePlanPrices({
+          amount: opts.amount,
+          interval: opts.interval,
+          currency: opts.currency,
+        });
         outputSuccess(await getManagementClient().plans.create({
           key: opts.key,
           name: opts.name,
           description: opts.description,
           trial: opts.trial,
           trialDays: opts.trialDays,
-          // Start with no prices so the server doesn't apply its default
-          // placeholder price; add prices explicitly via `plan price set`.
-          prices: [],
+          prices,
         }));
       } catch (err) { outputError(err); }
     });
@@ -243,15 +306,17 @@ function registerPriceCommands(plan: Command): void {
     .option('--currency <currency>', 'Currency (default USD)', 'USD')
     .action(async (key: string, opts) => {
       try {
-        const currency = String(opts.currency ?? 'USD').trim().toUpperCase();
-        const interval = opts.interval as RecurrenceInterval;
         const { prices } = await getPlan(key);
-        const next = prices.filter(
-          (p) => !(p.currency === currency && p.recurrenceInterval === interval),
+        // TBP-617 — removing the last price empties the list, which the server
+        // rejects with a 400; removePrice says why before we get there.
+        const next = removePrice(
+          prices,
+          {
+            currency: String(opts.currency ?? 'USD'),
+            interval: opts.interval as RecurrenceInterval,
+          },
+          key,
         );
-        if (next.length === prices.length) {
-          throw new Error(`No ${currency} ${interval} price on plan "${key}".`);
-        }
         outputSuccess(await getManagementClient().plans.update(key, { prices: next }));
       } catch (err) { outputError(err); }
     });
