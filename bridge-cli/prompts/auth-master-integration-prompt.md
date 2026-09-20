@@ -162,7 +162,9 @@ bridge app update \
   --allowed-origins <frontend-url>
 ```
 
-If the hosted cloud-views UI is on a different origin (e.g., `http://localhost:3091` in local dev, `https://app.thebridge.dev` in prod), add it to `--allowed-origins` as well:
+`--ui-url` is also where links in Bridge's emails point. When your **backend** calls the Bridge API — inviting a user, triggering a password reset — the request carries no browser origin, so Bridge falls back to this URL to build the link. Leave it unset and those users land on Bridge's hosted sign-in pages instead of your app. The URL must also appear in `--allowed-origins`, or Bridge ignores it and uses the hosted pages.
+
+If the hosted sign-in UI is on a different origin (e.g., `http://localhost:3091` in local dev, `https://app.thebridge.dev` in prod), add it to `--allowed-origins` as well:
 
 ```bash
 bridge app update --allowed-origins <frontend-url>,<hosted-url>
