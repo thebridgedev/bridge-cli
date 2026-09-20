@@ -16,7 +16,7 @@ export function registerAppCommands(program: Command): void {
     .description('Update app settings')
     .option('--name <name>', 'App name')
     .option('--api-url <url>', 'API URL')
-    .option('--ui-url <url>', 'UI URL')
+    .option('--ui-url <url>', "Your app's base URL. Links in Bridge emails (invites, password resets, payment notices) open here when your backend calls the API without an Origin header. Must also be listed in --allowed-origins")
     .option('--webhook-url <url>', 'Webhook URL')
     .option('--tenant-self-signup <bool>', 'Allow tenant self-signup', parseBool)
     .option('--mfa-enabled <bool>', 'Enable MFA', parseBool)
