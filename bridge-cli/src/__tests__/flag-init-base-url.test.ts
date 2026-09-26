@@ -96,3 +96,56 @@ describe('bridge flag init — base URL (TBP-708)', () => {
     expect(written.baseUrl).toBe('https://bridge.example.com');
   });
 });
+
+describe('bridge flag init — existing config and the NestJS snippet (TBP-706)', () => {
+  const ORIGINAL_ENV = process.env;
+  let project: string;
+
+  beforeEach(() => {
+    resetManagementClient();
+    process.env = { ...ORIGINAL_ENV, BRIDGE_NO_BANNER: 'true', BRIDGE_API_KEY: 'key', BRIDGE_BASE_URL: STAGE };
+    delete process.env.BRIDGE_PROFILE;
+    process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-cli-706-home-'));
+    project = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-cli-706-proj-'));
+    fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ dependencies: { '@nestjs/core': '^10' } }));
+  });
+
+  afterEach(() => {
+    fs.rmSync(project, { recursive: true, force: true });
+    process.env = ORIGINAL_ENV;
+    resetManagementClient();
+  });
+
+  async function run(...extra: string[]): Promise<string> {
+    let out = '';
+    const o = jest.spyOn(process.stdout, 'write').mockImplementation((c: any) => ((out += String(c)), true));
+    const e = jest.spyOn(process.stderr, 'write').mockImplementation((c: any) => ((out += String(c)), true));
+    try {
+      const program = new Command().exitOverride();
+      registerFlagInitCommand(program.command('flag'));
+      await program.parseAsync(['node', 'bridge', 'flag', 'init', '--cwd', project, ...extra]);
+    } finally {
+      o.mockRestore();
+      e.mockRestore();
+    }
+    return out;
+  }
+
+  it('leaves an existing bridge-flags.config.json alone unless --force', async () => {
+    const file = path.join(project, 'bridge-flags.config.json');
+    fs.writeFileSync(file, '{"hand":"edited"}\n');
+    const out = await run();
+    expect(fs.readFileSync(file, 'utf8')).toBe('{"hand":"edited"}\n');
+    expect(out).toMatch(/already exists/);
+
+    await run('--force');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).appId).toBe('app_stage');
+  });
+
+  it('puts the app id in appId, never in the API key slot', async () => {
+    const out = await run();
+    expect(out).toContain("appId: 'app_stage'");
+    expect(out).not.toMatch(/apiKey: 'app_stage'/);
+    expect(out).toContain('apiKey: process.env.BRIDGE_API_KEY');
+  });
+});

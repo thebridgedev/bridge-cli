@@ -27,7 +27,7 @@
   ──────────────────────────────────────────────
     The control center gives you even more powers.
 
-      ›  Billing            Stripe plans & subscriptions    →  bridge guide [framework] payments
+      ›  Billing            Stripe plans & subscriptions    →  bridge guide [framework] billing
       ›  Feature flags      Per-user, per-plan toggles      →  bridge guide flags
       ›  Team management    Invites, roles, orgs            →  bridge guide [framework] team
 
