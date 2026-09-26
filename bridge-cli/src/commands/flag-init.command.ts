@@ -22,9 +22,8 @@
 import { Command } from 'commander';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getManagementClient, DEFAULT_BASE_URL } from '../config.js';
+import { getManagementClient, getResolvedBaseUrl } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
-import { readCredentials } from '../credentials.js';
 
 export type FlagsFramework =
   | 'svelte'
@@ -45,6 +44,7 @@ export function registerFlagInitCommand(flagParent: Command): void {
     .option('--cwd <path>', 'Project directory (defaults to current)', process.cwd())
     .option('--no-config', 'Skip writing bridge-flags.config.json')
     .option('--base-url <url>', 'Override the base URL written to config')
+    .option('--force', 'Overwrite an existing bridge-flags.config.json')
     .action(async (opts) => {
       try {
         const cwd: string = opts.cwd;
@@ -56,19 +56,21 @@ export function registerFlagInitCommand(flagParent: Command): void {
         const appId = (app.id as string) ?? '';
         const appName = (app.name as string) ?? '';
 
-        const baseUrl =
-          (opts.baseUrl as string | undefined) ??
-          // Pull the credentials file's baseUrl when available; falls back to
-          // the public default. (BRIDGE_BASE_URL is honored by getManagementClient
-          // already; we don't re-read it here to avoid divergence.)
-          readCredentials()?.baseUrl ??
-          DEFAULT_BASE_URL;
+        // The environment the app was just read from, so the project is wired
+        // to the same one (TBP-708).
+        const baseUrl = (opts.baseUrl as string | undefined) ?? getResolvedBaseUrl();
 
         const snippet = renderSnippet(framework, { appId, baseUrl });
 
         let configPath: string | undefined;
         if (opts.config !== false) {
           configPath = join(cwd, 'bridge-flags.config.json');
+          // Never clobber a config someone may have edited (TBP-706).
+          if (!opts.force && (await pathExists(configPath))) {
+            throw new Error(
+              `${configPath} already exists. Pass --force to overwrite it, or --no-config to leave it and only print the setup.`,
+            );
+          }
           await writeFile(
             configPath,
             JSON.stringify(
@@ -174,7 +176,9 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
       `// use 'frontend' in a browser runtime.`,
       `export const bridge = new BridgeFlags({ mode: 'backend' });`,
       ``,
-      `// Load the rule set for your app (or let a framework SDK do it for you).`,
+      `// Load the rule set for your app, for local evaluation (the framework SDKs do this`,
+      `// for you). To have Bridge evaluate for a signed-in user instead, see the`,
+      `// bulkEvaluate endpoint in \`bridge guide custom\`.`,
       `const res = await fetch(`,
       `  '${ctx.baseUrl}/admin/flags-internal/flags-cache/${ctx.appId}',`,
       `);`,
@@ -373,7 +377,8 @@ export function renderSnippet(framework: FlagsFramework, ctx: SnippetCtx): strin
         '     imports: [',
         '       BridgeFlagsModule.forRoot({',
         `         apiBaseUrl: '${ctx.baseUrl}',`,
-        `         apiKey: '${ctx.appId}',`,
+        `         appId: '${ctx.appId}',`,
+        `         apiKey: process.env.BRIDGE_API_KEY!, // a Bridge API token, never the app id`,
         `         mode: 'backend',`,
         '       }),',
         '     ],',

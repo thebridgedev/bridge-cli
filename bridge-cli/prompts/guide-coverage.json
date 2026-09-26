@@ -1,0 +1,12 @@
+{
+  "_comment": "Which per-framework guides exist, keyed by the feature names `bridge guide <framework> <feature>` takes (the file stems under mcp/ in each plugin repo). The one copy: `bridge guide list` reads it from the package, and the Bridge MCP server reads it from GitHub (bridge-cli/main/bridge-cli/prompts/guide-coverage.json). Update it when a plugin adds or removes an mcp/*-prompt.md.",
+  "aliases": { "flags": "feature-flags" },
+  "frameworks": {
+    "svelte": ["integration", "sdk-auth", "feature-flags", "billing", "team", "branding"],
+    "react": ["integration", "sdk-auth", "feature-flags", "billing", "team", "branding"],
+    "angular": ["integration", "sdk-auth", "feature-flags", "billing", "team", "branding"],
+    "nextjs": ["integration", "sdk-auth", "feature-flags", "billing", "team"],
+    "nestjs": ["integration", "auth", "feature-flags", "billing", "team"],
+    "express": ["integration", "auth", "feature-flags", "billing", "team"]
+  }
+}
