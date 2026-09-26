@@ -10,6 +10,7 @@ import {
 export const DEFAULT_BASE_URL = 'https://api.thebridge.dev';
 
 let _client: BridgeManagement | null = null;
+let _baseUrl: string | null = null;
 
 /**
  * The `--profile` value for this invocation, set by the CLI's preAction hook.
@@ -126,6 +127,7 @@ export function getManagementClient(): BridgeManagement {
   }
 
   _client = new BridgeManagement({ apiKey, baseUrl, debug });
+  _baseUrl = baseUrl;
 
   return _client;
 }
@@ -181,11 +183,28 @@ function writeContextBanner(ctx: {
 }
 
 /**
+ * The Bridge API base URL the management client talks to, resolved exactly as
+ * `getManagementClient()` resolves it: `--profile`, then the active credential,
+ * then `BRIDGE_API_KEY`, with `BRIDGE_BASE_URL` overriding each.
+ *
+ * Anything the CLI writes into a project (`bridge flag init`) takes its base
+ * URL from here, so a project is wired to the environment the command just
+ * read the app from. Re-reading the credentials file instead ignored
+ * `--profile` and `BRIDGE_BASE_URL`, and wrote production into a project
+ * scaffolded against stage (TBP-708).
+ */
+export function getResolvedBaseUrl(): string {
+  getManagementClient();
+  return _baseUrl as string;
+}
+
+/**
  * For tests and for `bridge auth logout` / `bridge auth status` — they need
  * to reset the cached client between operations.
  */
 export function resetManagementClient(): void {
   _client = null;
+  _baseUrl = null;
 }
 
 export function resolveTenantId(opts: { tenantId?: string }): string {

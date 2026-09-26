@@ -22,9 +22,8 @@
 import { Command } from 'commander';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getManagementClient, DEFAULT_BASE_URL } from '../config.js';
+import { getManagementClient, getResolvedBaseUrl } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
-import { readCredentials } from '../credentials.js';
 
 export type FlagsFramework =
   | 'svelte'
@@ -56,13 +55,9 @@ export function registerFlagInitCommand(flagParent: Command): void {
         const appId = (app.id as string) ?? '';
         const appName = (app.name as string) ?? '';
 
-        const baseUrl =
-          (opts.baseUrl as string | undefined) ??
-          // Pull the credentials file's baseUrl when available; falls back to
-          // the public default. (BRIDGE_BASE_URL is honored by getManagementClient
-          // already; we don't re-read it here to avoid divergence.)
-          readCredentials()?.baseUrl ??
-          DEFAULT_BASE_URL;
+        // The environment the app was just read from, so the project is wired
+        // to the same one (TBP-708).
+        const baseUrl = (opts.baseUrl as string | undefined) ?? getResolvedBaseUrl();
 
         const snippet = renderSnippet(framework, { appId, baseUrl });
 
