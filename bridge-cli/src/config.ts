@@ -1,4 +1,4 @@
-import { BridgeManagement } from '@nebulr-group/bridge-auth-core';
+import { BridgeManagement, ManagementHttpClient } from '@nebulr-group/bridge-auth-core';
 import {
   CredentialSelectorError,
   findCredential,
@@ -11,6 +11,8 @@ export const DEFAULT_BASE_URL = 'https://api.thebridge.dev';
 
 let _client: BridgeManagement | null = null;
 let _baseUrl: string | null = null;
+let _apiKey: string | null = null;
+let _http: ManagementHttpClient | null = null;
 
 /**
  * The `--profile` value for this invocation, set by the CLI's preAction hook.
@@ -128,6 +130,7 @@ export function getManagementClient(): BridgeManagement {
 
   _client = new BridgeManagement({ apiKey, baseUrl, debug });
   _baseUrl = baseUrl;
+  _apiKey = apiKey;
 
   return _client;
 }
@@ -199,12 +202,36 @@ export function getResolvedBaseUrl(): string {
 }
 
 /**
+ * A raw authenticated HTTP client, resolved exactly as `getManagementClient()`
+ * resolves (same `--profile`, credential, key and base URL, same banner).
+ *
+ * For routes auth-core has no typed service for yet — the integration checks
+ * (TBP-541) — so the CLI can call them without waiting on an auth-core
+ * release. The MCP tools use the same client type over the same routes.
+ */
+export function getManagementHttp(): ManagementHttpClient {
+  if (_http) return _http;
+  getManagementClient();
+  const debug = process.env.BRIDGE_DEBUG === 'true';
+  const quiet = () => undefined;
+  const logger = {
+    debug: debug ? (...a: unknown[]) => console.error('[bridge-cli]', ...a) : quiet,
+    warn: debug ? (...a: unknown[]) => console.error('[bridge-cli]', ...a) : quiet,
+    error: debug ? (...a: unknown[]) => console.error('[bridge-cli]', ...a) : quiet,
+  };
+  _http = new ManagementHttpClient(_baseUrl as string, _apiKey as string, logger);
+  return _http;
+}
+
+/**
  * For tests and for `bridge auth logout` / `bridge auth status` — they need
  * to reset the cached client between operations.
  */
 export function resetManagementClient(): void {
   _client = null;
   _baseUrl = null;
+  _apiKey = null;
+  _http = null;
 }
 
 export function resolveTenantId(opts: { tenantId?: string }): string {

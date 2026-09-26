@@ -15,6 +15,7 @@ import { registerInfoCommands } from './commands/info.command.js';
 import { registerGuideCommands } from './commands/guide.command.js';
 import { registerOpsCommands } from './commands/ops.command.js';
 import { registerStripeCommands } from './commands/stripe.command.js';
+import { registerIntegrationCommands } from './commands/integration.command.js';
 
 /**
  * Every command group the CLI has, registered on `program`.
@@ -40,4 +41,6 @@ export function registerCommands(program: Command): void {
   registerGuideCommands(program);
   registerOpsCommands(program);
   registerStripeCommands(program);
+  // After setup + event: adds `setup status` and `event auth-attempts` to those groups (TBP-541).
+  registerIntegrationCommands(program);
 }
