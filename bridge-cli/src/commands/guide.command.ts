@@ -1,10 +1,9 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { commandsDir } from './runtime-dir.js';
 import { outputSuccess, outputPrompt, outputError } from '../output.js';
-import { readCredentials, isExpired } from '../credentials.js';
-import { runLogin } from './auth/login.command.js';
 import { AUTH_MASTER_PROMPT_FILENAME, AUTH_MASTER_PROMPT_URL, pluginGuideUrl } from '../prompt-urls.js';
 
 /**
@@ -32,14 +31,35 @@ const GUIDE_REPOS: Record<string, string> = {
   nestjs: 'bridge-nestjs/main',
 };
 
-const AVAILABLE_FEATURES: Record<string, string[]> = {
-  svelte: ['sdk-auth', 'feature-flags', 'flags', 'billing', 'team'],
-  react: ['flags', 'billing'],
-  nextjs: ['flags', 'billing'],
-  angular: ['flags', 'billing'],
-  nestjs: ['flags', 'billing'],
-  express: ['flags', 'billing'],
+export type GuideCoverage = {
+  aliases: Record<string, string>;
+  frameworks: Record<string, string[]>;
 };
+
+/**
+ * Which per-framework guides exist, from `prompts/guide-coverage.json`.
+ *
+ * That file is the one copy (TBP-706): this command lists it, and the Bridge
+ * MCP server reads the same file from GitHub for its "no such guide" answers.
+ * Before it, the CLI, the MCP server and the auth master prompt gave three
+ * different answers, and the CLI's was the most out of date.
+ */
+export function loadGuideCoverage(): GuideCoverage {
+  const here = thisDir();
+  const candidates = [
+    join(here, '..', 'prompts', 'guide-coverage.json'),
+    join(here, '..', '..', 'prompts', 'guide-coverage.json'),
+  ];
+  for (const path of candidates) {
+    try {
+      const { aliases, frameworks } = JSON.parse(readFileSync(path, 'utf-8')) as GuideCoverage;
+      return { aliases, frameworks };
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error(`guide-coverage.json not found. Tried: ${candidates.join(', ')}`);
+}
 
 const FLAGS_FRAMEWORKS = ['svelte', 'react', 'nextjs', 'angular', 'nestjs', 'express'] as const;
 type FlagsFramework = (typeof FLAGS_FRAMEWORKS)[number];
@@ -77,13 +97,9 @@ export function registerGuideCommands(program: Command): void {
     .action(async (_opts, command) => {
       try {
         const opts = command.optsWithGlobals() as { json?: boolean };
-        await ensureAuthenticated();
-        const creds = readCredentials()!;
-        const raw = await fetchMasterPrompt();
-        const guide = raw
-          .replace('{{session.email}}', creds.user.email)
-          .replace('{{session.appName}}', creds.app.name)
-          .replace('{{session.appId}}', creds.app.id);
+        // No login here: reading a guide needs no session, and the commands
+        // the guide goes on to run ask for one themselves (TBP-706).
+        const guide = await fetchMasterPrompt();
         if (opts.json) outputSuccess({ guide });
         else outputPrompt(guide);
       } catch (err) { outputError(err); }
@@ -94,7 +110,8 @@ export function registerGuideCommands(program: Command): void {
   guide.command('list')
     .description('List available integration guides and feature guides')
     .action(() => {
-      outputSuccess({ technologies, features: AVAILABLE_FEATURES });
+      const { aliases, frameworks } = loadGuideCoverage();
+      outputSuccess({ technologies, features: frameworks, aliases });
     });
 
   // TBP-206 — `bridge guide flags [--framework <name>]`
@@ -162,7 +179,7 @@ export function registerGuideCommands(program: Command): void {
 
   for (const tech of Object.keys(GUIDE_REPOS)) {
     guide.command(tech)
-      .argument('[feature]', 'Feature guide (e.g. sdk-auth, feature-flags, flags, billing, team)')
+      .argument('[feature]', 'Feature guide — `bridge guide list` shows which exist per framework')
       .description(`Integration guide for ${tech}`)
       .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
       .action(async (feature: string | undefined, _opts, command) => {
@@ -348,14 +365,6 @@ export async function resolveBillingFramework(
   return undefined;
 }
 
-async function ensureAuthenticated(): Promise<void> {
-  const creds = readCredentials();
-  if (!creds || isExpired(creds)) {
-    process.stdout.write('No active Bridge session — opening your browser to log in.\n');
-    await runLogin({});
-  }
-}
-
 async function fetchGuide(tech: string, feature?: string): Promise<string> {
   const cacheKey = feature ? `${tech}:${feature}` : tech;
   const cached = guideCache.get(cacheKey);
@@ -458,7 +467,9 @@ The access token contains:
 
 ## 3. Feature Flags
 
-Evaluate flags server-side:
+Evaluate flags server-side for a signed-in user (the Bridge evaluates; you get values).
+This is not the endpoint the SDKs load flag rules from — that one returns the rules
+for local evaluation, and the SDKs call it for you:
 \`\`\`
 POST https://api.thebridge.dev/cloud-views/flags/bulkEvaluate/{appId}
 Authorization: Bearer <user-access-token>

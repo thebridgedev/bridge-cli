@@ -181,9 +181,9 @@ For each confirmed project, fetch the framework-specific integration prompt.
 | Framework | Hosted (default) | SDK |
 |-----------|-------------------|-----|
 | SvelteKit | `bridge guide svelte` | `bridge guide svelte sdk-auth` |
-| React | `bridge guide react` | — (SDK prompt not published yet; use the hosted guide + the package's `learning/sdk-auth` docs) |
+| React | `bridge guide react` | `bridge guide react sdk-auth` |
 | Next.js | `bridge guide nextjs` | `bridge guide nextjs sdk-auth` |
-| Angular | `bridge guide angular` | — (SDK prompt not published yet; use the hosted guide + the package's `learning/sdk-auth` docs) |
+| Angular | `bridge guide angular` | `bridge guide angular sdk-auth` |
 
 **Backend projects:**
 

@@ -58,7 +58,14 @@ export function outputError(error: unknown): void {
       code = (error.body as Record<string, string>).nblocksCode;
     }
 
-    if (error.status === 403) {
+    // TBP-541 — the server named the fix itself; that beats any generic hint.
+    const serverFix =
+      typeof error.body === 'object' && error.body && 'fix' in error.body
+        ? (error.body as Record<string, unknown>).fix
+        : undefined;
+    if (typeof serverFix === 'string' && serverFix.length > 0) {
+      hint = serverFix;
+    } else if (error.status === 403) {
       // The server's message is the authoritative one; check the body too,
       // since the privilege name sometimes only appears there.
       const bodyMessage =
