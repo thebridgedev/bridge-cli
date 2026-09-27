@@ -94,14 +94,13 @@ PLACEHOLDER: what-i-changed
 
     Frontend (my-saas-app):
     ✅  @nebulr-group/bridge-svelte installed
-    ✅  src/routes/+layout.ts wired with bridgeBootstrap()
-    ✅  src/routes/+layout.svelte rendering <BridgeBootstrap>
-    ✅  OAuth callback route at /auth/oauth-callback
+    ✅  src/routes/+layout.ts — export const load = bridgeBootstrap({ rules })
+    ✅  src/routes/+layout.svelte — app wrapped in <BridgeBootstrap>
+    ✅  src/routes/auth/[...bridge]/+page.svelte — <BridgeAuthRoutes /> serves every sign-in page
     ✅  .env configured with VITE_BRIDGE_APP_ID=abc123
     ✅  Bridge app configured for http://localhost:5175
 
     Backend (my-saas-api):
     ✅  @nebulr-group/bridge-nestjs installed
-    ✅  BridgeModule registered in AppModule
-    ✅  Global JWT guard applied
+    ✅  AppModule — BridgeModule.forRoot({ guard: { global: true } }), every route needs a signed-in user
     ✅  .env configured with BRIDGE_APP_ID=abc123

@@ -90,12 +90,12 @@ bridge guide <framework>              # hosted-auth audit checklist
 bridge guide <framework> sdk-auth     # SDK-auth audit checklist (in-app forms)
 ```
 
-The framework guide tells you precisely what must exist (bootstrap call, provider wrapping, callback routes, environment variables). Apply that checklist to the project on disk.
+The framework guide tells you precisely what must exist (bootstrap call, provider wrapping, the auth pages, environment variables). Apply that checklist to the project on disk.
 
 **General decision matrix** (independent of framework):
 
-- **Wiring complete AND all required auth routes present** → Bridge is fully integrated. Skip to **Step 6b** and output the success message.
-- **Bootstrap wiring complete BUT auth routes missing** → Bridge is partially integrated. The missing routes silently break signup verification, password reset, or SSO callback. Tell the user explicitly which files are missing (the framework guide lists them by name). Add only what's missing — do not regenerate existing routes.
+- **Wiring complete AND the auth pages are served** → Bridge is fully integrated. Skip to **Step 6b** and output the success message.
+- **Bootstrap wiring complete BUT the auth pages are missing** → Bridge is partially integrated. Without them signup verification, password reset and the SSO callback land on a 404. On SvelteKit the fix is one file, `src/routes/auth/[...bridge]/+page.svelte` rendering `<BridgeAuthRoutes />`; hand-written pages that only render a Bridge component can then be deleted. On other frameworks the guide names the files. Add only what's missing.
 - **Bootstrap wiring incomplete** (regardless of route state) → Offer to complete the initial setup (proceed to Step 4).
 - **Bridge is NOT installed** → Continue with Steps 2–6 for fresh setup.
 
@@ -193,8 +193,10 @@ For each confirmed project, fetch the framework-specific integration prompt.
 | Express | `bridge guide express` |
 
 Follow the per-framework guide instructions verbatim. Pass these values from Step 3:
-- `appId` — same for all projects
+- `appId` — same for all projects; it goes in the project's `.env` (`VITE_BRIDGE_APP_ID` on SvelteKit, `BRIDGE_APP_ID` on NestJS), which the plugin reads itself
 - `packageManager` — detected in Step 1 (use it for all install commands)
+
+**What the handover looks like.** The guides are short because the plugins serve their own pages. On SvelteKit the whole frontend integration is the `.env` line, `src/routes/+layout.ts` (`export const load = bridgeBootstrap({ rules })`), `src/routes/+layout.svelte` (`<BridgeBootstrap>`) and one auth file, `src/routes/auth/[...bridge]/+page.svelte` — about fifteen lines. On NestJS it is `BridgeModule.forRoot({ guard: { global: true } })` in `AppModule` and the `.env` line. Do not write login, signup, callback or password pages by hand, and no fetch helper for tokens. `bridge guide mechanisms` explains the levels and customisation rungs if the developer asks for more.
 
 **Order:** Frontend first, then backend. This lets you verify login works before adding backend guards.
 
@@ -248,6 +250,6 @@ After delivering the message, the integration is complete.
 After auth is wired and the success banner is printed, the developer commonly wants flags and billing next. Mention these one-liners so they know how to continue:
 
 - **Feature Flags 2.0** → `bridge guide flags` (auto-detects framework, sets up flag evaluation, telemetry, realtime)
-- **Billing 2.0** → `bridge guide billing` (subscriptions, plan selector, quota banners, webhook receiver)
+- **Billing 2.0** → `bridge guide billing` (plans, the subscription pages, the paywall, plan limits enforced by the backend)
 
 Do not run them automatically — the developer decides when they want each track.

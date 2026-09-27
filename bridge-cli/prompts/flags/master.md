@@ -19,7 +19,7 @@ Each plugin repo owns its own framework-specific prompt under `mcp/feature-flags
 
 `bridge guide <framework> flags` is an equivalent route — both call the same plugin-repo prompt.
 
-If the CLI returns `HTTP 404 — file may not exist yet in the plugin repo`, the plugin hasn't published its Flags  guide yet. Tell the user that's the blocker and fall back to `@nebulr-group/bridge-auth-core` directly (it's framework-agnostic and stable). Do NOT improvise an inline integration in this master prompt — the plugin guide is the canonical handover.
+If the CLI returns `HTTP 404 — file may not exist yet in the plugin repo`, the plugin hasn't published its flags guide yet. Tell the user that's the blocker and fall back to `@nebulr-group/bridge-auth-core` directly (it's framework-agnostic and stable). Do NOT improvise an inline integration in this master prompt — the plugin guide is the canonical handover.
 
 ## Step 0 — Authenticate
 
@@ -63,7 +63,7 @@ Track as you work:
 
 ## Mental model (1-minute version)
 
-A flag in  has:
+A flag has:
 
 | Field | Possible values |
 |---|---|
@@ -75,7 +75,7 @@ A flag in  has:
 
 Branches are first-match-wins; conditions within a branch AND together; `rolloutPct` is rule-level (0-100) and requires `identity` on the eval context.
 
-The SDK call is the same everywhere — `bridge.flag(key, defaultValue)`. The return type is inferred from `defaultValue`, so no casts.
+Every plugin wraps the same evaluation, and the return type is inferred from the default value, so no casts. On SvelteKit it is `useFlag(key, defaultValue)` in script and `<FeatureFlag key defaultValue>` in markup, both from `@nebulr-group/bridge-svelte/flags`; a whole route is gated by a `featureFlag` rule in `bridgeBootstrap()`.
 
 ## Step 1 — Discover projects
 
@@ -95,7 +95,7 @@ Scan the current directory and its immediate subdirectories for `package.json` f
    - `@nestjs/core` → **NestJS** (backend)
    - `express` (without `@nestjs/core`) → **Express** (backend)
 
-3. **Existing Bridge plugin?** Check for `@nebulr-group/bridge-<framework>` — if present, the project may already have auth or other Bridge surfaces. Flags can co-exist with auth in the same plugin; the per-framework guide will tell you whether the unified `useBridge()` is already in place.
+3. **Existing Bridge plugin?** Check for `@nebulr-group/bridge-<framework>` — if present, the project may already have auth or other Bridge surfaces. Flags can co-exist with auth in the same plugin; the per-framework guide will tell you whether its bootstrap is already in place. On SvelteKit, an app that already calls `bridgeBootstrap()` and renders `<BridgeBootstrap>` has flags running — there is nothing to install or initialise.
 
 4. **Existing flag system?** Look for `launchdarkly-*`, `@unleash/*`, `posthog-js`, `growthbook-*` — warn the user that Bridge flags will run in parallel unless they migrate.
 
@@ -167,8 +167,8 @@ Where `<name>` is one of: `svelte`, `react`, `nextjs`, `angular`, `nestjs`, `exp
 
 **Every per-framework guide covers this contract:**
 
-- **Install** — the right package + version + import path (`/flags` entry point so auth code isn't pulled in unnecessarily)
-- **Bootstrap** — provider / module / factory setup, `appId` + `baseUrl` + `mode` config
+- **Install** — the right package + version + import path (when the plugin is already installed for auth, nothing more to install)
+- **Bootstrap** — provider / module / factory setup where the framework needs one (SvelteKit with Bridge Auth needs none: `<BridgeBootstrap>` starts flags, reading the app id from `.env`)
 - **Eval context** — idiomatic placement for `identity` and `attributes`, including how to wire the `identitySource` chosen in Step 2
 - **Reading a flag** — the framework wrapper (`useFlag`, `FeatureFlag`, `signal`, decorator) and the synchronous `evaluateFlag` for non-reactive contexts
 - **Advanced attribute wiring** — the unified `bridge.attributes` write surface and realtime event subscription via `bridge.events.handle`
@@ -177,14 +177,14 @@ Where `<name>` is one of: `svelte`, `react`, `nextjs`, `angular`, `nestjs`, `exp
 
 **Pass these values from this master to the per-framework prompt:**
 - `appId` — from Step 3
-- `baseUrl` — `https://api.thebridge.dev` (default; only override for self-hosted)
+- `baseUrl` — production by default; a stage, local or self-hosted app must set it (SvelteKit reads `VITE_BRIDGE_API_BASE_URL` itself)
 - `packageManager` — from Step 1
 - `mode` — `frontend` (browser projects) or `backend` (NestJS, Express, Next.js server)
 - `identitySource` — from Step 2
 
 **Order:** Frontend first, then backend.
 
-If the CLI returns `HTTP 404`, the plugin hasn't published its Flags  guide yet. Tell the user that's the blocker and fall back to `@nebulr-group/bridge-auth-core` directly — `new BridgeFlags({ appId, baseUrl, mode })` + `bridge.setContext({...})` + `bridge.flag(...)`. The SDK shape is identical across frameworks; only the bindings differ.
+If the CLI returns `HTTP 404`, the plugin hasn't published its flags guide yet. Tell the user that's the blocker and fall back to `@nebulr-group/bridge-auth-core` directly — `new BridgeFlags({ appId, baseUrl, mode })` + `bridge.setContext({...})` + `bridge.flag(...)`. The SDK shape is identical across frameworks; only the bindings differ.
 
 ## Step 5 — Verify
 
