@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { commandsDir } from './runtime-dir.js';
 import { outputSuccess, outputPrompt, outputError } from '../output.js';
 import { AUTH_MASTER_PROMPT_FILENAME, AUTH_MASTER_PROMPT_URL, pluginGuideUrl } from '../prompt-urls.js';
-import { fetchDecisionGuide, registerJourneyCommands, unknownGuideMessage } from './journeys.js';
+import {
+  DECISION_DOMAINS,
+  fetchDecisionGuide,
+  registerJourneyCommands,
+  unknownGuideMessage,
+  type DecisionDomain,
+} from './journeys.js';
 
 /**
  * Locate the directory containing this module on disk so the bundled prompts
@@ -259,6 +265,45 @@ export function registerGuideCommands(program: Command): void {
       } catch (err) { outputError(err); }
     });
 
+  // TBP-540 — the level-1 map: what Bridge does, one short paragraph per
+  // area, for an agent to relay as is. The MCP server serves the same file.
+  guide.command('orientation')
+    .description('What Bridge does: a short map to relay to a developer, with where to go next')
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
+      try {
+        const opts = command.optsWithGlobals() as { json?: boolean };
+        const content = await fetchOrientationGuide();
+        if (opts.json) outputSuccess({ topic: 'orientation', guide: content });
+        else outputPrompt(content);
+      } catch (err) { outputError(err); }
+    });
+
+  // TBP-540 — each decision guide on its own. Five of the seven also open a
+  // journey (`bridge guide add-login` …); `roles` and `look-and-feel` open
+  // none, so without this command the CLI could not reach them.
+  guide.command('decision')
+    .argument('<domain>', `One of: ${DECISION_DOMAINS.join(', ')}`)
+    .description('A decision guide: the questions to ask the developer and the defaults to apply')
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (domain: string, _opts, command) => {
+      try {
+        const opts = command.optsWithGlobals() as { json?: boolean };
+        if (!(DECISION_DOMAINS as readonly string[]).includes(domain)) {
+          throw Object.assign(
+            new Error(`No decision guide named '${domain}'. Decision guides: ${DECISION_DOMAINS.join(', ')}.`),
+            { code: 'GUIDE_NOT_FOUND' },
+          );
+        }
+        const content = await fetchDecisionGuide(domain as DecisionDomain);
+        if (!content) {
+          throw Object.assign(new Error(`The '${domain}' decision guide could not be read.`), { code: 'GUIDE_NOT_FOUND' });
+        }
+        if (opts.json) outputSuccess({ domain, guide: content });
+        else outputPrompt(content);
+      } catch (err) { outputError(err); }
+    });
+
   guide.command('integration-success')
     .description('Integration success message template — output at the end of a completed integration')
     .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
@@ -273,21 +318,31 @@ export function registerGuideCommands(program: Command): void {
 }
 
 export const MECHANISMS_PROMPT_FILENAME = 'mechanisms.md';
+export const ORIENTATION_PROMPT_FILENAME = 'orientation.md';
 
 /** The mechanisms page, bundled with the CLI (`BRIDGE_GUIDE_LOCAL_DIR` wins in development). */
 export async function fetchMechanismsGuide(): Promise<string> {
+  return fetchBundledPage(MECHANISMS_PROMPT_FILENAME, 'mechanisms guide');
+}
+
+/** The orientation map, bundled with the CLI (`BRIDGE_GUIDE_LOCAL_DIR` wins in development). */
+export async function fetchOrientationGuide(): Promise<string> {
+  return fetchBundledPage(ORIENTATION_PROMPT_FILENAME, 'orientation guide');
+}
+
+async function fetchBundledPage(filename: string, label: string): Promise<string> {
   const localDir = process.env.BRIDGE_GUIDE_LOCAL_DIR;
   if (localDir) {
     try {
-      return await readFile(join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', MECHANISMS_PROMPT_FILENAME), 'utf-8');
+      return await readFile(join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', filename), 'utf-8');
     } catch {
       /* fall through to bundled */
     }
   }
   const here = thisDir();
   const candidates = [
-    join(here, '..', 'prompts', MECHANISMS_PROMPT_FILENAME),
-    join(here, '..', '..', 'prompts', MECHANISMS_PROMPT_FILENAME),
+    join(here, '..', 'prompts', filename),
+    join(here, '..', '..', 'prompts', filename),
   ];
   for (const path of candidates) {
     try {
@@ -296,7 +351,7 @@ export async function fetchMechanismsGuide(): Promise<string> {
       /* try next */
     }
   }
-  throw new Error(`mechanisms guide not found. Tried: ${candidates.join(', ')}`);
+  throw new Error(`${label} not found. Tried: ${candidates.join(', ')}`);
 }
 
 async function fetchIntegrationSuccess(): Promise<string> {

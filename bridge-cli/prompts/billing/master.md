@@ -141,8 +141,11 @@ and payment failures will not sync. Tell the developer and follow the repair hin
 If not connected, ask the developer for their Stripe keys (from `dashboard.stripe.com/apikeys`):
 
 ```bash
-bridge stripe connect --secret-key sk_test_... --publishable-key pk_test_...
+bridge setup payments --stripe-key sk_test_... --stripe-public-key pk_test_...
 ```
+
+This stores the keys **and** switches payments on in one step. (`bridge stripe connect` only
+stores the keys and leaves payments off.)
 
 Now set any **remaining** prices — one command per Prices-table row not already covered by the
 `plan create` call above. `plan price set` is idempotent (keyed on currency + interval), so a

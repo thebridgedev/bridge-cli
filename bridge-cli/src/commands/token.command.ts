@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { resolveTokenIdByName } from '../resolve.js';
+import { dryRunPreview } from '../preview.js';
 
 export function registerTokenCommands(program: Command): void {
   const token = program.command('token').description('Manage API tokens');
@@ -32,9 +33,14 @@ export function registerTokenCommands(program: Command): void {
     .description('Revoke an API token by --name or --id')
     .option('--name <name>', 'Token name to address (alternative to --id; fails if not unique)')
     .option('--id <id>', 'Token ID to address (alternative to --name)')
+    .option('--dry-run', 'Show the token\'s privileges and last use, and whether it is your own login, and revoke nothing')
     .action(async (opts) => {
       try {
         const id = await resolveTokenIdByName({ id: opts.id, key: opts.name });
+        if (opts.dryRun) {
+          outputSuccess(await dryRunPreview(`/v1/account/api-token/app/${encodeURIComponent(id)}`));
+          return;
+        }
         await getManagementClient().tokens.revoke(id);
         outputSuccess({ revoked: true, id });
       } catch (err) { outputError(err); }
