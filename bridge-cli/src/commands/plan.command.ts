@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
+import { shapePlan } from '../shape.js';
 
 // ── Quota types + helpers ────────────────────────────────────────────────────
 // Matches the backend PlanQuota shape (TBP-264). The published
@@ -50,6 +52,8 @@ export interface MetricSummary {
   metric: string;
   /** `mixed` when the plans disagree on the metric's kind. */
   kind: QuotaKind | 'mixed';
+  /** TBP-709 — true for the seats gauge Bridge counts itself. */
+  builtIn?: boolean;
   plans: Array<{ planKey: string; kind: QuotaKind; limit: number; policy: QuotaPolicy }>;
 }
 
@@ -70,6 +74,11 @@ export function listMetrics(
       byMetric.set(q.metric, entry);
     }
   }
+  // TBP-709 — the built-in seats gauge is a metric every app may use, even
+  // before any plan limits it, so it is always listed (as MCP list_plan_quotas).
+  const seats = byMetric.get(SEATS_METRIC);
+  if (seats) seats.builtIn = true;
+  else byMetric.set(SEATS_METRIC, { metric: SEATS_METRIC, kind: 'gauge', builtIn: true, plans: [] });
   return [...byMetric.values()].sort((a, b) => a.metric.localeCompare(b.metric));
 }
 
@@ -284,7 +293,7 @@ export function registerPlanCommands(program: Command): void {
   plan.command('list')
     .description('List all subscription plans')
     .action(async () => {
-      try { outputSuccess(await getManagementClient().plans.list()); }
+      try { outputSuccess((await getManagementClient().plans.list()).map(shapePlan)); }
       catch (err) { outputError(err); }
     });
 
@@ -294,7 +303,7 @@ export function registerPlanCommands(program: Command): void {
     .action(async (key: string) => {
       try {
         const { plan: found, quotas } = await getPlan(key);
-        outputSuccess({ ...found, quotas });
+        outputSuccess(shapePlan({ ...found, quotas }));
       } catch (err) { outputError(err); }
     });
 
@@ -317,14 +326,14 @@ export function registerPlanCommands(program: Command): void {
           interval: opts.interval,
           currency: opts.currency,
         });
-        outputSuccess(await getManagementClient().plans.create({
+        outputSuccess(shapePlan(await getManagementClient().plans.create({
           key: opts.key,
           name: opts.name,
           description: opts.description,
           trial: opts.trial,
           trialDays: opts.trialDays,
           prices,
-        }));
+        })));
       } catch (err) { outputError(err); }
     });
 
@@ -337,12 +346,149 @@ export function registerPlanCommands(program: Command): void {
       try {
         const { key, ...data } = opts;
         const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
-        outputSuccess(await getManagementClient().plans.update(key, cleaned));
+        outputSuccess(shapePlan(await getManagementClient().plans.update(key, cleaned)));
+      } catch (err) { outputError(err); }
+    });
+
+  plan.command('apply')
+    .description('Set up or reshape one plan in a single write: name, trial, prices and quotas together (creates it when the key is new)')
+    .requiredOption(
+      '--spec <json>',
+      'The plan as JSON, or @file.json: { key, name?, description?, trial?, trialDays?, ' +
+        'prices?: [{ amount, interval, currency? }], quotas?: [{ metric, limit, policy, kind?, priceAmount?, priceCurrency? }], ' +
+        'removePrices?: [{ interval, currency? }], removeQuotas?: [metric] }. Same shape as the MCP apply_plan tool. ' +
+        'Prices and quotas are upserted; anything not mentioned is kept',
+    )
+    .action(async (opts) => {
+      try {
+        const spec = parsePlanSpec(opts.spec);
+        const plans = (await getManagementClient().plans.list()) as unknown as Array<Record<string, unknown>>;
+        const write = planApplyWrite(spec, plans);
+        const result = write.created
+          ? await getManagementClient().plans.create(write.body as never)
+          : await getManagementClient().plans.update(spec.key, write.body as never);
+        outputSuccess({ created: write.created, plan: shapePlan(result) });
       } catch (err) { outputError(err); }
     });
 
   registerPriceCommands(plan);
   registerQuotaCommands(plan);
+}
+
+// ── plan apply (TBP-709) ─────────────────────────────────────────────────────
+// Mirrors the MCP apply_plan tool: one write per plan, prices upserted by
+// currency + interval, quotas by metric, only the named ones removed, and the
+// same refusals (same codes) before anything is written.
+
+export interface PlanSpec {
+  key: string;
+  name?: string;
+  description?: string;
+  trial?: boolean;
+  trialDays?: number;
+  prices?: Array<{ amount: number; interval: string; currency?: string }>;
+  quotas?: Array<{ metric: string; limit: number; policy: string; kind?: string; priceAmount?: number; priceCurrency?: string }>;
+  removePrices?: Array<{ interval: string; currency?: string }>;
+  removeQuotas?: string[];
+}
+
+/** An error with a machine-readable code, reported by outputError. */
+export class PlanApplyError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = 'PlanApplyError';
+  }
+}
+
+/** Read `--spec` as inline JSON or `@path`. */
+export function parsePlanSpec(raw: string): PlanSpec {
+  const text = raw.startsWith('@') ? readFileSync(raw.slice(1), 'utf8') : raw;
+  let spec: PlanSpec;
+  try {
+    spec = JSON.parse(text) as PlanSpec;
+  } catch (err) {
+    throw new PlanApplyError('INVALID_SPEC', `--spec is not valid JSON: ${(err as Error).message}`);
+  }
+  if (!spec || typeof spec !== 'object' || typeof spec.key !== 'string' || !spec.key) {
+    throw new PlanApplyError('INVALID_SPEC', '--spec needs a "key", e.g. {"key":"pro","name":"Pro","prices":[{"amount":29,"interval":"month"}]}.');
+  }
+  return spec;
+}
+
+/** The one write `plan apply` makes: a create body or an update body. Pure. */
+export function planApplyWrite(
+  spec: PlanSpec,
+  plans: Array<Record<string, unknown>>,
+): { created: boolean; body: Record<string, unknown> } {
+  const key = spec.key;
+  const current = plans.find((p) => p.key === key);
+  const isNew = !current;
+
+  let prices: PlanPriceInput[] = isNew ? [] : [...(((current as { prices?: PlanPriceInput[] }).prices ?? []))];
+  for (const r of spec.removePrices ?? []) {
+    const currency = (r.currency ?? 'USD').trim().toUpperCase();
+    const slot = (p: PlanPriceInput) => p.currency === currency && p.recurrenceInterval === r.interval;
+    if (!prices.some(slot)) {
+      throw new PlanApplyError('PRICE_NOT_FOUND', `No ${currency} ${r.interval} price on plan "${key}". Nothing was changed.`);
+    }
+    prices = prices.filter((p) => !slot(p));
+  }
+  for (const p of spec.prices ?? []) {
+    prices = upsertPrice(prices, buildPriceEntry({ amount: p.amount, interval: p.interval, currency: p.currency }));
+  }
+  if (prices.length === 0) {
+    throw isNew
+      ? new PlanApplyError('PLAN_NEEDS_PRICE', `Plan "${key}" does not exist yet, and a new plan needs at least one price, e.g. "prices":[{"amount":29,"interval":"month"}].`)
+      : new PlanApplyError('LAST_PRICE', `This would remove every price from plan "${key}": a plan needs at least one price. Nothing was changed.`);
+  }
+  if (isNew && spec.name === undefined) {
+    throw new PlanApplyError('PLAN_NEEDS_NAME', `Plan "${key}" does not exist yet, and a new plan needs a "name".`);
+  }
+
+  let quotas: Quota[] = isNew ? [] : [...(((current as { quotas?: Quota[] }).quotas ?? []))];
+  for (const metric of spec.removeQuotas ?? []) {
+    if (!quotas.some((q) => q.metric === metric)) {
+      throw new PlanApplyError('QUOTA_NOT_FOUND', `No quota for metric "${metric}" on plan "${key}". Nothing was changed.`);
+    }
+    quotas = quotas.filter((q) => q.metric !== metric);
+  }
+  const currencies = [...new Set(prices.map((p) => p.currency.toUpperCase()))];
+  for (const q of spec.quotas ?? []) {
+    const existingKind = quotas.find((e) => e.metric === String(q.metric ?? '').trim())?.kind;
+    let entry: Quota;
+    try {
+      entry = validateQuotaEntry({
+        metric: q.metric,
+        limit: q.limit,
+        policy: q.policy,
+        kind: q.kind ?? existingKind,
+        priceAmount: q.priceAmount,
+        currency: q.priceCurrency ?? (currencies.length === 1 ? currencies[0] : undefined),
+      });
+    } catch (err) {
+      throw new PlanApplyError('INVALID_QUOTA', (err as Error).message);
+    }
+    quotas = upsertQuota(quotas, entry);
+  }
+
+  const fields: Record<string, unknown> = {};
+  for (const f of ['name', 'description', 'trial', 'trialDays'] as const) {
+    if (spec[f] !== undefined) fields[f] = spec[f];
+  }
+  if (isNew) {
+    return {
+      created: true,
+      body: { key, trial: false, ...fields, prices, ...(quotas.length ? { quotas } : {}) },
+    };
+  }
+  return {
+    created: false,
+    body: {
+      ...fields,
+      ...(spec.prices !== undefined || spec.removePrices !== undefined ? { prices } : {}),
+      ...(spec.quotas !== undefined || spec.removeQuotas !== undefined ? { quotas } : {}),
+    },
+  };
 }
 
 // ── plan price (recurring prices) ────────────────────────────────────────────
@@ -367,7 +513,7 @@ function registerPriceCommands(plan: Command): void {
         });
         const { prices } = await getPlan(key);
         const next = upsertPrice(prices, entry);
-        outputSuccess(await getManagementClient().plans.update(key, { prices: next }));
+        outputSuccess(shapePlan(await getManagementClient().plans.update(key, { prices: next })));
       } catch (err) { outputError(err); }
     });
 
@@ -389,7 +535,7 @@ function registerPriceCommands(plan: Command): void {
           },
           key,
         );
-        outputSuccess(await getManagementClient().plans.update(key, { prices: next }));
+        outputSuccess(shapePlan(await getManagementClient().plans.update(key, { prices: next })));
       } catch (err) { outputError(err); }
     });
 }
@@ -415,7 +561,7 @@ function registerQuotaCommands(plan: Command): void {
           return;
         }
         const { quotas } = await getPlan(key);
-        outputSuccess(quotas.map((q) => ({ ...q, kind: quotaKindOf(q) })));
+        outputSuccess((shapePlan({ quotas }).quotas ?? []).map((q) => ({ ...q, kind: quotaKindOf(q) })));
       } catch (err) { outputError(err); }
     });
 
@@ -455,7 +601,7 @@ function registerQuotaCommands(plan: Command): void {
           currency,
         });
         const next = upsertQuota(quotas, entry);
-        outputSuccess(await getManagementClient().plans.update(key, { quotas: next } as never));
+        outputSuccess(shapePlan(await getManagementClient().plans.update(key, { quotas: next } as never)));
       } catch (err) { outputError(err); }
     });
 
@@ -470,7 +616,7 @@ function registerQuotaCommands(plan: Command): void {
         if (next.length === quotas.length) {
           throw new Error(`No quota for metric "${opts.metric}" on plan "${key}".`);
         }
-        outputSuccess(await getManagementClient().plans.update(key, { quotas: next } as never));
+        outputSuccess(shapePlan(await getManagementClient().plans.update(key, { quotas: next } as never)));
       } catch (err) { outputError(err); }
     });
 }

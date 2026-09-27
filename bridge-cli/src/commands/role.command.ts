@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { resolvePrivilegeIds, resolveRoleId } from '../resolve.js';
+import { shapeRoleList } from '../shape.js';
 
 export function registerRoleCommands(program: Command): void {
   const role = program.command('role').description('Manage access roles');
@@ -9,7 +10,7 @@ export function registerRoleCommands(program: Command): void {
   role.command('list')
     .description('List all access roles')
     .action(async () => {
-      try { outputSuccess(await getManagementClient().roles.list()); }
+      try { outputSuccess(shapeRoleList(await getManagementClient().roles.list())); }
       catch (err) { outputError(err); }
     });
 

@@ -21,7 +21,7 @@ import { join, relative } from 'node:path';
 import { Command } from 'commander';
 import { registerCommands } from '../program';
 import { loadGuideCoverage } from '../commands/guide.command';
-import { JOURNEYS } from '../commands/journeys';
+import { DECISION_DOMAINS, JOURNEYS } from '../commands/journeys';
 
 const PROMPTS = join(__dirname, '..', '..', 'prompts');
 
@@ -88,6 +88,10 @@ function problem(tokens: string[]): string | null {
       continue;
     }
     if (cmd.registeredArguments.length === 0) return `'${t}' is not a subcommand of '${cmd.name()}'`;
+    // `bridge guide decision <domain>` (TBP-540) — the domain must be one of the seven.
+    if (cmd.parent?.name() === 'guide' && cmd.name() === 'decision') {
+      return (DECISION_DOMAINS as readonly string[]).includes(t) ? null : `no '${t}' decision guide`;
+    }
     // An argument. Under `bridge guide <framework>` it names a guide feature.
     if (cmd.parent?.name() === 'guide' && coverage.frameworks[cmd.name()]) {
       const feature = coverage.aliases[t] ?? t;
@@ -137,11 +141,18 @@ describe('the resolver itself', () => {
     [['guide', 'svelte', 'payments'], /no 'payments' guide/],
     [['guide', '[framework]', 'payments'], /does not exist for any framework/],
     [['config', 'password-policy'], /not a subcommand/],
+    [['guide', 'decision', 'billing'], /no 'billing' decision guide/],
   ])('rejects bridge %j', (tokens, why) => {
     expect(problem(tokens as string[])).toMatch(why);
   });
 
-  it.each([[['guide', 'react', 'sdk-auth']], [['guide', 'nestjs', 'flags']], [['auth', 'password-policy']]])(
+  it.each([
+    [['guide', 'react', 'sdk-auth']],
+    [['guide', 'nestjs', 'flags']],
+    [['auth', 'password-policy']],
+    [['guide', 'decision', 'look-and-feel']],
+    [['guide', 'decision', '<name>']],
+  ])(
     'accepts bridge %j',
     (tokens) => {
       expect(problem(tokens)).toBeNull();
@@ -152,7 +163,10 @@ describe('the resolver itself', () => {
 describe('guide-coverage.json', () => {
   it('covers exactly the frameworks `bridge guide` serves', () => {
     const guide = program.commands.find((c) => c.name() === 'guide')!;
-    const notFrameworks = ['list', 'flags', 'billing', 'mechanisms', 'custom', 'integration-success', ...JOURNEYS.map((j) => j.name)];
+    const notFrameworks = [
+      'list', 'flags', 'billing', 'mechanisms', 'orientation', 'decision', 'custom', 'integration-success',
+      ...JOURNEYS.map((j) => j.name),
+    ];
     const served = guide.commands.map((c) => c.name()).filter((n) => !notFrameworks.includes(n));
     expect(Object.keys(coverage.frameworks).sort()).toEqual(served.sort());
   });
