@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { getManagementClient, resolveTenantId } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { resolveUserId } from '../resolve.js';
+import { dryRunPreview } from '../preview.js';
 
 export function registerUserCommands(program: Command): void {
   const user = program.command('user').description('Manage tenant users');
@@ -72,10 +73,18 @@ export function registerUserCommands(program: Command): void {
     .option('--email <email>', 'User email to address (alternative to --user-id)')
     .option('--user-id <id>', 'User ID to address (alternative to --email)')
     .option('--tenant-id <id>', 'Tenant ID (or set BRIDGE_TENANT_ID)')
+    .option('--dry-run', 'Show whether their login account goes too and whether they are the last owner, and remove nothing')
     .action(async (opts) => {
       try {
         const tenantId = resolveTenantId(opts);
         const userId = await resolveUserId({ id: opts.userId, key: opts.email }, tenantId);
+        if (opts.dryRun) {
+          outputSuccess(await dryRunPreview(
+            `/v1/account/tenant/user/${encodeURIComponent(userId)}`,
+            { 'x-tenant-id': tenantId },
+          ));
+          return;
+        }
         await getManagementClient().users.remove(tenantId, userId);
         outputSuccess({ removed: true, userId });
       } catch (err) { outputError(err); }

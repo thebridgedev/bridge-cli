@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { resolveTenantIdByName } from '../resolve.js';
+import { shapeTenant } from '../shape.js';
+import { dryRunPreview } from '../preview.js';
 
 export function registerTenantCommands(program: Command): void {
   const tenant = program.command('tenant').description('Manage tenants');
@@ -9,7 +11,7 @@ export function registerTenantCommands(program: Command): void {
   tenant.command('list')
     .description('List all tenants')
     .action(async () => {
-      try { outputSuccess(await getManagementClient().tenants.list()); }
+      try { outputSuccess((await getManagementClient().tenants.list()).map(shapeTenant)); }
       catch (err) { outputError(err); }
     });
 
@@ -20,7 +22,7 @@ export function registerTenantCommands(program: Command): void {
     .action(async (opts) => {
       try {
         const id = await resolveTenantIdByName({ id: opts.id, key: opts.name });
-        outputSuccess(await getManagementClient().tenants.get(id));
+        outputSuccess(shapeTenant(await getManagementClient().tenants.get(id)));
       } catch (err) { outputError(err); }
     });
 
@@ -32,12 +34,12 @@ export function registerTenantCommands(program: Command): void {
     .option('--locale <locale>', 'Locale (ISO 639-1)')
     .action(async (opts) => {
       try {
-        outputSuccess(await getManagementClient().tenants.create({
+        outputSuccess(shapeTenant(await getManagementClient().tenants.create({
           owner: { email: opts.ownerEmail },
           name: opts.name,
           plan: opts.plan,
           locale: opts.locale,
-        }));
+        })));
       } catch (err) { outputError(err); }
     });
 
@@ -65,7 +67,7 @@ export function registerTenantCommands(program: Command): void {
         });
         const data = { name: renameTo, locale: opts.locale, logo: opts.logo };
         const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
-        outputSuccess(await getManagementClient().tenants.update(id, cleaned));
+        outputSuccess(shapeTenant(await getManagementClient().tenants.update(id, cleaned)));
       } catch (err) { outputError(err); }
     });
 
@@ -73,9 +75,14 @@ export function registerTenantCommands(program: Command): void {
     .description('Delete a tenant by --name or --id')
     .option('--name <name>', 'Tenant name to address (alternative to --id; fails if not unique)')
     .option('--id <id>', 'Tenant ID to address (alternative to --name)')
+    .option('--dry-run', 'Show the members, login accounts and side effects the delete would have, and delete nothing')
     .action(async (opts) => {
       try {
         const id = await resolveTenantIdByName({ id: opts.id, key: opts.name });
+        if (opts.dryRun) {
+          outputSuccess(await dryRunPreview(`/v1/account/tenant/${encodeURIComponent(id)}`));
+          return;
+        }
         await getManagementClient().tenants.delete(id);
         outputSuccess({ deleted: true, id });
       } catch (err) { outputError(err); }

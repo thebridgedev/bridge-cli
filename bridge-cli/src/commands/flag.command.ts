@@ -42,6 +42,8 @@ import type {
   UpdateFlagInput,
 } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from '../config.js';
+import { warningsForFlags, withFlagWarnings } from '../flag-coherence.js';
+import { dryRunPreview } from '../preview.js';
 import { outputSuccess, outputError } from '../output.js';
 import { resolveFlag, resolveFlagId } from '../resolve.js';
 import { registerFlagInitCommand } from './flag-init.command.js';
@@ -92,13 +94,18 @@ function registerList(flag: Command): void {
         const flags = await getManagementClient().flags.list();
         // Normalize so callers always see the same shape even if the API
         // returns the legacy fields only.
-        const rows = flags.map((f) => ({
+        // TBP-709 — a flag that cannot mean what it looks like carries warnings.
+        const warnings = await warningsForFlags(
+          flags.map((f) => ({ ...f, state: f.state ?? deriveState(f) })),
+        );
+        const rows = flags.map((f, i) => ({
           id: f.id,
           key: f.key,
           description: f.description,
           state: f.state ?? deriveState(f),
           valueType: f.valueType ?? 'boolean',
           enabled: f.enabled,
+          ...(warnings[i].length ? { warnings: warnings[i] } : {}),
         }));
         outputSuccess(rows);
       } catch (err) {
@@ -122,7 +129,7 @@ function registerGet(flag: Command): void {
           outputError(new Error(`Flag not found: ${key}`));
           return;
         }
-        outputSuccess({
+        outputSuccess(await withFlagWarnings({
           id: found.id,
           key: found.key,
           description: found.description,
@@ -142,7 +149,7 @@ function registerGet(flag: Command): void {
             defaultValue: found.defaultValue,
             targetValue: found.targetValue,
           },
-        });
+        }));
       } catch (err) {
         outputError(err);
       }
@@ -188,7 +195,7 @@ function registerCreate(flag: Command): void {
         // intent is deliberate.
         const payload = buildFlagWritePayload(opts) as unknown as CreateFlagInput;
         const flag = await getManagementClient().flags.create(payload);
-        outputSuccess(flag);
+        outputSuccess(await withFlagWarnings(flag));
       } catch (err) {
         outputError(err);
       }
@@ -237,7 +244,7 @@ function registerUpdate(flag: Command): void {
           payload.rule = null;
         }
         const flag = await getManagementClient().flags.update(id, payload);
-        outputSuccess(flag);
+        outputSuccess(await withFlagWarnings(flag));
       } catch (err) {
         outputError(err);
       }
@@ -318,7 +325,7 @@ function registerToggle(flag: Command): void {
           );
         }
 
-        outputSuccess(result);
+        outputSuccess(await withFlagWarnings(result));
       } catch (err) {
         outputError(err);
       }
@@ -333,9 +340,14 @@ function registerDelete(flag: Command): void {
     .description('Delete a feature flag by --key or --id')
     .option('--key <key>', 'Flag key to address (alternative to --id)')
     .option('--id <id>', 'Flag ID to address (alternative to --key)')
+    .option('--dry-run', 'Show what deleting it would do, and delete nothing')
     .action(async (opts) => {
       try {
         const id = await resolveFlagId({ id: opts.id, key: opts.key });
+        if (opts.dryRun) {
+          outputSuccess(await dryRunPreview(`/v1/admin/flags/flag/${encodeURIComponent(id)}`));
+          return;
+        }
         await getManagementClient().flags.delete(id);
         outputSuccess({ deleted: true, id });
       } catch (err) {
@@ -380,11 +392,14 @@ function registerEval(flag: Command): void {
         };
 
         const result = evaluateLocally(cached, ctx);
+        // TBP-709 — same coherence warnings as the MCP evaluate_feature_flag.
+        const [warnings] = await warningsForFlags([cached]);
         outputSuccess({
           flag: cached.key,
           state: cached.state,
           context: ctx,
           result,
+          warnings,
         });
       } catch (err) {
         outputError(err);

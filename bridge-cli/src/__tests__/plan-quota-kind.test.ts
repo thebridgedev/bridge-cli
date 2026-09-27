@@ -139,7 +139,8 @@ describe('bridge plan quota list', () => {
     const res = await runCli('plan', 'quota', 'list');
     expect(res.stderr).toBe('');
     const { data } = JSON.parse(res.stdout);
-    expect(data.map((m: { metric: string }) => m.metric)).toEqual(['api_calls', 'projects']);
+    // TBP-709 — the built-in seats gauge is always listed.
+    expect(data.map((m: { metric: string }) => m.metric)).toEqual(['api_calls', 'projects', 'users']);
     expect(data[0]).toMatchObject({ metric: 'api_calls', kind: 'counter' });
     expect(data[1]).toEqual({
       metric: 'projects',
@@ -166,6 +167,6 @@ describe('bridge plan quota list', () => {
       { key: 'a', quotas: [{ metric: 'x', limit: 1, policy: 'hard', kind: 'gauge' }] },
       { key: 'b', quotas: [{ metric: 'x', limit: 1, policy: 'hard' }] },
     ]);
-    expect(metrics[0].kind).toBe('mixed');
+    expect(metrics.find((m) => m.metric === 'x')!.kind).toBe('mixed');
   });
 });
