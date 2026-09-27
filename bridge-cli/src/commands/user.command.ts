@@ -3,6 +3,28 @@ import { getManagementClient, resolveTenantId } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { resolveUserId } from '../resolve.js';
 import { dryRunPreview } from '../preview.js';
+import { DecisionNeededError, decisionField } from '../product-decisions.js';
+
+/**
+ * TBP-713 — the role an invitee gets is the developer's decision. Without
+ * --role the API would apply the app's default role (Owner on a new app), so
+ * stop and offer the role keys instead, naming the current default.
+ */
+async function roleDecision(): Promise<DecisionNeededError> {
+  const field = decisionField('invite_user', 'role', '--role <key>');
+  try {
+    const roles = (await getManagementClient().roles.list()) as Array<{ key?: string; isDefault?: boolean }>;
+    const keys = roles.map((r) => r.key).filter((k): k is string => typeof k === 'string');
+    const fallback = roles.find((r) => r.isDefault)?.key;
+    return new DecisionNeededError(
+      'bridge user invite',
+      [keys.length ? { ...field, type: 'enum', options: keys } : field],
+      fallback ? `The app's default role is ${fallback}; pass it explicitly if that is what the developer wants.` : undefined,
+    );
+  } catch {
+    return new DecisionNeededError('bridge user invite', [field], '`bridge role list` shows the role keys.');
+  }
+}
 
 export function registerUserCommands(program: Command): void {
   const user = program.command('user').description('Manage tenant users');
@@ -33,13 +55,14 @@ export function registerUserCommands(program: Command): void {
   user.command('invite')
     .description('Invite a user to a tenant')
     .requiredOption('--email <email>', 'User email')
-    .option('--role <role>', 'Role key')
+    .option('--role <role>', 'Role key (see `bridge role list`). Required: which role invitees get is the developer\'s decision')
     .option('--first-name <name>', 'First name')
     .option('--last-name <name>', 'Last name')
     .option('--tenant-id <id>', 'Tenant ID (or set BRIDGE_TENANT_ID)')
     .action(async (opts) => {
       try {
         const tenantId = resolveTenantId(opts);
+        if (opts.role === undefined) throw await roleDecision();
         outputSuccess(await getManagementClient().users.invite(tenantId, {
           username: opts.email,
           role: opts.role,

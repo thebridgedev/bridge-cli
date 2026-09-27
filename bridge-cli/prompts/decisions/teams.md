@@ -23,6 +23,10 @@ Product questions. Ask, wait, never guess.
 4. **Does the number of people per workspace depend on the plan?** ("1 user on Free, 10 on Pro.") If yes, that is a seat limit: see the **payments** guide.
 5. **Can one person belong to several workspaces?** Bridge supports it and shows a workspace picker at sign-in; the question is whether the developer wants to offer it in their product.
 
+**The tools will not guess these.** Called without one, a tool changes nothing and answers `DECISION_NEEDED` with the question to ask; the matching bridge command stops the same way: `invite_user` (`role`). It offers the app's role keys and names the default one.
+
+**Only changed when you pass them.** No tool sets these on its own; left out, the current value stays: `update_app` (`tenantSelfSignup`).
+
 ## Decide yourself
 
 - **Self-signup on for a product people try on their own; off for invitation-only products.** Take it from the answer to question 2 and set `tenantSelfSignup` to match. Reason: with it off, a stranger who signs up has nowhere to land.
@@ -42,7 +46,7 @@ Product questions. Ask, wait, never guess.
 | Limit seats per plan | `set_plan_quota` (metric `users`, kind `gauge`) | `bridge plan quota set pro --metric users --limit 10 --policy hard --kind gauge` |
 | Code for the framework | `get_integration_guide` (topic `team`) | `bridge guide svelte team` |
 
-Pass a role key on every invitation you make on the developer's behalf; leaving it out gives the app's default role.
+Pass the role key the developer chose on every invitation you make on their behalf; without one, `invite_user` and `bridge user invite` invite nobody and ask which role.
 
 ## Prove it
 

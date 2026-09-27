@@ -1,0 +1,338 @@
+{
+  "_comment": [
+    "The product decisions Bridge tools and commands never make for the developer (TBP-713).",
+    "\"ask\": refused with DECISION_NEEDED, naming the question, and nothing changes. \"only-when-given\": never set unless passed.",
+    "Source: PRODUCT_DECISIONS in bridge-api, microservices/account/nebulr-api/mcp/tools/product-decisions.ts.",
+    "Generated, never edited by hand: in bridge-api run `bun scripts/generate-product-decisions-json.ts > <bridge-cli>/bridge-cli/prompts/product-decisions.json` (in the bridge-api container). guide-currency.spec.ts fails when the two disagree."
+  ],
+  "source": "bridge-api feature/mcp-journey ecfa0a2",
+  "decisions": [
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "amount",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "What does this plan cost per billing period? (0 for a free or contact-sales plan)",
+      "type": "number"
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "interval",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is it billed monthly, yearly, weekly or daily?",
+      "type": "enum",
+      "options": [
+        "day",
+        "week",
+        "month",
+        "year"
+      ]
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "currency",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)",
+      "type": "string"
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "trial",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is there a free trial on this plan?",
+      "type": "boolean"
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "trialDays",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "How many days does the free trial last?",
+      "type": "number"
+    },
+    {
+      "tool": "apply_plan",
+      "cli": "bridge plan apply",
+      "field": "name",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "What is this plan called?",
+      "type": "string"
+    },
+    {
+      "tool": "apply_plan",
+      "cli": "bridge plan apply",
+      "field": "prices.amount",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "What does this plan cost per billing period? (0 for a free or contact-sales plan)",
+      "type": "number"
+    },
+    {
+      "tool": "apply_plan",
+      "cli": "bridge plan apply",
+      "field": "prices.interval",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is it billed monthly, yearly, weekly or daily?",
+      "type": "enum",
+      "options": [
+        "day",
+        "week",
+        "month",
+        "year"
+      ]
+    },
+    {
+      "tool": "apply_plan",
+      "cli": "bridge plan apply",
+      "field": "prices.currency",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)",
+      "type": "string"
+    },
+    {
+      "tool": "apply_plan",
+      "cli": "bridge plan apply",
+      "field": "trial",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is there a free trial on this plan?",
+      "type": "boolean"
+    },
+    {
+      "tool": "apply_plan",
+      "cli": "bridge plan apply",
+      "field": "trialDays",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "How many days does the free trial last?",
+      "type": "number"
+    },
+    {
+      "tool": "set_plan_price",
+      "cli": "bridge plan price set",
+      "field": "currency",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)",
+      "type": "string"
+    },
+    {
+      "tool": "update_app",
+      "cli": "bridge app update",
+      "field": "paymentsAutoRedirect",
+      "guide": "payments",
+      "enforcement": "only-when-given",
+      "question": "Must a new customer pick a plan before they can use the app?",
+      "type": "boolean"
+    },
+    {
+      "tool": "invite_user",
+      "cli": "bridge user invite",
+      "field": "role",
+      "guide": "teams",
+      "enforcement": "ask",
+      "question": "Which role should this person get? (a role key; the app default is often Owner, rarely the right answer)",
+      "type": "string"
+    },
+    {
+      "tool": "update_app",
+      "cli": "bridge app update",
+      "field": "tenantSelfSignup",
+      "guide": "teams",
+      "enforcement": "only-when-given",
+      "question": "Can anyone sign up and get a workspace of their own, or only people who are invited?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "mfaEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should two-factor sign-in be available?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "passkeysEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with a passkey?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "magicLinkEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with an emailed link?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "googleSsoEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with Google?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "linkedinSsoEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with LinkedIn?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "azureAdSsoEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with Microsoft (Azure AD)?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "appleSsoEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with Apple?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "githubSsoEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with GitHub?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_auth_methods",
+      "cli": "bridge app update",
+      "field": "facebookSsoEnabled",
+      "guide": "login",
+      "enforcement": "only-when-given",
+      "question": "Should people be able to sign in with Facebook?",
+      "type": "boolean"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "bgColor",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "Which page background colour?",
+      "type": "string"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "textColor",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "Which text colour?",
+      "type": "string"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "linkColor",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "Which link colour?",
+      "type": "string"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "primaryButtonBgColor",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "Which colour for the main button?",
+      "type": "string"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "primaryButtonTextColor",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "Which text colour on the main button?",
+      "type": "string"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "fontFamily",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "Which font?",
+      "type": "string"
+    },
+    {
+      "tool": "update_branding",
+      "cli": "bridge branding update",
+      "field": "borderRadius",
+      "guide": "look-and-feel",
+      "enforcement": "only-when-given",
+      "question": "How rounded should corners be?",
+      "type": "string"
+    },
+    {
+      "tool": "update_app",
+      "cli": "bridge app update",
+      "field": "uiUrl",
+      "guide": "going-live",
+      "enforcement": "only-when-given",
+      "question": "What is the production address of the frontend?",
+      "type": "string"
+    },
+    {
+      "tool": "update_app",
+      "cli": "bridge app update",
+      "field": "defaultCallbackUri",
+      "guide": "going-live",
+      "enforcement": "only-when-given",
+      "question": "Which production address should sign-in return to?",
+      "type": "string"
+    },
+    {
+      "tool": "setup_communication",
+      "cli": "bridge setup communication",
+      "field": "fromAddress",
+      "guide": "going-live",
+      "enforcement": "only-when-given",
+      "question": "Which address should emails come from?",
+      "type": "string"
+    },
+    {
+      "tool": "setup_communication",
+      "cli": "bridge setup communication",
+      "field": "fromName",
+      "guide": "going-live",
+      "enforcement": "only-when-given",
+      "question": "Which sender name should emails show?",
+      "type": "string"
+    }
+  ]
+}

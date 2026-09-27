@@ -309,8 +309,8 @@ describe('G — the same plan call', () => {
     [{ key: 'pro', removePrices: [{ interval: 'month' }] }, 'LAST_PRICE'],
     [{ key: 'pro', removePrices: [{ interval: 'week' }] }, 'PRICE_NOT_FOUND'],
     [{ key: 'pro', removeQuotas: ['nope'] }, 'QUOTA_NOT_FOUND'],
-    [{ key: 'new', name: 'New' }, 'PLAN_NEEDS_PRICE'],
-    [{ key: 'new', prices: [{ amount: 0, interval: 'month' }] }, 'PLAN_NEEDS_NAME'],
+    [{ key: 'new', name: 'New' }, 'DECISION_NEEDED'],
+    [{ key: 'new', prices: [{ amount: 0, interval: 'month' }] }, 'DECISION_NEEDED'],
     [{ key: 'pro', quotas: [{ metric: 'projects', limit: 1, policy: 'metered', priceAmount: 1 }] }, 'INVALID_QUOTA'],
     [{ key: 'pro', quotas: [{ metric: 'users', limit: 1, policy: 'hard', kind: 'counter' }] }, 'INVALID_QUOTA'],
   ])('refuses %j with %s', (spec, code) => {
