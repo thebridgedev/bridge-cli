@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { readFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { readFile, readdir } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
 import { getManagementHttp } from '../config.js';
 import { outputError, outputSuccess } from '../output.js';
 import { detectFramework } from './flag-init.command.js';
@@ -104,6 +104,92 @@ async function readEnvFiles(cwd: string, files: string[] | undefined): Promise<{
   return { env, read };
 }
 
+/*
+ * TBP-540 (folds TBP-599) — a Bridge plugin in package.json that nothing
+ * calls. A real port had `@nebulr-group/bridge-svelte` installed and never
+ * imported: its login form POSTed to an endpoint that does not exist and its
+ * flag fetch 404ed into an empty list, so the app shipped with login and
+ * gating quietly broken. The env comparison cannot see that; the source can.
+ */
+const PLUGIN_WIRING: Record<string, { pkg: string; marker: RegExp; call: string; sdkAuth: boolean }> = {
+  svelte: { pkg: '@nebulr-group/bridge-svelte', marker: /\bbridgeBootstrap\b|<BridgeBootstrap\b/, call: 'bridgeBootstrap()', sdkAuth: true },
+  react: { pkg: '@nebulr-group/bridge-react', marker: /<BridgeProvider\b/, call: '<BridgeProvider>', sdkAuth: true },
+  nextjs: { pkg: '@nebulr-group/bridge-nextjs', marker: /<BridgeProvider\b|\bwithBridgeAuth\b/, call: '<BridgeProvider> or withBridgeAuth', sdkAuth: true },
+  angular: { pkg: '@nebulr-group/bridge-angular', marker: /\bprovideBridge\b/, call: 'provideBridge()', sdkAuth: true },
+  nestjs: { pkg: '@nebulr-group/bridge-nestjs', marker: /\bBridgeModule\b/, call: 'BridgeModule.forRoot()', sdkAuth: false },
+  express: { pkg: '@nebulr-group/bridge-express', marker: /\bcreateBridge\w*\(/, call: 'createBridge()', sdkAuth: false },
+};
+
+const SKIP_DIRS = new Set(['node_modules', '.git', '.svelte-kit', '.next', '.angular', 'dist', 'build', 'coverage', 'out']);
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|svelte)$/;
+const MAX_FILES = 5000;
+
+async function projectSources(dir: string, found: string[] = []): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const e of entries) {
+    if (found.length >= MAX_FILES) break;
+    if (e.isDirectory()) {
+      if (!SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) await projectSources(join(dir, e.name), found);
+    } else if (SOURCE_FILE.test(e.name)) {
+      found.push(join(dir, e.name));
+    }
+  }
+  return found;
+}
+
+export interface PluginWiring {
+  framework: string;
+  package: string;
+  wired: boolean;
+  hint?: string;
+}
+
+/** Each Bridge plugin in the project's package.json, and whether any source file calls it. */
+export async function checkPluginWiring(cwd: string): Promise<PluginWiring[]> {
+  let deps: Record<string, string>;
+  try {
+    const pkg = JSON.parse(await readFile(join(cwd, 'package.json'), 'utf8'));
+    deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+  } catch {
+    return [];
+  }
+  const installed = Object.entries(PLUGIN_WIRING).filter(([, w]) => w.pkg in deps);
+  if (!installed.length) return [];
+
+  const pending = new Map(installed);
+  for (const file of await projectSources(cwd)) {
+    if (!pending.size) break;
+    let text: string;
+    try {
+      text = await readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const [fw, w] of pending) if (w.marker.test(text)) pending.delete(fw);
+  }
+
+  return installed.map(([framework, w]) => {
+    if (!pending.has(framework)) return { framework, package: w.pkg, wired: true };
+    const guides = w.sdkAuth
+      ? `\`bridge guide ${framework}\` (hosted sign-in) or \`bridge guide ${framework} sdk-auth\` (forms in your app)`
+      : `\`bridge guide ${framework}\``;
+    return {
+      framework,
+      package: w.pkg,
+      wired: false,
+      hint:
+        `${w.pkg} is installed but no source file calls ${w.call}, so Bridge is not active in this project. ` +
+        'Hand-written login or flag calls against guessed endpoints fail as silent 404s. ' +
+        `Wire the plugin with ${guides}.`,
+    };
+  });
+}
+
 export interface DiagnoseOptions {
   envFile?: string[];
   framework?: string;
@@ -121,13 +207,18 @@ export async function diagnose(opts: DiagnoseOptions): Promise<Record<string, un
   const detected = opts.framework ?? (await detectFramework(cwd));
   const framework = detected && detected !== 'unknown' ? detected : undefined;
   const sent = bridgeEnvToSend(env);
+  const pluginWiring = await checkPluginWiring(cwd);
 
   const result = await getManagementHttp().post<Record<string, unknown>>(`${BASE}/diagnose`, {
     env: sent,
     ...(framework ? { framework } : {}),
   });
+  const unwired = pluginWiring.some((w) => !w.wired);
   return {
     ...(fixToHint(result) as Record<string, unknown>),
+    // A plugin nothing calls is a failed diagnosis whatever the env says.
+    ...(unwired ? { ok: false } : {}),
+    ...(pluginWiring.length ? { pluginWiring } : {}),
     envFilesRead: read,
     // Names only: what was compared, never the values of secrets.
     secretsSentAsPresenceOnly: Object.keys(sent).filter(isSecretName),
@@ -136,7 +227,8 @@ export async function diagnose(opts: DiagnoseOptions): Promise<Record<string, un
 
 export function registerIntegrationCommands(program: Command): void {
   program.command('diagnose')
-    .description("Check this project's Bridge env vars against the app and list every difference with a fix")
+    .alias('doctor')
+    .description("Check this project's Bridge env vars against the app, and that its Bridge plugin is wired, listing every problem with a fix")
     .option('--env-file <path...>', `Env file(s) to read, later ones winning (default: ${DEFAULT_ENV_FILES.join(', ')} if present)`)
     .option('--framework <name>', `Framework: ${FRAMEWORKS.join(', ')} (default: detected from package.json)`)
     .option('--dir <path>', 'Project directory (default: current directory)')
