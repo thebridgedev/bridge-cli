@@ -14,6 +14,21 @@ This prompt is framework-agnostic. It orchestrates discovery, confirmation, and 
 
 Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it exits, proceed to Step 1.
 
+**Connected through the Bridge MCP server instead?** Skip the login: the connection is already signed in to one app. Every CLI step below has a tool; use the tool and do not translate by hand.
+
+| Operation | MCP | CLI |
+|---|---|---|
+| What Bridge does, to relay to the developer | `get_started` | `bridge guide orientation` |
+| Read the app: id, URLs, redirect URIs (Step 3) | `get_app` | `bridge app get` |
+| Read the login methods (Step 3) | `get_auth_config` | `bridge info auth-config` |
+| Set the frontend URL, callback and allowed origins (Step 3b) | `update_app` (`uiUrl`, `defaultCallbackUri`, `allowedOrigins`); `allowedOrigins` replaces the whole list, so send every origin | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
+| Add one redirect URI, keeping the others (Step 3b) | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
+| This prompt | `get_integration_guide` (topic `master`) | `bridge guide` |
+| A per-framework guide (Step 4) | `get_integration_guide` (topic `auth`) with the framework; topic `integration` for the hosted setup | `bridge guide <framework> sdk-auth` / `bridge guide <framework>` |
+| Check the project's env vars against the app (Step 6) | `diagnose_integration` | `bridge diagnose` |
+| Prove a real sign-in works (Step 6) | `create_test_user`, then `verify_login` | `bridge test-user create`, then `bridge test-user verify` |
+| Roles and flags for route protection (Step 5) | `list_roles`, `list_feature_flags` | `bridge role list`, `bridge flag list` |
+
 ---
 
 **At the end of this integration you will output a success message that looks like this:**

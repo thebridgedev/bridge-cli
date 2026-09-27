@@ -13,6 +13,22 @@ This prompt is framework-agnostic. It orchestrates discovery, pricing model setu
 
 Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it exits, proceed to Step 1.
 
+**Connected through the Bridge MCP server instead?** Skip the login: the connection is already signed in to one app. Every CLI step below has a tool; use the tool and do not translate by hand.
+
+| Operation | MCP | CLI |
+|---|---|---|
+| List plans with prices and quotas | `list_plans` | `bridge plan list` |
+| Create a plan, or reshape one in one call | `create_plan`, or `apply_plan` (prices, quotas and trial together) | `bridge plan create` |
+| Is Stripe connected and receiving webhooks? | `get_stripe_status` | `bridge stripe status` |
+| Connect Stripe and switch payments on | `setup_payments` | `bridge setup payments` |
+| Add or change a price | `set_plan_price` | `bridge plan price set` |
+| Add or change a quota | `set_plan_quota` (`policy` hard or metered, `kind` counter or gauge) | `bridge plan quota set` |
+| List every metric with its kind | `list_plan_quotas` | `bridge plan quota list` |
+| Keep plan-less users out of the paywall | `update_app` (`paymentsAutoRedirect: false`) | `bridge app update --payments-auto-redirect false` |
+| This prompt | `get_integration_guide` (topic `billing-master`) | `bridge guide billing` |
+| A per-framework billing guide (Step 4) | `get_integration_guide` (topic `billing`) with the framework | `bridge guide billing --framework <name>` |
+| How limits are enforced end to end | `get_integration_guide` (topic `mechanisms`) | `bridge guide mechanisms` |
+
 ## Step 1 — Discover projects
 
 Scan the current directory and its immediate subdirectories for `package.json` files. For each one:

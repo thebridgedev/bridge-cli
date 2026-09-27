@@ -14,13 +14,13 @@ jest.mock('../config.js', () => ({
 }));
 jest.mock('../output.js', () => ({ outputSuccess: jest.fn(), outputError: jest.fn() }));
 
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Command } from 'commander';
 import { outputError, outputSuccess } from '../output.js';
 import {
-  bridgeEnvToSend, diagnose, fixToHint, parseDotenv, registerIntegrationCommands, SECRET_PLACEHOLDER,
+  bridgeEnvToSend, checkPluginWiring, diagnose, fixToHint, parseDotenv, registerIntegrationCommands, SECRET_PLACEHOLDER,
 } from '../commands/integration.command.js';
 
 const SECRET = 'eyJhbGciOiJQUzI1NiJ9.the-real-management-key';
@@ -138,5 +138,75 @@ describe('the other commands', () => {
 
   it('fixToHint renames at every depth and leaves everything else alone', () => {
     expect(fixToHint({ fix: 'a', items: [{ fix: 'b', fixed: 1 }], n: null })).toEqual({ hint: 'a', items: [{ hint: 'b', fixed: 1 }], n: null });
+  });
+});
+
+/*
+ * TBP-540 (folds TBP-599) — `bridge diagnose` (alias `bridge doctor`) says so
+ * when a Bridge plugin is installed and nothing calls it.
+ */
+describe('a Bridge plugin that nothing calls', () => {
+  function tree(files: Record<string, string>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'bridge-wiring-'));
+    for (const [name, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, name)), { recursive: true });
+      writeFileSync(join(dir, name), content);
+    }
+    return dir;
+  }
+  const SVELTE_PKG = JSON.stringify({ dependencies: { '@sveltejs/kit': '^2', '@nebulr-group/bridge-svelte': '^0.6.0' } });
+
+  it('is reported with the guides that wire it, and fails the diagnosis', async () => {
+    post.mockResolvedValue({ ok: true, differences: [] });
+    const dir = tree({
+      'package.json': SVELTE_PKG,
+      // The TBP-599 shape: a hand-written login against a guessed endpoint.
+      'src/routes/login/+page.svelte': '<script>fetch(`${api}/auth/login`, { method: "POST" })</script>',
+      // A match inside node_modules must not count as wiring.
+      'node_modules/@nebulr-group/bridge-svelte/index.js': 'export function bridgeBootstrap() {}',
+    });
+
+    const result = await diagnose({ dir });
+
+    expect(result.ok).toBe(false);
+    expect(result.pluginWiring).toEqual([
+      expect.objectContaining({ framework: 'svelte', package: '@nebulr-group/bridge-svelte', wired: false }),
+    ]);
+    const [wiring] = result.pluginWiring as Array<{ hint: string }>;
+    expect(wiring.hint).toContain('bridgeBootstrap()');
+    expect(wiring.hint).toContain('`bridge guide svelte sdk-auth`');
+  });
+
+  it('is quiet once the bootstrap call exists', async () => {
+    post.mockResolvedValue({ ok: true, differences: [] });
+    const dir = tree({
+      'package.json': SVELTE_PKG,
+      'src/routes/+layout.ts': "import { bridgeBootstrap } from '@nebulr-group/bridge-svelte';\nexport const load = bridgeBootstrap({});\n",
+    });
+
+    const result = await diagnose({ dir });
+
+    expect(result.ok).toBe(true);
+    expect(result.pluginWiring).toEqual([{ framework: 'svelte', package: '@nebulr-group/bridge-svelte', wired: true }]);
+  });
+
+  it('checks each installed plugin, and says nothing for a project without one', async () => {
+    const dir = tree({
+      'package.json': JSON.stringify({ dependencies: { '@nebulr-group/bridge-nestjs': '1', '@nebulr-group/bridge-react': '1' } }),
+      'src/app.module.ts': 'imports: [BridgeModule.forRoot({})]',
+    });
+    expect(await checkPluginWiring(dir)).toEqual([
+      expect.objectContaining({ framework: 'react', wired: false, hint: expect.stringContaining('`bridge guide react sdk-auth`') }),
+      { framework: 'nestjs', package: '@nebulr-group/bridge-nestjs', wired: true },
+    ]);
+    expect(await checkPluginWiring(tree({ 'package.json': '{"dependencies":{"svelte":"5"}}' }))).toEqual([]);
+  });
+
+  it('`bridge doctor` runs the same check', async () => {
+    post.mockResolvedValue({ ok: true, differences: [] });
+    const dir = tree({ 'package.json': SVELTE_PKG });
+    await run('doctor', '--dir', dir);
+    expect(outputSuccess).toHaveBeenCalledWith(expect.objectContaining({ ok: false, pluginWiring: [expect.objectContaining({ wired: false })] }));
+    expect(process.exitCode).toBe(1);
   });
 });
