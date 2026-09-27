@@ -142,8 +142,8 @@ One more, for working on the integration guides themselves:
 export BRIDGE_GUIDE_LOCAL_DIR=/path/to/thebridge-platform/bridge-plugins
 ```
 
-`bridge guide` and `bridge integrate` then read prompts from that directory
-instead of fetching them from GitHub, so edits show up without a release.
+`bridge guide` then reads prompts from that directory
+instead of fetching them from GitHub (or the copies bundled with the CLI), so edits show up without a release.
 
 ## Usage
 
@@ -353,6 +353,12 @@ Three master prompts orchestrate the per-framework guides:
 bridge guide              # Bridge Auth master prompt (auth, RBAC, tenants)
 bridge guide flags        # Feature Flags 2.0 master prompt
 bridge guide billing      # Billing 2.0 master prompt (subscriptions, quotas, webhooks)
+```
+
+One page explains the mechanisms all of them build on — the server decides limits and the client decorates, a POST increments the limit, counter vs gauge, the three ways to show a limit in the UI, and the four levels of customising Bridge's pages:
+
+```bash
+bridge guide mechanisms
 ```
 
 Per-framework guides:

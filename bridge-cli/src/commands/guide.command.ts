@@ -242,6 +242,23 @@ export function registerGuideCommands(program: Command): void {
       else outputPrompt(CUSTOM_GUIDE);
     });
 
+  // TBP-705 — the mechanisms every guide builds on: the server decides, a POST
+  // increments the limit, counter vs gauge, the three UI levels, the four
+  // customisation rungs, self-reported usage. The MCP server serves the same
+  // file (bridge-cli/main/bridge-cli/prompts/mechanisms.md) as
+  // `get_integration_guide topic=mechanisms`.
+  guide.command('mechanisms')
+    .description('How Bridge works: limits, counter vs gauge, UI levels, customisation rungs')
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
+      try {
+        const opts = command.optsWithGlobals() as { json?: boolean };
+        const content = await fetchMechanismsGuide();
+        if (opts.json) outputSuccess({ topic: 'mechanisms', guide: content });
+        else outputPrompt(content);
+      } catch (err) { outputError(err); }
+    });
+
   guide.command('integration-success')
     .description('Integration success message template — output at the end of a completed integration')
     .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
@@ -253,6 +270,33 @@ export function registerGuideCommands(program: Command): void {
         else outputPrompt(content);
       } catch (err) { outputError(err); }
     });
+}
+
+export const MECHANISMS_PROMPT_FILENAME = 'mechanisms.md';
+
+/** The mechanisms page, bundled with the CLI (`BRIDGE_GUIDE_LOCAL_DIR` wins in development). */
+export async function fetchMechanismsGuide(): Promise<string> {
+  const localDir = process.env.BRIDGE_GUIDE_LOCAL_DIR;
+  if (localDir) {
+    try {
+      return await readFile(join(localDir, 'bridge-cli', 'bridge-cli', 'prompts', MECHANISMS_PROMPT_FILENAME), 'utf-8');
+    } catch {
+      /* fall through to bundled */
+    }
+  }
+  const here = thisDir();
+  const candidates = [
+    join(here, '..', 'prompts', MECHANISMS_PROMPT_FILENAME),
+    join(here, '..', '..', 'prompts', MECHANISMS_PROMPT_FILENAME),
+  ];
+  for (const path of candidates) {
+    try {
+      return await readFile(path, 'utf-8');
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error(`mechanisms guide not found. Tried: ${candidates.join(', ')}`);
 }
 
 async function fetchIntegrationSuccess(): Promise<string> {

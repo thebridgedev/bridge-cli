@@ -43,10 +43,14 @@ function codeText(markdown: string): string[] {
   return out;
 }
 
-/** `bridge a b c` sequences, stopping at a flag, a pipe, or the end. */
+/**
+ * `bridge a b c` sequences, stopping at a flag, a pipe, or the end. A `}` or
+ * `,` never starts a token, so the SDK import `import { bridge } from …` is
+ * not read as a command.
+ */
 function commandsIn(text: string): string[][] {
   const found: string[][] = [];
-  for (const m of text.matchAll(/(?:^|[\s(])bridge((?: +[^\s`|;)&]+)+)/g)) {
+  for (const m of text.matchAll(/(?:^|[\s(])bridge((?: +[^\s`|;)&},]+)+)/g)) {
     const tokens: string[] = [];
     for (const t of m[1].trim().split(/ +/)) {
       if (t.startsWith('-') || t.startsWith('#') || t === '\\') break;
@@ -148,7 +152,7 @@ describe('the resolver itself', () => {
 describe('guide-coverage.json', () => {
   it('covers exactly the frameworks `bridge guide` serves', () => {
     const guide = program.commands.find((c) => c.name() === 'guide')!;
-    const notFrameworks = ['list', 'flags', 'billing', 'custom', 'integration-success', ...JOURNEYS.map((j) => j.name)];
+    const notFrameworks = ['list', 'flags', 'billing', 'mechanisms', 'custom', 'integration-success', ...JOURNEYS.map((j) => j.name)];
     const served = guide.commands.map((c) => c.name()).filter((n) => !notFrameworks.includes(n));
     expect(Object.keys(coverage.frameworks).sort()).toEqual(served.sort());
   });
