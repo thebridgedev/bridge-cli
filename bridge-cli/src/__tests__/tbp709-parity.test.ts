@@ -87,7 +87,16 @@ describe('C — the same warnings', () => {
         'can carry it. Existing role keys: OWNER, ADMIN.',
     ]);
     expect(flagCoherenceWarnings({ key: 'ok', state: 'on', valueType: 'boolean', onValue: true, offValue: false }, CATALOG)).toEqual([]);
-    expect(flagCoherenceWarnings({ key: 'f', state: 'on-with-rule', rule: planRule('Pro') }, CATALOG)).toEqual([]);
+    expect(flagCoherenceWarnings({ key: 'f', state: 'on-with-rule', rule: planRule('pro') }, CATALOG)).toEqual([]);
+    // Rules compare the plan KEY: a display name never matches, and says which key to use.
+    expect(flagCoherenceWarnings({ key: 'f', state: 'on-with-rule', rule: planRule('Pro') }, CATALOG)).toEqual([
+      'Flag "f" has a rule on tenant.plan eq "Pro", which matches the plan named "Pro" by name; ' +
+        'rules compare the plan key — use "pro".',
+    ]);
+    expect(flagCoherenceWarnings({ key: 'f', state: 'on-with-rule', rule: planRule('Admin', 'user.role') }, CATALOG)).toEqual([
+      'Flag "f" has a rule on user.role eq "Admin", which matches the role named "Admin" by name; ' +
+        'rules compare the role key — use "ADMIN".',
+    ]);
   });
 
   function flagClient(flags: any[]) {

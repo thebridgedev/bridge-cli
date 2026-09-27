@@ -26,7 +26,7 @@ export interface FlagLike {
 
 /** What the app actually has, for the dangling-reference check. */
 export interface CoherenceCatalog {
-  /** Every value a plan can be matched by: its key and its name. */
+  /** Rules compare the KEY; the name is kept to say which key was meant. */
   plans: Array<{ key: string; name?: string }>;
   roles: Array<{ key: string; name?: string }>;
 }
@@ -79,14 +79,20 @@ export function flagCoherenceWarnings(flag: FlagLike, catalog?: CoherenceCatalog
         const isRole = ROLE_ATTRIBUTES.includes(condition.attribute);
         if (!isPlan && !isRole) continue;
         const known = isPlan ? catalog.plans : catalog.roles;
-        const names = new Set<string>();
-        for (const k of known) {
-          names.add(k.key);
-          if (k.name) names.add(k.name);
-        }
+        const keys = new Set(known.map((k) => k.key));
+        const what = isPlan ? 'plan' : 'role';
         for (const value of condition.values ?? []) {
-          if (typeof value !== 'string' || names.has(value)) continue;
-          const what = isPlan ? 'plan' : 'role';
+          if (typeof value !== 'string' || keys.has(value)) continue;
+          // The token carries the plan/role KEY, so a display name never matches.
+          const byName = known.find((k) => k.name === value);
+          if (byName) {
+            warnings.push(
+              `Flag "${flag.key}" has a rule on ${condition.attribute} ${condition.operator} ` +
+                `"${value}", which matches the ${what} named "${value}" by name; rules compare the ` +
+                `${what} key — use "${byName.key}".`,
+            );
+            continue;
+          }
           warnings.push(
             `Flag "${flag.key}" has a rule on ${condition.attribute} ${condition.operator} ` +
               `"${value}", but the app has no ${what} "${value}", so no real ` +
