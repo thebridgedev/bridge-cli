@@ -20,6 +20,8 @@ Product questions. Ask, wait, never guess.
 4. **The live Stripe keys** (`sk_live_…`, `pk_live_…`), from the Stripe account that should receive the money. Never invent, guess or reuse a key.
 5. **Which address and name should emails come from** in production?
 
+**Only changed when you pass them.** No tool sets these on its own; left out, the current value stays: `update_app` (`uiUrl`, `defaultCallbackUri`) · `setup_communication` (`fromAddress`, `fromName`).
+
 ## Decide yourself
 
 - **A separate Bridge app for production** when the current one has no real users. Reason: test users, test Stripe keys and localhost addresses stay out of production, and nothing in development can touch a real customer. Create it with `create_app`; it does not become the default, so pass its id as `app` or call `use_app`. Copy flags across with `export_feature_flags` then `import_feature_flags`, and recreate each plan with `apply_plan`.

@@ -41,6 +41,7 @@ export function outputError(error: unknown): void {
   let message = 'An unknown error occurred';
   let details: unknown = undefined;
   let hint: string | undefined;
+  let fields: unknown[] | undefined;
   let exitCode = 1;
 
   if (error instanceof ConfigError) {
@@ -83,6 +84,11 @@ export function outputError(error: unknown): void {
     if (typeof carried === 'string' && carried.length > 0) {
       code = carried;
     }
+    // TBP-713: a DecisionNeededError carries the next step and the questions.
+    const carriedHint = (error as { hint?: unknown }).hint;
+    if (typeof carriedHint === 'string' && carriedHint.length > 0) hint = carriedHint;
+    const carriedFields = (error as { fields?: unknown }).fields;
+    if (Array.isArray(carriedFields)) fields = carriedFields;
   }
 
   const output = {
@@ -91,6 +97,7 @@ export function outputError(error: unknown): void {
       code,
       message,
       ...(hint !== undefined ? { hint } : {}),
+      ...(fields !== undefined ? { fields } : {}),
       ...(details !== undefined ? { details } : {}),
     },
   };
