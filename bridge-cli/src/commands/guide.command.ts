@@ -216,6 +216,10 @@ export function registerGuideCommands(program: Command): void {
             resolvedFeature = 'billing';
           } else {
             content = await fetchGuide(tech, feature);
+            if (!feature) {
+              const preface = authModesPreface(tech, loadGuideCoverage().frameworks);
+              if (preface) content = `${preface}\n\n${content}`;
+            }
           }
           if (opts.json) {
             outputSuccess({ technology: tech, feature: resolvedFeature, guide: content });
@@ -315,6 +319,34 @@ export function registerGuideCommands(program: Command): void {
         else outputPrompt(content);
       } catch (err) { outputError(err); }
     });
+}
+
+/**
+ * TBP-540 (folds TBP-599) — `bridge guide <framework>` prints the HOSTED
+ * sign-in guide, and used to say nothing about the other mode. A developer who
+ * wanted in-app forms never learned `bridge guide svelte sdk-auth` existed,
+ * hand-wrote a login form against `/auth/login` (a 404) and shipped it. So a
+ * framework that has an SDK-auth guide opens by naming both modes; one that
+ * has none (the backends) is unchanged.
+ */
+export function authModesPreface(tech: string, coverage: Record<string, string[]>): string | null {
+  if (!coverage[tech]?.includes('sdk-auth')) return null;
+  return [
+    '> **Two ways to sign in — pick before you start.**',
+    `> - **Hosted** (this guide): Bridge serves the sign-in pages and your app redirects to them. Fastest, no UI to build.`,
+    `> - **In your own app**: sign-in and sign-up forms inside your layout, with the SDK handling password, magic link, passkeys, SSO, two-factor and workspace choice. Run \`bridge guide ${tech} sdk-auth\` instead.`,
+    '>',
+    '> Either way, never write a login form or call Bridge auth endpoints by hand: the SDK does it, and a guessed endpoint fails as a silent 404.',
+  ].join('\n');
+}
+
+/** The per-framework guides that exist for `tech`, or null when the list cannot be read. */
+function guidesFor(tech: string): string[] | null {
+  try {
+    return loadGuideCoverage().frameworks[tech] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export const MECHANISMS_PROMPT_FILENAME = 'mechanisms.md';
@@ -517,7 +549,17 @@ async function fetchGuide(tech: string, feature?: string): Promise<string> {
 
   if (!response.ok) {
     const label = feature ? `${tech}/${feature}` : tech;
-    throw new Error(`Guide not available for ${label} (HTTP ${response.status}). The prompt file may not exist yet in the plugin repo.`);
+    // TBP-540 — a failed lookup names what does exist, so the next try is right.
+    const available = response.status === 404 ? guidesFor(tech) : null;
+    throw Object.assign(
+      new Error(
+        `Guide not available for ${label} (HTTP ${response.status}). ` +
+          (available
+            ? `Guides for ${tech}: ${available.join(', ')} (\`bridge guide ${tech} <guide>\`; \`bridge guide list\` shows every framework).`
+            : 'The prompt file may not exist yet in the plugin repo.'),
+      ),
+      response.status === 404 ? { code: 'GUIDE_NOT_FOUND' } : {},
+    );
   }
 
   const content = await response.text();

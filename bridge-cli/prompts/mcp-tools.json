@@ -2,10 +2,10 @@
   "_comment": [
     "The names of the Bridge MCP server's tools, and nothing else. The bundled guides are tested against this list: a guide that names a tool not in it fails src/__tests__/guide-decisions.test.ts.",
     "Source: the `bridgeTools` registry in bridge-api, microservices/account/nebulr-api/mcp/tools/register.ts.",
-    "Regenerate from the thebridge-platform root when a tool is added, renamed or removed: grep -hoE \"^ {2,4}name: '[a-z]+(_[a-z]+)+',\" bridge-api/microservices/account/nebulr-api/mcp/tools/*.ts | sed -E \"s/.*'(.*)'.*/\\1/\" | sort -u",
-    "The count must equal the number of entries in `bridgeTools` (66 at the source below). The twin of this check in bridge-api reads the live registry instead of this copy."
+    "Generated, never edited by hand: in bridge-api run `bun scripts/generate-mcp-tools-json.ts > <bridge-cli>/bridge-cli/prompts/mcp-tools.json` (in the bridge-api container).",
+    "The count must equal the number of entries in `bridgeTools` (67 at the source below). bridge-api's guide-currency.spec.ts fails when this file and the registry disagree."
   ],
-  "source": "bridge-api feature/mcp-journey 689899e",
+  "source": "bridge-api feature/mcp-journey 26792b4",
   "tools": [
     "add_redirect_uri",
     "apply_plan",
@@ -34,6 +34,7 @@
     "get_role",
     "get_server_info",
     "get_setup_status",
+    "get_started",
     "get_stripe_status",
     "get_tenant",
     "get_user",
