@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { commandsDir } from './runtime-dir.js';
 import { outputSuccess, outputPrompt, outputError } from '../output.js';
 import { AUTH_MASTER_PROMPT_FILENAME, AUTH_MASTER_PROMPT_URL, pluginGuideUrl } from '../prompt-urls.js';
+import { fetchDecisionGuide, registerJourneyCommands, unknownGuideMessage } from './journeys.js';
 
 /**
  * Locate the directory containing this module on disk so the bundled prompts
@@ -97,6 +98,15 @@ export function registerGuideCommands(program: Command): void {
     .action(async (_opts, command) => {
       try {
         const opts = command.optsWithGlobals() as { json?: boolean };
+        // TBP-712: `bridge guide <anything unknown>` used to fall through to
+        // here and print the master as if the lookup had worked. Name what
+        // exists instead.
+        const [unknown] = (command as Command).args;
+        if (unknown) {
+          throw Object.assign(new Error(unknownGuideMessage(unknown, Object.keys(GUIDE_REPOS))), {
+            code: 'GUIDE_NOT_FOUND',
+          });
+        }
         // No login here: reading a guide needs no session, and the commands
         // the guide goes on to run ask for one themselves (TBP-706).
         const guide = await fetchMasterPrompt();
@@ -209,6 +219,19 @@ export function registerGuideCommands(program: Command): void {
         } catch (err) { outputError(err); }
       });
   }
+
+  // TBP-712 — the seven journeys by name, composed like the MCP prompts.
+  registerJourneyCommands(
+    guide,
+    {
+      decision: fetchDecisionGuide,
+      master: (m) =>
+        m === 'auth' ? fetchMasterPrompt() : m === 'flags' ? fetchFlagsMasterPrompt() : fetchBillingMasterPrompt(),
+      frameworkGuide: (tech, feature) => fetchGuide(tech, feature),
+      coverage: () => loadGuideCoverage().frameworks,
+    },
+    resolveFlagsFramework,
+  );
 
   guide.command('custom')
     .description('Universal integration guide for any technology using REST API + JWKS')

@@ -21,6 +21,7 @@ import { join, relative } from 'node:path';
 import { Command } from 'commander';
 import { registerCommands } from '../program';
 import { loadGuideCoverage } from '../commands/guide.command';
+import { JOURNEYS } from '../commands/journeys';
 
 const PROMPTS = join(__dirname, '..', '..', 'prompts');
 
@@ -147,7 +148,22 @@ describe('the resolver itself', () => {
 describe('guide-coverage.json', () => {
   it('covers exactly the frameworks `bridge guide` serves', () => {
     const guide = program.commands.find((c) => c.name() === 'guide')!;
-    const served = guide.commands.map((c) => c.name()).filter((n) => !['list', 'flags', 'billing', 'custom', 'integration-success'].includes(n));
+    const notFrameworks = ['list', 'flags', 'billing', 'custom', 'integration-success', ...JOURNEYS.map((j) => j.name)];
+    const served = guide.commands.map((c) => c.name()).filter((n) => !notFrameworks.includes(n));
     expect(Object.keys(coverage.frameworks).sort()).toEqual(served.sort());
+  });
+});
+
+describe('commands named by the journeys (TBP-712)', () => {
+  const cases = JOURNEYS.flatMap((j) =>
+    j.steps.flatMap((step) => codeText(step).flatMap(commandsIn)).map((tokens) => [j.name, `bridge ${tokens.join(' ')}`, tokens] as const),
+  );
+
+  it('finds commands to check', () => {
+    expect(cases.length).toBeGreaterThan(15);
+  });
+
+  it.each(cases)('%s: %s', (_journey, _command, tokens) => {
+    expect(problem([...tokens])).toBeNull();
   });
 });
