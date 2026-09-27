@@ -16,8 +16,11 @@ import { cliPromptUrl } from '../prompt-urls.js';
  */
 
 /** The seven TBP-540 decision domains a journey can open with. */
-export type DecisionDomain =
-  | 'login' | 'teams' | 'roles' | 'payments' | 'feature-control' | 'look-and-feel' | 'going-live';
+export const DECISION_DOMAINS = [
+  'login', 'teams', 'roles', 'payments', 'feature-control', 'look-and-feel', 'going-live',
+] as const;
+
+export type DecisionDomain = (typeof DECISION_DOMAINS)[number];
 
 export type Master = 'auth' | 'billing' | 'flags';
 
@@ -232,7 +235,8 @@ export function unknownGuideMessage(name: string, frameworks: string[]): string 
   return (
     `No guide named '${name}'. Journeys: ${JOURNEYS.map((j) => j.name).join(', ')}. ` +
     `Frameworks: ${frameworks.join(', ')} (e.g. \`bridge guide svelte auth\`). ` +
-    'Also: flags, billing, mechanisms, custom, list. `bridge guide` alone prints the integration master.'
+    'Also: orientation (what Bridge does), decision <domain>, flags, billing, mechanisms, custom, list. ' +
+    '`bridge guide` alone prints the integration master.'
   );
 }
 

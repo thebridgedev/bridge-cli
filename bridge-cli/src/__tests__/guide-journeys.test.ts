@@ -102,10 +102,21 @@ describe('the decision-guide seam (TBP-712)', () => {
     global.fetch = realFetch;
   });
 
+  // The guides are bundled now (TBP-540). A CLI released before a guide was
+  // written has no bundled copy: load the seam against an empty install dir.
+  function unbundledFetchDecisionGuide(): typeof fetchDecisionGuide {
+    let fn!: typeof fetchDecisionGuide;
+    jest.isolateModules(() => {
+      jest.doMock('../commands/runtime-dir', () => ({ commandsDir: '/nonexistent-bridge-cli/dist/commands' }));
+      fn = (require('../commands/journeys') as typeof import('../commands/journeys')).fetchDecisionGuide;
+    });
+    return fn;
+  }
+
   it('reads prompts/decisions/<domain>.md from bridge-cli on GitHub when not bundled', async () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '# TEAMS' });
     global.fetch = fetchMock as unknown as typeof fetch;
-    await expect(fetchDecisionGuide('teams')).resolves.toBe('# TEAMS');
+    await expect(unbundledFetchDecisionGuide()('teams')).resolves.toBe('# TEAMS');
     expect(fetchMock).toHaveBeenCalledWith(`${CLI_PROMPTS_BASE_URL}/decisions/teams.md`);
     // The doubled segment is what the MCP server reads too: bridge-cli/main/bridge-cli/prompts/decisions/.
     expect(CLI_PROMPTS_BASE_URL).toMatch(/\/bridge-cli\/main\/bridge-cli\/prompts$/);
@@ -113,7 +124,7 @@ describe('the decision-guide seam (TBP-712)', () => {
 
   it('a 404 means not written yet, not an error', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, text: async () => '' }) as unknown as typeof fetch;
-    await expect(fetchDecisionGuide('login')).resolves.toBeNull();
+    await expect(unbundledFetchDecisionGuide()('login')).resolves.toBeNull();
   });
 });
 
