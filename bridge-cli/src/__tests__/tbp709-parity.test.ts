@@ -16,6 +16,7 @@ jest.mock('../config.js', () => ({
 }));
 
 import { Command } from 'commander';
+import { HttpError } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient, getManagementHttp } from '../config';
 import { flagCoherenceWarnings, type CoherenceCatalog } from '../flag-coherence';
 import { shapePlan, shapeRoleList, shapeTenant } from '../shape';
@@ -192,20 +193,60 @@ const PREVIEW = { dryRun: true, target: { id: 'x' }, affects: { n: 1 }, sideEffe
 
 describe('E — the same dry run', () => {
   it.each([
-    [['tenant', 'delete', '--id', 'ten_1', '--dry-run'], '/v1/account/tenant/ten_1?dryRun=true', undefined, 'tenants', 'delete'],
-    [['user', 'remove', '--user-id', 'u_1', '--tenant-id', 'ten_1', '--dry-run'], '/v1/account/tenant/user/u_1?dryRun=true', { 'x-tenant-id': 'ten_1' }, 'users', 'remove'],
-    [['flag', 'delete', '--id', 'flag_1', '--dry-run'], '/v1/admin/flags/flag/flag_1?dryRun=true', undefined, 'flags', 'delete'],
-    [['token', 'revoke', '--id', 'tok_1', '--dry-run'], '/v1/account/api-token/app/tok_1?dryRun=true', undefined, 'tokens', 'revoke'],
-  ])('%j asks the delete route for its preview and deletes nothing', async (args, path, headers, noun, verb) => {
+    [['tenant', 'delete', '--id', 'ten_1', '--dry-run'], '/v1/account/tenant/ten_1/deletion-preview', undefined, 'tenants', 'delete'],
+    [['user', 'remove', '--user-id', 'u_1', '--tenant-id', 'ten_1', '--dry-run'], '/v1/account/tenant/user/u_1/deletion-preview', { 'x-tenant-id': 'ten_1' }, 'users', 'remove'],
+    [['flag', 'delete', '--id', 'flag_1', '--dry-run'], '/v1/admin/flags/flag/flag_1/deletion-preview', undefined, 'flags', 'delete'],
+    [['token', 'revoke', '--id', 'tok_1', '--dry-run'], '/v1/account/api-token/app/tok_1/deletion-preview', undefined, 'tokens', 'revoke'],
+  ])('%j asks the read-only preview route and deletes nothing', async (args, path, headers, noun, verb) => {
     const del = jest.fn();
     mockClient.mockReturnValue({ [noun]: { [verb]: del } });
-    const http = { delete: jest.fn().mockResolvedValue(PREVIEW) };
+    const http = { get: jest.fn().mockResolvedValue(PREVIEW), delete: jest.fn() };
     mockHttp.mockReturnValue(http);
     const res = await runCli(...(args as string[]));
     expect(del).not.toHaveBeenCalled();
-    expect(http.delete).toHaveBeenCalledWith(path, headers);
+    // Never a DELETE: a server without previews ignores `?dryRun` and deletes.
+    expect(http.delete).not.toHaveBeenCalled();
+    expect(http.get).toHaveBeenCalledWith(path, headers);
     expect(res.data).toEqual(expect.objectContaining(PREVIEW));
     expect(res.data.next).toContain('Nothing was changed');
+  });
+
+  /*
+   * A server that predates previews has no such route and answers 404. The
+   * command must stop there, say so and exit non-zero — and must NOT fall back
+   * to the delete.
+   */
+  it.each([
+    [['tenant', 'delete', '--id', 'ten_1', '--dry-run'], 'tenants', 'delete'],
+    [['user', 'remove', '--user-id', 'u_1', '--tenant-id', 'ten_1', '--dry-run'], 'users', 'remove'],
+    [['flag', 'delete', '--id', 'flag_1', '--dry-run'], 'flags', 'delete'],
+    [['token', 'revoke', '--id', 'tok_1', '--dry-run'], 'tokens', 'revoke'],
+  ])('%j against a server without previews (404): fails, deletes nothing', async (args, noun, verb) => {
+    const del = jest.fn();
+    mockClient.mockReturnValue({ [noun]: { [verb]: del } });
+    const notFound = new HttpError('Cannot GET', 404, { message: 'Cannot GET /v1/x/deletion-preview', error: 'Not Found', statusCode: 404 });
+    const http = { get: jest.fn().mockRejectedValue(notFound), delete: jest.fn() };
+    mockHttp.mockReturnValue(http);
+    const res = await runCli(...(args as string[]));
+    expect(del).not.toHaveBeenCalled();
+    expect(http.delete).not.toHaveBeenCalled();
+    expect(res.exitCode).toBe(1);
+    expect(res.error.code).toBe('PREVIEW_NOT_SUPPORTED');
+    expect(res.error.message).toContain('does not support deletion previews yet');
+    expect(res.error.message).toContain('Nothing was deleted');
+  });
+
+  it('a record the server cannot find is reported as such, and still deletes nothing', async () => {
+    const del = jest.fn();
+    mockClient.mockReturnValue({ tokens: { revoke: del } });
+    const notFound = new HttpError('Token not found', 404, { message: 'Token not found', statusCode: 404 });
+    const http = { get: jest.fn().mockRejectedValue(notFound), delete: jest.fn() };
+    mockHttp.mockReturnValue(http);
+    const res = await runCli('token', 'revoke', '--id', 'tok_1', '--dry-run');
+    expect(del).not.toHaveBeenCalled();
+    expect(http.delete).not.toHaveBeenCalled();
+    expect(res.exitCode).toBe(1);
+    expect(res.error.code).toBe('HTTP_404');
   });
 
   it('without --dry-run the command still deletes', async () => {
