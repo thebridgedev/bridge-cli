@@ -190,8 +190,12 @@ By default, a signed-in tenant that hasn't chosen a plan is redirected to a dedi
 welcome page and can't use the app until they pick one. **Set this up unless the developer
 opts out** — it's the expected first-run experience.
 
-- The per-framework guide (Step 4) creates a welcome route that renders `<PlanSelector>`
-  and registers it as `billing.paywallRoute`. Confirm that part ran.
+- The per-framework guide (Step 4) mounts the plugin's subscription pages, which include a
+  default paywall page (on SvelteKit: `/subscription/plan`, served by the subscription
+  catch-all). Confirm that part ran. Do **not** create a separate welcome page on your own.
+- A dedicated onboarding page such as `/welcome` is a product choice: **ask the developer**
+  whether they want one. Only if they say yes, add it as the per-framework guide shows and
+  point `billing.paywallRoute` at it.
 - The app-level flag `paymentsAutoRedirect` drives the redirect and is **`true` by
   default** — there is nothing to switch on.
 
@@ -214,7 +218,7 @@ For each integrated project, the agent verifies — do not hand this to the deve
 4. Select a paid plan — Stripe Checkout opens
 5. Complete a test payment — redirected back with the updated plan showing
 6. Cancel a payment — redirected back to the subscription page
-7. Paywall (unless opted out): sign in as a new tenant with no plan — you land on the welcome route and can't reach the app until a plan is chosen
+7. Paywall (unless opted out): sign in as a new tenant with no plan — you land on the paywall page (or `/welcome` if the developer chose one) and can't reach the app until a plan is chosen
 
 If anything fails, diagnose and fix before moving on.
 
@@ -255,7 +259,7 @@ Fill every `[placeholder]` with real values from the integration:
 - `[project-name]` — folder name and/or `package.json` name
 - `[plan-names]` — the plan keys (e.g. `free`, `premium`)
 - `[plan-selector-route]` — route where `<PlanSelector>` is mounted
-- `[paywall-summary]` — e.g. "new users sent to `/welcome` to pick a plan" (or "off — `paymentsAutoRedirect false`")
+- `[paywall-summary]` — e.g. "new users sent to `/subscription/plan` to pick a plan" (or "off — `paymentsAutoRedirect false`")
 - `[quota-summary]` — metric keys and limits, or "none"
 - `[what-i-actually-did]` / `[what-i-changed]` — every file created or modified, every command run
 
