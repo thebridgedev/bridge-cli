@@ -29,7 +29,7 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 
 3. **Bridge Auth installed?** — look for `@nebulr-group/bridge-<framework>` in dependencies. Billing is scoped to a workspace/tenant and requires Bridge Auth. If not present, stop and run `bridge guide` first.
 
-4. **Billing already wired?** — check whether a subscription/plan route exists (typically `/subscription` or `/plan`) and whether `bridge plan list` returns at least one plan. If billing looks complete, jump to **Step 1b**.
+4. **Billing already wired?** — check whether the subscription pages are served (on SvelteKit: `src/routes/subscription/[...bridge]/+page.svelte` rendering `<BridgeBillingRoutes />`) and whether `bridge plan list` returns at least one plan. If billing looks complete, jump to **Step 1b**.
 
 5. **Existing billing system?** — look for `stripe`, `@stripe/*`, `paddle-*`, `lemon-squeezy`, `chargebee`. Flag any found.
 
@@ -38,11 +38,12 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 If Step 1 found billing already partially or fully set up, audit it before doing anything:
 
 - Run `bridge plan list` — are plans defined?
-- Check for a subscription route with `<PlanSelector>` mounted
+- Check the subscription pages are served (SvelteKit: the `subscription/[...bridge]` file above; other frameworks: the route the per-framework guide names)
 - Check the root layout for `<BridgeBillingNotice />`
+- Check every backend handler that creates a limited thing carries the plan-limit decorator (NestJS: `@RequireQuota`)
 
 **Decision:**
-- **Fully wired** (plans exist, selector mounted, notice in layout) → skip to **Step 6** and output the success message
+- **Fully wired** (plans exist, subscription pages served, notice in layout, limits on the backend) → skip to **Step 6** and output the success message
 - **Partially wired** → tell the user exactly what's missing and only add what's absent
 - **Plans missing** → continue from Step 3 (pricing model)
 
@@ -92,12 +93,15 @@ From their answer, map everything to confirmation tables before creating anythin
 
 **Quotas** (per-resource limits that differ between plans):
 
-| plan | metric | limit | policy |
-|------|--------|-------|--------|
-| `free` | `ai_completions` | 100 | hard |
-| `pro` | `ai_completions` | 1000 | hard |
+| plan | metric | limit | policy | kind |
+|------|--------|-------|--------|------|
+| `free` | `ai_completions` | 100 | hard | counter |
+| `pro` | `ai_completions` | 1000 | hard | counter |
+| `free` | `projects` | 3 | hard | gauge |
 
 Use `hard` when overage should be blocked. Use `metered` when overage should bill via Stripe.
+
+**Counter or gauge?** If deleting it frees room, it's a gauge and your app counts it; if it happened, it's a counter and Bridge counts it. AI completions, exports and API calls are counters (reset each period); projects, tickets and seats (`users`) are gauges (never reset). The developer decides the metric list; you decide the kind from that sentence and say why in one line.
 
 **Entitlements** (features on for some plans, off for others):
 
@@ -105,6 +109,8 @@ Use `hard` when overage should be blocked. Use `metered` when overage should bil
 |------|-----|-------|
 | `free` | `advanced_analytics` | off |
 | `pro` | `advanced_analytics` | on |
+
+An entitlement is not configured on its own: every `hard` quota with a limit above 0 is also an entitlement of the same name. A feature that is on for `pro` is therefore a hard quota on `pro` (e.g. `--metric advanced_analytics --limit 1 --policy hard`) that nothing counts, and absent from `free`; the backend gates it with `@RequireEntitlement('advanced_analytics')`, never with `@RequireQuota`.
 
 If there are no per-plan limits or feature differences, the quotas and entitlements tables are empty — skip those commands below.
 
@@ -152,8 +158,11 @@ feature at the cap (entitlement flips off); a `metered` quota bills overage per
 unit and never blocks — it requires a per-unit price:
 
 ```bash
-# Hard cap (block at the limit)
+# Hard cap (block at the limit) — a counter, the default
 bridge plan quota set <plan> --metric <key> --limit <n> --policy hard
+
+# Hard cap on something that exists (a gauge: projects, tickets)
+bridge plan quota set <plan> --metric <key> --limit <n> --policy hard --kind gauge
 
 # Metered: first <limit> units free, then --price-amount per unit (limit 0 = pure
 # per-unit, billed from unit 1). Currency defaults to the plan's price currency.
@@ -162,6 +171,9 @@ bridge plan quota set <plan> --metric <key> --limit <n> --policy metered --price
 
 Run one command per row. (There is no `plan entitlement set` command —
 entitlements are derived from `hard` quotas automatically; do not invent one.)
+Check the result with `bridge plan quota list`, which lists every metric with its kind.
+
+**Where the limit is enforced.** A quota is only a number until the backend enforces it: the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire. The frontend only shows that decision; a frontend-only app cannot enforce a limit. `bridge guide mechanisms` has the whole model.
 
 ## Step 4 — Fetch and apply the per-framework guide
 
@@ -193,6 +205,7 @@ opts out** — it's the expected first-run experience.
 - The per-framework guide (Step 4) mounts the plugin's subscription pages, which include a
   default paywall page (on SvelteKit: `/subscription/plan`, served by the subscription
   catch-all). Confirm that part ran. Do **not** create a separate welcome page on your own.
+- The paywall applies once the app has plans; `paymentsAutoRedirect` (below) switches it.
 - A dedicated onboarding page such as `/welcome` is a product choice: **ask the developer**
   whether they want one. Only if they say yes, add it as the per-framework guide shows and
   point `billing.paywallRoute` at it.
@@ -205,8 +218,8 @@ If the developer does **not** want a forced paywall, disable it with one command
 bridge app update --payments-auto-redirect false
 ```
 
-With the paywall off, users can enter the app without choosing a plan; any `<PlanSelector>`
-or `/subscription` route you mounted still works for self-serve upgrades.
+With the paywall off, users can enter the app without choosing a plan; the subscription pages
+still work for self-serve upgrades.
 
 ## Step 5 — Verify
 
@@ -219,6 +232,7 @@ For each integrated project, the agent verifies — do not hand this to the deve
 5. Complete a test payment — redirected back with the updated plan showing
 6. Cancel a payment — redirected back to the subscription page
 7. Paywall (unless opted out): sign in as a new tenant with no plan — you land on the paywall page (or `/welcome` if the developer chose one) and can't reach the app until a plan is chosen
+8. Plan limit (when a backend was wired): at the cap, the decorated request answers `402 QUOTA_EXCEEDED` — send it with curl, not only through the UI — and in the app the upgrade dialog opens naming the metric
 
 If anything fails, diagnose and fix before moving on.
 
@@ -238,7 +252,7 @@ If anything fails, diagnose and fix before moving on.
    Billing is live in [project-name].
 
     ✅  Plans — [plan-names]
-    ✅  Plan selector — [plan-selector-route]
+    ✅  Subscription page — [subscription-route]
     ✅  Paywall — [paywall-summary]
     ✅  Lifecycle notices — auto-render on trial / payment failure / cancel
     ✅  Quotas and entitlements — [quota-summary]
@@ -258,18 +272,18 @@ If anything fails, diagnose and fix before moving on.
 Fill every `[placeholder]` with real values from the integration:
 - `[project-name]` — folder name and/or `package.json` name
 - `[plan-names]` — the plan keys (e.g. `free`, `premium`)
-- `[plan-selector-route]` — route where `<PlanSelector>` is mounted
+- `[subscription-route]` — where the subscription page is served (SvelteKit default `/subscription`)
 - `[paywall-summary]` — e.g. "new users sent to `/subscription/plan` to pick a plan" (or "off — `paymentsAutoRedirect false`")
-- `[quota-summary]` — metric keys and limits, or "none"
+- `[quota-summary]` — metric keys, limits and kind, and the backend handlers that enforce them, or "none"
 - `[what-i-actually-did]` / `[what-i-changed]` — every file created or modified, every command run
 
 ## Step 7 — Offer follow-on tracks
 
 After the success banner, mention what they can add next:
 
-- **Webhook receiver** — receive subscription and quota events on your backend: `bridge guide billing --framework <name>`
-- **Usage ingestion** — report usage from your backend: same guide, backend section
-- **Portal** — let users manage their payment method or cancel: covered in the per-framework guide
+- **Plan limits on the backend** — if the backend was not wired in this session: `bridge guide billing --framework nestjs` (one decorator per handler)
+- **Limits in the UI** — an upgrade dialog opens on its own when the backend refuses; disabling a button before the click or showing usage numbers is in the frontend guide, Step 3
+- **Portal** — "Manage billing" is already on the subscription page; the per-framework guide shows how to place it elsewhere
 
 Do not run these automatically — the developer decides when they want each.
 
@@ -282,4 +296,4 @@ Do not run these automatically — the developer decides when they want each.
 | `hard` | Entitlement flips off at cap; no overage | Seat counts, included features |
 | `metered` | Overage bills as a Stripe metered price; usage continues | API calls, storage |
 
-The server always accepts `/usage/ingest` — hard policy means no metered price + entitlement gate, not server-side rejection.
+Bridge's usage ingest always accepts events — it never refuses on the app's behalf. The refusal at a hard cap comes from **your** backend: the plan-limit decorator (`@RequireQuota`) reads the quota and answers `402 QUOTA_EXCEEDED` before the handler runs. `bridge guide mechanisms` explains the model.

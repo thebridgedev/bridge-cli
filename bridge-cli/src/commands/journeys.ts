@@ -232,7 +232,7 @@ export function unknownGuideMessage(name: string, frameworks: string[]): string 
   return (
     `No guide named '${name}'. Journeys: ${JOURNEYS.map((j) => j.name).join(', ')}. ` +
     `Frameworks: ${frameworks.join(', ')} (e.g. \`bridge guide svelte auth\`). ` +
-    'Also: flags, billing, custom, list. `bridge guide` alone prints the integration master.'
+    'Also: flags, billing, mechanisms, custom, list. `bridge guide` alone prints the integration master.'
   );
 }
 
