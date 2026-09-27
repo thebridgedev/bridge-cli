@@ -28,6 +28,8 @@ Product questions. Ask, wait, never guess.
 4. **Which address and sender name should emails come from?** (Invitations, password resets, magic links.)
 5. **Beyond colours, should sign-in pages say anything of their own?** A different heading, a frame around the form, a page they design themselves.
 
+**Only changed when you pass them.** No tool sets these on its own; left out, the current value stays: `update_branding` (`bgColor`, `textColor`, `linkColor`, `primaryButtonBgColor`, `primaryButtonTextColor`, `fontFamily`, `borderRadius`).
+
 ## Decide yourself
 
 Climb only as far as the answers require, and say which level you stopped at.

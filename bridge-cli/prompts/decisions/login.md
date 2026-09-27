@@ -26,6 +26,8 @@ Product questions. Ask, wait, never guess.
 4. **Can anyone sign up, or only people who are invited?** This is a teams question: see the **teams** guide before changing it.
 5. **For each social provider they pick: the client id and client secret** from that provider's console. Never invent, guess or reuse a credential.
 
+**Only changed when you pass them.** No tool sets these on its own; left out, the current value stays: `update_auth_methods` (`mfaEnabled`, `passkeysEnabled`, `magicLinkEnabled`, `googleSsoEnabled`, `linkedinSsoEnabled`, `azureAdSsoEnabled`, `appleSsoEnabled`, `githubSsoEnabled`, `facebookSsoEnabled`).
+
 ## Decide yourself
 
 Apply these without asking. Say the reason in one line.

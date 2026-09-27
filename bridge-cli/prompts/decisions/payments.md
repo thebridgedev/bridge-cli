@@ -25,6 +25,10 @@ Product questions. Ask, wait, never guess. Then show the answer back as tables (
 6. **Which features are only on some plans?** ("Analytics on Pro only.")
 7. **Do they want a welcome page for new customers** where they choose a plan? Offer it; create it only if they say yes.
 
+**The tools will not guess these.** Called without one, a tool changes nothing and answers `DECISION_NEEDED` with the question to ask; the matching bridge command stops the same way: `create_plan` (`amount`, `interval`, `currency`, `trial`, `trialDays`) · `apply_plan` (`name`, `prices.amount`, `prices.interval`, `prices.currency`, `trial`, `trialDays`) · `set_plan_price` (`currency`). A free plan (price 0) needs no currency or trial answer, and a price added to a plan that charges in one currency reuses it.
+
+**Only changed when you pass them.** No tool sets these on its own; left out, the current value stays: `update_app` (`paymentsAutoRedirect`).
+
 ## Decide yourself
 
 - **Plan keys short and lower-case: `free`, `pro`, `team`.** Reason: the key is permanent and is what code, flag rules and tokens use; the name can change any time.
@@ -60,7 +64,7 @@ Whether a paid feature is a plan feature or a flag with a plan rule is decided i
 |---|---|---|
 | Connect Stripe (keys from the developer) | `setup_payments` | `bridge setup payments --stripe-key sk_test_… --stripe-public-key pk_test_…` |
 | Set up or reshape one plan in one call | `apply_plan` | `bridge plan apply --spec @plan.json` |
-| Or step by step: create a plan with its first price | `create_plan` | `bridge plan create --key pro --name Pro --amount 29 --interval month` |
+| Or step by step: create a plan with its first price | `create_plan` | `bridge plan create --key pro --name Pro --amount 29 --interval month --currency usd --no-trial` |
 | Add another price | `set_plan_price` | `bridge plan price set pro --amount 290 --interval year` |
 | Add a limit | `set_plan_quota` | `bridge plan quota set pro --metric tickets --limit 100 --policy hard --kind gauge` |
 | Turn off the forced plan choice | `update_app` | `bridge app update --payments-auto-redirect false` |

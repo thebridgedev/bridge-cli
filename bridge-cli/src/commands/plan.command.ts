@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 import { shapePlan } from '../shape.js';
+import { DecisionNeededError, decisionField, type DecisionField } from '../product-decisions.js';
 
 // ── Quota types + helpers ────────────────────────────────────────────────────
 // Matches the backend PlanQuota shape (TBP-264). The published
@@ -275,6 +276,51 @@ export function upsertPrice(
   ];
 }
 
+// ── Product decisions (TBP-713) ──────────────────────────────────────────────
+// Mirrors bridge-api's create_plan / set_plan_price / apply_plan: a price,
+// interval, currency or trial the developer has not decided stops the command
+// before anything is written, naming the same fields as the MCP tool.
+
+/** The distinct currencies of a plan's prices, upper-cased. */
+function planCurrencies(prices: Array<{ currency?: string }>): string[] {
+  return [...new Set(prices.map((p) => p.currency?.trim().toUpperCase()).filter((c): c is string => !!c))];
+}
+
+/**
+ * The currency for a price given without one: the plan's one currency when it
+ * has exactly one; USD for a free (0) price when it has none; otherwise
+ * undefined — the developer decides. Same rule as the MCP tools. Pure.
+ */
+export function resolvePriceCurrency(
+  given: string | undefined,
+  amount: number,
+  others: Array<{ currency?: string }>,
+): string | undefined {
+  if (given !== undefined) return given.trim().toUpperCase();
+  const known = planCurrencies(others);
+  if (known.length === 1) return known[0];
+  return amount === 0 && known.length === 0 ? 'USD' : undefined;
+}
+
+/** The decisions `plan create` is missing, in the MCP tool's order. Pure. */
+export function createPlanDecisions(opts: {
+  amount?: number;
+  interval?: string;
+  currency?: string;
+  trial?: boolean;
+  trialDays?: number;
+}): DecisionField[] {
+  const missing: DecisionField[] = [];
+  const trial = opts.trial ?? (opts.trialDays !== undefined ? true : undefined);
+  const paidOrUnknown = opts.amount === undefined || opts.amount > 0;
+  if (opts.amount === undefined) missing.push(decisionField('create_plan', 'amount', '--amount <n>'));
+  if (opts.interval === undefined) missing.push(decisionField('create_plan', 'interval', '--interval <interval>'));
+  if (paidOrUnknown && opts.currency === undefined) missing.push(decisionField('create_plan', 'currency', '--currency <code>'));
+  if (paidOrUnknown && trial === undefined) missing.push(decisionField('create_plan', 'trial', '--trial | --no-trial'));
+  if (trial === true && opts.trialDays === undefined) missing.push(decisionField('create_plan', 'trialDays', '--trial-days <n>'));
+  return missing;
+}
+
 /** Fetch a plan + its quotas/prices (read defensively — list() may omit them). */
 async function getPlan(
   key: string,
@@ -313,12 +359,23 @@ export function registerPlanCommands(program: Command): void {
     .requiredOption('--name <name>', 'Plan name')
     .option('--amount <amount>', 'First price amount (>= 0). Use 0 for a free or contact-sales tier', parseFloat)
     .option('--interval <interval>', `Billing interval for the first price: ${VALID_INTERVALS.join(' | ')}`)
-    .option('--currency <currency>', 'Currency for the first price (default USD)')
+    .option('--currency <currency>', 'Currency for the first price (ISO code). Required when --amount is above 0')
     .option('--description <desc>', 'Description')
-    .option('--trial', 'Include trial period', false)
+    .option('--trial', 'The plan has a free trial (with --trial-days)')
+    .option('--no-trial', 'The plan has no free trial. One of --trial / --no-trial is required when --amount is above 0')
     .option('--trial-days <days>', 'Trial period in days', parseInt)
     .action(async (opts) => {
       try {
+        // TBP-713 — price, interval, currency and trial are the developer's
+        // decisions: stop and name them instead of defaulting.
+        const missing = createPlanDecisions(opts);
+        if (missing.length) {
+          throw new DecisionNeededError(
+            'bridge plan create',
+            missing,
+            opts.amount === undefined ? 'currency and trial are not needed if the price is 0.' : undefined,
+          );
+        }
         // TBP-617 — the server rejects an explicitly empty price list, so build
         // (and validate) the first price here rather than sending `prices: []`.
         const prices = buildCreatePlanPrices({
@@ -326,11 +383,12 @@ export function registerPlanCommands(program: Command): void {
           interval: opts.interval,
           currency: opts.currency,
         });
+        const trial = opts.trial ?? (opts.trialDays !== undefined ? true : false);
         outputSuccess(shapePlan(await getManagementClient().plans.create({
           key: opts.key,
           name: opts.name,
           description: opts.description,
-          trial: opts.trial,
+          trial,
           trialDays: opts.trialDays,
           prices,
         })));
@@ -424,25 +482,54 @@ export function planApplyWrite(
   const current = plans.find((p) => p.key === key);
   const isNew = !current;
 
-  let prices: PlanPriceInput[] = isNew ? [] : [...(((current as { prices?: PlanPriceInput[] }).prices ?? []))];
+  const before: PlanPriceInput[] = isNew ? [] : [...(((current as { prices?: PlanPriceInput[] }).prices ?? []))];
+  let prices: PlanPriceInput[] = [...before];
+  const planCurrency = planCurrencies(before).length === 1 ? planCurrencies(before)[0] : 'USD';
   for (const r of spec.removePrices ?? []) {
-    const currency = (r.currency ?? 'USD').trim().toUpperCase();
+    const currency = (r.currency ?? planCurrency).trim().toUpperCase();
     const slot = (p: PlanPriceInput) => p.currency === currency && p.recurrenceInterval === r.interval;
     if (!prices.some(slot)) {
       throw new PlanApplyError('PRICE_NOT_FOUND', `No ${currency} ${r.interval} price on plan "${key}". Nothing was changed.`);
     }
     prices = prices.filter((p) => !slot(p));
   }
-  for (const p of spec.prices ?? []) {
-    prices = upsertPrice(prices, buildPriceEntry({ amount: p.amount, interval: p.interval, currency: p.currency }));
+  // TBP-713 — the product decisions, gathered and reported all at once before
+  // anything is written; same fields, same order as the MCP apply_plan tool.
+  const missing: DecisionField[] = [];
+  const inputs = spec.prices ?? [];
+  const settled = [...before, ...inputs.filter((p) => p.currency !== undefined)];
+  inputs.forEach((p, i) => {
+    const currency = resolvePriceCurrency(p.currency, p.amount, settled);
+    if (!currency) {
+      missing.push(decisionField('apply_plan', 'prices.currency', `"prices[${i}].currency"`, `prices[${i}].currency`));
+      return;
+    }
+    prices = upsertPrice(prices, buildPriceEntry({ amount: p.amount, interval: p.interval, currency }));
+  });
+  if (prices.length === 0 && !isNew && missing.length === 0) {
+    throw new PlanApplyError('LAST_PRICE', `This would remove every price from plan "${key}": a plan needs at least one price. Nothing was changed.`);
   }
-  if (prices.length === 0) {
-    throw isNew
-      ? new PlanApplyError('PLAN_NEEDS_PRICE', `Plan "${key}" does not exist yet, and a new plan needs at least one price, e.g. "prices":[{"amount":29,"interval":"month"}].`)
-      : new PlanApplyError('LAST_PRICE', `This would remove every price from plan "${key}": a plan needs at least one price. Nothing was changed.`);
+  if (isNew && spec.name === undefined) missing.push(decisionField('apply_plan', 'name', '"name"'));
+  if (isNew && inputs.length === 0) {
+    missing.push(
+      decisionField('apply_plan', 'prices.amount', '"prices[0].amount"', 'prices[0].amount'),
+      decisionField('apply_plan', 'prices.interval', '"prices[0].interval"', 'prices[0].interval'),
+      decisionField('apply_plan', 'prices.currency', '"prices[0].currency"', 'prices[0].currency'),
+    );
   }
-  if (isNew && spec.name === undefined) {
-    throw new PlanApplyError('PLAN_NEEDS_NAME', `Plan "${key}" does not exist yet, and a new plan needs a "name".`);
+  const trial = spec.trial ?? (spec.trialDays !== undefined ? true : undefined);
+  const paid = inputs.length === 0 || inputs.some((p) => p.amount > 0);
+  if (isNew && paid && trial === undefined) missing.push(decisionField('apply_plan', 'trial', '"trial"'));
+  const currentTrialDays = (current as { trialDays?: number } | undefined)?.trialDays;
+  if (trial === true && spec.trialDays === undefined && !currentTrialDays) {
+    missing.push(decisionField('apply_plan', 'trialDays', '"trialDays"'));
+  }
+  if (missing.length) {
+    throw new DecisionNeededError(
+      'bridge plan apply',
+      missing,
+      isNew ? `Plan "${key}" does not exist yet, so this call would create it.` : undefined,
+    );
   }
 
   let quotas: Quota[] = isNew ? [] : [...(((current as { quotas?: Quota[] }).quotas ?? []))];
@@ -472,9 +559,10 @@ export function planApplyWrite(
   }
 
   const fields: Record<string, unknown> = {};
-  for (const f of ['name', 'description', 'trial', 'trialDays'] as const) {
+  for (const f of ['name', 'description', 'trialDays'] as const) {
     if (spec[f] !== undefined) fields[f] = spec[f];
   }
+  if (trial !== undefined) fields.trial = trial;
   if (isNew) {
     return {
       created: true,
@@ -503,15 +591,24 @@ function registerPriceCommands(plan: Command): void {
     .argument('<key>', 'Plan key')
     .requiredOption('--amount <amount>', 'Price amount (>= 0)', parseFloat)
     .requiredOption('--interval <interval>', `Billing interval: ${VALID_INTERVALS.join(' | ')}`)
-    .option('--currency <currency>', 'Currency (default USD)', 'USD')
+    .option('--currency <currency>', "Currency (ISO code). Omit only to reuse the plan's one existing price currency")
     .action(async (key: string, opts) => {
       try {
+        const { prices } = await getPlan(key);
+        // TBP-713 — never price in a currency the developer did not choose.
+        const currency = resolvePriceCurrency(opts.currency, opts.amount, prices);
+        if (!currency) {
+          throw new DecisionNeededError(
+            'bridge plan price set',
+            [decisionField('set_plan_price', 'currency', '--currency <code>')],
+            `Plan "${key}" has prices in ${planCurrencies(prices).join(', ') || 'no currency yet'}, so there is none to reuse.`,
+          );
+        }
         const entry = buildPriceEntry({
           amount: opts.amount,
           interval: opts.interval,
-          currency: opts.currency,
+          currency,
         });
-        const { prices } = await getPlan(key);
         const next = upsertPrice(prices, entry);
         outputSuccess(shapePlan(await getManagementClient().plans.update(key, { prices: next })));
       } catch (err) { outputError(err); }

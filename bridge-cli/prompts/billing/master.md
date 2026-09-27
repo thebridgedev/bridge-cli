@@ -140,7 +140,7 @@ a **zero-amount** price, not the absence of a price:
 
 ```bash
 bridge plan create --key free --name "Free" --amount 0 --interval month
-bridge plan create --key pro --name "Pro" --amount 29 --interval month --trial --trial-days 14
+bridge plan create --key pro --name "Pro" --amount 29 --interval month --currency usd --trial --trial-days 14
 ```
 
 Verify: `bridge plan list`
