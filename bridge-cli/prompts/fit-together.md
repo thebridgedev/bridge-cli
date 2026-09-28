@@ -28,7 +28,7 @@ The flag's rule never names plans. It points at `bridge:billing.entitlement.<fea
 
 Control it with a flag rule, never with a role check written into the app's code.
 
-- **Prefer a privilege rule** (`privileges contains "REPORTS_VIEW"`) over a role rule (`user.role eq "ADMIN"`). A privilege rule keeps working when roles are renamed or reshuffled. Privilege keys are matched as text inside the person's list, so give each privilege a key that no other key contains (`REPORTS_VIEW`, not `REPORTS` next to `REPORTS_VIEW`).
+- **Prefer a privilege rule** (`privileges contains "REPORTS_VIEW"`) over a role rule (`user.role eq "ADMIN"`). A privilege rule keeps working when roles are renamed or reshuffled. `contains` on `privileges` means the person holds exactly that key: `REPORTS_VIEW` does not match `REPORTS_VIEW_ALL`.
 - **A role rule is fine when the developer means the role itself.** Use the role key exactly as `list_roles` shows it; `ADMIN` and `admin` are different.
 - **An admin-only page is a flag route rule, not a check on the page.** In SvelteKit: `{ match: '/admin/*', featureFlag: 'admin-area', redirectTo: '/' }`, with the flag `admin-area` ruled on a privilege. On the NestJS backend: `@RequireFlag('admin-area')` on the handler. Both read the same rule.
 - **Roles are the app's own.** What a role can do is only ever "in the default setup". Read the app's real roles and privileges with `list_roles` / `bridge role list` before writing any rule, and never assume what a role grants from its name. In the default setup a new app has Owner, Admin and Member, and Member is the default for everyone after the first person in a workspace.

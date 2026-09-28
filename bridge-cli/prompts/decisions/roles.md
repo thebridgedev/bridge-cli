@@ -41,7 +41,7 @@ Product questions. Ask, wait, never guess.
 - **Name privileges after actions, in capitals: `PROJECT_DELETE`, `INVOICE_APPROVE`.** Reason: they read like the existing ones (`USER_READ`, `TENANT_WRITE`) and say exactly what they allow.
 - **Role keys in capitals too: `EDITOR`, `VIEWER`.** Reason: the token carries the key exactly as written, and a flag rule on `user.role` compares it case for case.
 - **Control access with a flag rule on a privilege, never a role check in code.** Reason: roles get reshaped as the product grows; a privilege rule stays true, and the rule changes without a release.
-- **Give each privilege a key no other key contains** (`REPORTS_VIEW`, not `REPORTS` beside `REPORTS_VIEW`). Reason: a rule matches privilege keys as text inside the person's list.
+- **Name the full privilege key in a rule** (`privileges contains "REPORTS_VIEW"`). Reason: a rule matches whole keys in the person's list, so `REPORTS_VIEW` does not match `REPORTS_VIEW_ALL`, and a partial key matches nothing.
 - **Keep Owner as the one role with everything.** Never strip it: in the default setup it is the only role that can delete, and every workspace needs someone who can.
 - **Make the lowest sensible role the default**, by creating it with the default setting on or with `set_default_role` / `bridge role set-default <key>` for a role that exists. Reason: a forgotten role on an invitation then gives too little, not too much.
 - **When changing a role's privileges, send the full list.** Reason: the update replaces the list, and anything left out is revoked.

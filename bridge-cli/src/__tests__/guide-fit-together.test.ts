@@ -126,6 +126,8 @@ const FORBIDDEN: Array<[string, RegExp]> = [
     'browser counting said not to work',
     /\b(?:browser|frontend|client)(?:[- ](?:only|side))?\b[^.\n]{0,40}\b(?:won't|will not|does not|doesn't|cannot|can't|can not) (?:work|enforce|be trusted)/i,
   ],
+  // TBP-757: `contains` on privileges is exact membership; advice written around the old substring match is stale.
+  ['privileges said to match as text', /\b(?:matched|matches|match) (?:privilege keys )?as text\b|\bno other (?:privilege )?key contains\b/i],
   ['browser counting said not production-ready', /\b(?:browser|frontend|client)\b[^.\n]{0,60}\bnot (?:production|prod)[- ](?:ready|grade)/i],
 ];
 
@@ -175,6 +177,8 @@ describe('no guide teaches a hard-coded role or plan check, or talks browser cou
       "Browser-only counting won't work: click limits need a backend.",
       'A frontend-only app cannot enforce a limit.',
       'Counting in the browser is not production-ready.',
+      "Give each privilege a key no other key contains, since the list is matched as text.",
+      "A rule matches privilege keys as text inside the person's list.",
     ])('%s', (bad) => {
       expect(accessRuleViolations(bad)).not.toEqual([]);
     });

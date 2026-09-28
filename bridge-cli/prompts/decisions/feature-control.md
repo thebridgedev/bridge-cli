@@ -42,7 +42,7 @@ Product questions. Ask, wait, never guess.
 - **Flag keys in kebab-case, named after the feature: `new-editor`, `analytics`.** Reason: the key is what code reads; it should still make sense after the rollout is over.
 - **Boolean unless the developer needs variants.** Reason: on/off covers almost every case and reads plainly in code.
 - **A feature a plan sells: add it to the plan (`add_plan_feature`), then rule on `bridge:billing.entitlement.<feature> eq true`.** Reason: the pricing table, the upgrade dialog and the flag all read one list, and no rule names a plan.
-- **Who someone is: rule on a privilege (`privileges contains "REPORTS_VIEW"`) before a role (`user.role eq "ADMIN"`).** Reason: a privilege rule survives renamed or reshuffled roles. Use full privilege keys that no other key contains, since the list is matched as text.
+- **Who someone is: rule on a privilege (`privileges contains "REPORTS_VIEW"`) before a role (`user.role eq "ADMIN"`).** Reason: a privilege rule survives renamed or reshuffled roles. Use the full privilege key: `contains` on the privileges list matches a whole key, never part of one.
 - **An admin-only page is a flag route rule, not a check on the page.** Reason: the rule is changed in one place and the backend reads the same one.
 - **Always give the rule an `otherwiseValue`, and make it the safe answer (usually `false`).** Reason: anyone the rule does not match gets it.
 - **Test the rule with the exact attributes the app sends before relying on it** (`evaluate_feature_flag` / `bridge flag eval`). Reason: a rule on an attribute the app never sends silently answers `otherwiseValue` for everyone.
