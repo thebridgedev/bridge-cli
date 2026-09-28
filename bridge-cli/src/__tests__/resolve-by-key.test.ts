@@ -442,6 +442,45 @@ describe('bridge role update / delete', () => {
   });
 });
 
+// TBP-758 — the default role (what people added without a role named get) can
+// be moved from the command line.
+describe('bridge role set-default / update --is-default', () => {
+  it('set-default resolves the key and sets isDefault on exactly that role', async () => {
+    const client = makeClient();
+
+    const res = await runCli('role', 'set-default', 'ADMIN');
+
+    expect(res.stderr).toBe('');
+    expect(client.roles.update).toHaveBeenCalledTimes(1);
+    expect(client.roles.update).toHaveBeenCalledWith('role-id-1', { isDefault: true });
+  });
+
+  it('set-default refuses an unknown key and changes nothing', async () => {
+    const client = makeClient();
+
+    const res = await runCli('role', 'set-default', 'GHOST');
+
+    expect(errorOf(res).code).toBe('ROLE_NOT_FOUND');
+    expect(client.roles.update).not.toHaveBeenCalled();
+  });
+
+  it('update --is-default sends isDefault: true', async () => {
+    const client = makeClient();
+
+    await runCli('role', 'update', '--key', 'ADMIN', '--is-default');
+
+    expect(client.roles.update).toHaveBeenCalledWith('role-id-1', { isDefault: true });
+  });
+
+  it('update without --is-default never touches the default', async () => {
+    const client = makeClient();
+
+    await runCli('role', 'update', '--key', 'ADMIN', '--name', 'Admins');
+
+    expect(client.roles.update.mock.calls[0][1]).not.toHaveProperty('isDefault');
+  });
+});
+
 // ── tenants (no key field — addressed by name, which is NOT unique) ──────────
 
 describe('bridge tenant get / update / delete', () => {

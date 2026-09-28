@@ -2,6 +2,8 @@
 
 You are integrating **Bridge Feature Flags** into a user's application — the flags-only path. No auth scaffolding, no billing components. If the user also wants auth or billing, run `bridge guide` (auth master) or `bridge guide billing` afterwards.
 
+Flags are the standard way to control a route, an API endpoint, a feature or a piece of code. A feature a plan sells is listed on the plan and the flag's rule points at `bridge:billing.entitlement.<feature>`, never at plan names; access by who someone is is a rule on a privilege (preferred) or a role, never a role check in code. `bridge guide fit-together` has the whole rule; `bridge guide decision feature-control` has the questions to ask.
+
 This master prompt orchestrates discovery, confirmation, and verification. The **actual install commands, provider shapes, and runnable code snippets live in the per-framework prompts** that ship in each plugin repo's `mcp/` folder. This master does the planning; the per-framework prompts do the wiring.
 
 ## Where per-framework prompts live
@@ -212,4 +214,4 @@ After delivering the message, the flags integration is complete.
 
 **Frontend vs backend:** The frontend SDK evaluates flags from a local cache hydrated at boot. The backend SDK (`mode: 'backend'`) evaluates per-request and requires an explicit `identity` for any rule using `rolloutPct < 100` — no anonymous bucketing.
 
-**Flags without Bridge Auth:** Flags work standalone. Pass your own `identity` and `attributes` when `identitySource` is "your own user model". If Bridge Auth is already installed, `role` and `plan` merge into the eval context automatically via the auth attribute provider wired by the per-framework guide.
+**Flags without Bridge Auth:** Flags work standalone. Pass your own `identity` and `attributes` when `identitySource` is "your own user model". If Bridge Auth is already installed, `user.role`, `privileges`, `tenant.plan` and the `bridge:billing.*` attributes (including `bridge:billing.entitlement.<feature>`) fill the eval context automatically, in the browser and on the NestJS backend alike.

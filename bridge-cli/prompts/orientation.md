@@ -8,9 +8,9 @@ Bridge runs everything between signup and invoice for your app, so you don't bui
 
 - **Login.** People sign up and sign in with a password, a magic link, a passkey, Google, GitHub and other providers, or their company's SSO, with optional two-factor. Bridge serves the pages; your app adds about fifteen lines. *Want to choose how people sign in?*
 - **Teams and workspaces.** Each customer gets a workspace and can invite teammates into it. You decide whether people create their own workspace or join by invitation. *Is your app for single users or for teams?*
-- **Roles and permissions.** Inside a workspace, roles decide who may do what, and your backend checks them on every request. *Who are the different kinds of people in a customer's workspace?*
-- **Payments and plans.** Plans with prices, trials and limits ("3 projects on Free, 50 on Pro"), checkout through your own Stripe account, and an upgrade prompt when someone hits a limit. *Want to set up a free tier and a paid plan?*
-- **Feature control.** Turn any feature on or off for everyone, a percentage of users, one plan or one customer, without a deploy. *Is there a feature you want to roll out carefully or sell on a higher plan?*
+- **Roles and permissions.** Inside a workspace, each person's role carries privileges, and feature flags use them to decide who gets which page, endpoint or feature, the same in the browser and on your backend. *Who are the different kinds of people in a customer's workspace?*
+- **Payments and plans.** Plans with prices, trials, limits ("3 projects on Free, 50 on Pro") and the features each one sells, checkout through your own Stripe account, and an upgrade prompt when someone hits a limit or a feature their plan lacks. *Want to set up a free tier and a paid plan?*
+- **Feature control.** Feature flags switch any page, API endpoint or feature for everyone, a percentage of users, the plans that sell it, the people allowed to use it, or one customer, without a deploy. *Is there a feature you want to roll out carefully or sell on a higher plan?*
 - **Look and feel.** Sign-in and subscription pages in your colours and fonts, inside your own layout, and emails sent in your app's name. *Want the sign-in pages to look like the rest of your app?*
 - **Going live.** A readiness checklist that says exactly what still points at localhost or test keys, and a test sign-in that proves login works end to end. *Ready to check what stands between you and real users?*
 
@@ -31,6 +31,8 @@ Each area has a decision guide: the questions to ask the developer, and the defa
 | Going live | `bridge guide decision going-live` | `bridge guide go-live` |
 
 In an MCP client the same guides are the resources `bridge://guides/decisions/<area>` (areas: `login`, `teams`, `roles`, `payments`, `feature-control`, `look-and-feel`, `going-live`), and the journeys are the server's prompts of the same names.
+
+How roles, plans, limits and flags fit together, the rule every decision guide builds on: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`). Read it before setting up any of them.
 
 How limits, upgrade prompts and page customisation actually work, for every area: `bridge guide mechanisms`.
 

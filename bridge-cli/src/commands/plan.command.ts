@@ -163,6 +163,99 @@ export function upsertQuota(quotas: Quota[], entry: Quota): Quota[] {
   return [...quotas.filter((q) => q.metric !== entry.metric), entry];
 }
 
+// ── Plan features (TBP-755) ─────────────────────────────────────────────────
+// A plan lists the on/off features it sells. Each key reaches the SDK as
+// `bridge:billing.entitlement.<key>`: true on workspaces whose plan lists it,
+// false when another plan of the app does. A flag rule
+// `bridge:billing.entitlement.<key> eq true` gates the feature, so changing
+// what a plan sells is one edit here and no flag rule has to follow.
+
+export interface PlanFeature {
+  key: string;
+  name: string;
+}
+
+/** An Error carrying a machine-readable `code` that outputError reports. */
+function codedError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+/** Same pattern the server enforces. */
+export const FEATURE_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+/** Validate one feature key client-side, with a message that says how to fix it. */
+export function validateFeatureKey(key: string): string {
+  const k = (key ?? '').trim();
+  if (!FEATURE_KEY_PATTERN.test(k)) {
+    throw codedError(
+      'INVALID_FEATURE',
+      `Feature key "${key}" is not valid: use lower-case letters, digits and underscores, starting with a letter (e.g. "analytics", "priority_support").`,
+    );
+  }
+  return k;
+}
+
+/** One feature entry; the display name defaults to the key. */
+export function buildFeature(key: string, name?: string): PlanFeature {
+  const k = validateFeatureKey(key);
+  const n = (name ?? '').trim();
+  return { key: k, name: n || k };
+}
+
+/**
+ * Parse `--features`: comma-separated `key` or `key:Display Name` entries,
+ * e.g. `analytics,sso:Single sign-on`. A repeated key keeps the last entry.
+ */
+export function parseFeaturesOption(raw: string): PlanFeature[] {
+  let features: PlanFeature[] = [];
+  for (const part of raw.split(',')) {
+    const entry = part.trim();
+    if (!entry) continue;
+    const i = entry.indexOf(':');
+    const feature = i === -1 ? buildFeature(entry) : buildFeature(entry.slice(0, i), entry.slice(i + 1));
+    features = upsertFeature(features, feature);
+  }
+  return features;
+}
+
+/** Upsert a feature by key (replace in place if present, append otherwise). Pure. */
+export function upsertFeature(features: PlanFeature[], entry: PlanFeature): PlanFeature[] {
+  const i = features.findIndex((f) => f.key === entry.key);
+  if (i === -1) return [...features, entry];
+  const next = [...features];
+  next[i] = entry;
+  return next;
+}
+
+/** Remove a feature by key; throws naming the existing keys when absent. Pure. */
+export function removeFeature(features: PlanFeature[], key: string, planKey: string): PlanFeature[] {
+  const next = features.filter((f) => f.key !== key);
+  if (next.length === features.length) {
+    throw codedError(
+      'FEATURE_NOT_FOUND',
+      `No feature "${key}" on plan "${planKey}". Existing features: ${
+        features.length ? features.map((f) => f.key).join(', ') : '(none)'
+      }.`,
+    );
+  }
+  return next;
+}
+
+/** A plan's features, read defensively (older servers omit the field). */
+export function featuresOf(plan: unknown): PlanFeature[] {
+  const raw = (plan as { features?: unknown } | null)?.features;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((f): f is { key: string; name?: string } => !!f && typeof (f as { key?: unknown }).key === 'string')
+    .map((f) => ({ key: f.key, name: typeof f.name === 'string' && f.name ? f.name : f.key }));
+}
+
+/** A plan as printed: always carries `features` (empty when it sells none). */
+function withFeatures<T>(plan: T): T {
+  if (!plan || typeof plan !== 'object') return plan;
+  return { ...plan, features: featuresOf(plan) } as T;
+}
+
 // ── Price helpers ─────────────────────────────────────────────────────────────
 
 export type RecurrenceInterval = 'day' | 'week' | 'month' | 'year';
@@ -324,13 +417,13 @@ export function createPlanDecisions(opts: {
 /** Fetch a plan + its quotas/prices (read defensively — list() may omit them). */
 async function getPlan(
   key: string,
-): Promise<{ plan: Record<string, unknown>; quotas: Quota[]; prices: PlanPriceInput[] }> {
+): Promise<{ plan: Record<string, unknown>; quotas: Quota[]; prices: PlanPriceInput[]; features: PlanFeature[] }> {
   const plans = (await getManagementClient().plans.list()) as unknown as Record<string, unknown>[];
   const plan = plans.find((p) => p.key === key);
   if (!plan) throw new Error(`Plan not found: ${key}`);
   const quotas = ((plan as { quotas?: Quota[] }).quotas ?? []) as Quota[];
   const prices = ((plan as { prices?: PlanPriceInput[] }).prices ?? []) as PlanPriceInput[];
-  return { plan, quotas, prices };
+  return { plan, quotas, prices, features: featuresOf(plan) };
 }
 
 export function registerPlanCommands(program: Command): void {
@@ -339,17 +432,17 @@ export function registerPlanCommands(program: Command): void {
   plan.command('list')
     .description('List all subscription plans')
     .action(async () => {
-      try { outputSuccess((await getManagementClient().plans.list()).map(shapePlan)); }
+      try { outputSuccess((await getManagementClient().plans.list()).map((p) => withFeatures(shapePlan(p)))); }
       catch (err) { outputError(err); }
     });
 
   plan.command('get')
-    .description('Get a plan by key (includes usage quotas)')
+    .description('Get a plan by key (includes usage quotas and included features)')
     .argument('<key>', 'Plan key')
     .action(async (key: string) => {
       try {
-        const { plan: found, quotas } = await getPlan(key);
-        outputSuccess(shapePlan({ ...found, quotas }));
+        const { plan: found, quotas, features } = await getPlan(key);
+        outputSuccess(shapePlan({ ...found, quotas, features }));
       } catch (err) { outputError(err); }
     });
 
@@ -364,8 +457,15 @@ export function registerPlanCommands(program: Command): void {
     .option('--trial', 'The plan has a free trial (with --trial-days)')
     .option('--no-trial', 'The plan has no free trial. One of --trial / --no-trial is required when --amount is above 0')
     .option('--trial-days <days>', 'Trial period in days', parseInt)
+    .option(
+      '--features <list>',
+      'On/off features the plan includes, comma-separated `key` or `key:Display Name`, e.g. "analytics,sso:Single sign-on". ' +
+        'Each is `bridge:billing.entitlement.<key>` in flag rules',
+    )
     .action(async (opts) => {
       try {
+        // TBP-755 — validate before anything else so a bad key never half-creates a plan.
+        const features = opts.features !== undefined ? parseFeaturesOption(String(opts.features)) : undefined;
         // TBP-713 — price, interval, currency and trial are the developer's
         // decisions: stop and name them instead of defaulting.
         const missing = createPlanDecisions(opts);
@@ -391,7 +491,8 @@ export function registerPlanCommands(program: Command): void {
           trial,
           trialDays: opts.trialDays,
           prices,
-        })));
+          ...(features && features.length ? { features } : {}),
+        } as never)));
       } catch (err) { outputError(err); }
     });
 
@@ -414,8 +515,8 @@ export function registerPlanCommands(program: Command): void {
       '--spec <json>',
       'The plan as JSON, or @file.json: { key, name?, description?, trial?, trialDays?, ' +
         'prices?: [{ amount, interval, currency? }], quotas?: [{ metric, limit, policy, kind?, priceAmount?, priceCurrency? }], ' +
-        'removePrices?: [{ interval, currency? }], removeQuotas?: [metric] }. Same shape as the MCP apply_plan tool. ' +
-        'Prices and quotas are upserted; anything not mentioned is kept',
+        'features?: [{ key, name? }], removePrices?: [{ interval, currency? }], removeQuotas?: [metric], removeFeatures?: [key] }. ' +
+        'Same shape as the MCP apply_plan tool. Prices, quotas and features are upserted; anything not mentioned is kept',
     )
     .action(async (opts) => {
       try {
@@ -431,6 +532,7 @@ export function registerPlanCommands(program: Command): void {
 
   registerPriceCommands(plan);
   registerQuotaCommands(plan);
+  registerFeatureCommands(plan);
 }
 
 // ── plan apply (TBP-709) ─────────────────────────────────────────────────────
@@ -448,6 +550,10 @@ export interface PlanSpec {
   quotas?: Array<{ metric: string; limit: number; policy: string; kind?: string; priceAmount?: number; priceCurrency?: string }>;
   removePrices?: Array<{ interval: string; currency?: string }>;
   removeQuotas?: string[];
+  /** TBP-755 — on/off features, upserted by key. */
+  features?: Array<{ key: string; name?: string }>;
+  /** TBP-755 — feature keys to remove. */
+  removeFeatures?: string[];
 }
 
 /** An error with a machine-readable code, reported by outputError. */
@@ -558,6 +664,25 @@ export function planApplyWrite(
     quotas = upsertQuota(quotas, entry);
   }
 
+  // TBP-755 — features: current, minus removals, with upserts by key.
+  let features: PlanFeature[] = isNew ? [] : featuresOf(current);
+  for (const fk of spec.removeFeatures ?? []) {
+    if (!features.some((f) => f.key === fk)) {
+      throw new PlanApplyError('FEATURE_NOT_FOUND', `No feature "${fk}" on plan "${key}". Nothing was changed.`);
+    }
+    features = features.filter((f) => f.key !== fk);
+  }
+  for (const f of spec.features ?? []) {
+    let entry: PlanFeature;
+    try {
+      entry = buildFeature(String(f?.key ?? ''), f?.name);
+    } catch (err) {
+      throw new PlanApplyError('INVALID_FEATURE', (err as Error).message);
+    }
+    features = upsertFeature(features, entry);
+  }
+  const featuresTouched = spec.features !== undefined || spec.removeFeatures !== undefined;
+
   const fields: Record<string, unknown> = {};
   for (const f of ['name', 'description', 'trialDays'] as const) {
     if (spec[f] !== undefined) fields[f] = spec[f];
@@ -566,7 +691,14 @@ export function planApplyWrite(
   if (isNew) {
     return {
       created: true,
-      body: { key, trial: false, ...fields, prices, ...(quotas.length ? { quotas } : {}) },
+      body: {
+        key,
+        trial: false,
+        ...fields,
+        prices,
+        ...(quotas.length ? { quotas } : {}),
+        ...(features.length ? { features } : {}),
+      },
     };
   }
   return {
@@ -575,6 +707,7 @@ export function planApplyWrite(
       ...fields,
       ...(spec.prices !== undefined || spec.removePrices !== undefined ? { prices } : {}),
       ...(spec.quotas !== undefined || spec.removeQuotas !== undefined ? { quotas } : {}),
+      ...(featuresTouched ? { features } : {}),
     },
   };
 }
@@ -714,6 +847,52 @@ function registerQuotaCommands(plan: Command): void {
           throw new Error(`No quota for metric "${opts.metric}" on plan "${key}".`);
         }
         outputSuccess(shapePlan(await getManagementClient().plans.update(key, { quotas: next } as never)));
+      } catch (err) { outputError(err); }
+    });
+}
+
+// ── plan feature (included on/off features, TBP-755) ─────────────────────────
+
+function registerFeatureCommands(plan: Command): void {
+  const feature = plan
+    .command('feature')
+    .description(
+      'Manage the on/off features a plan includes. Each is `bridge:billing.entitlement.<key>` in flag rules: ' +
+        'gate a feature with the rule `bridge:billing.entitlement.<key> eq true`',
+    );
+
+  feature.command('list')
+    .description('List the features a plan includes')
+    .argument('<planKey>', 'Plan key')
+    .action(async (planKey: string) => {
+      try {
+        outputSuccess((await getPlan(planKey)).features);
+      } catch (err) { outputError(err); }
+    });
+
+  feature.command('add')
+    .description('Add a feature to a plan, or rename one it already includes (idempotent by key)')
+    .argument('<planKey>', 'Plan key')
+    .argument('<featureKey>', 'Feature key: lower-case letters, digits and underscores, e.g. analytics')
+    .option('--name <name>', 'Display name shown on the pricing table and upgrade dialog (default: the key)')
+    .action(async (planKey: string, featureKey: string, opts) => {
+      try {
+        const entry = buildFeature(featureKey, opts.name);
+        const { features } = await getPlan(planKey);
+        const next = upsertFeature(features, entry);
+        outputSuccess(withFeatures(shapePlan(await getManagementClient().plans.update(planKey, { features: next } as never))));
+      } catch (err) { outputError(err); }
+    });
+
+  feature.command('remove')
+    .description('Remove a feature from a plan')
+    .argument('<planKey>', 'Plan key')
+    .argument('<featureKey>', 'Feature key to remove')
+    .action(async (planKey: string, featureKey: string) => {
+      try {
+        const { features } = await getPlan(planKey);
+        const next = removeFeature(features, featureKey, planKey);
+        outputSuccess(withFeatures(shapePlan(await getManagementClient().plans.update(planKey, { features: next } as never))));
       } catch (err) { outputError(err); }
     });
 }

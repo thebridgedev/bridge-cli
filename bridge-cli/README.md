@@ -297,6 +297,12 @@ bridge plan quota set pro --metric ai_completions --limit 1000 --policy metered 
 # Pure per-unit (billed from unit 1)
 bridge plan quota set pro --metric api_calls --limit 0 --policy metered --price-amount 0.01 --price-currency usd
 bridge plan quota rm  pro --metric ai_completions
+
+# Included on/off features — each is `bridge:billing.entitlement.<key>` in flag rules
+bridge plan feature add    pro analytics --name "Analytics"
+bridge plan feature list   pro
+bridge plan feature remove pro analytics
+bridge plan create --key team --name Team --amount 0 --interval month --features "analytics,sso:Single sign-on"
 ```
 
 ### API Tokens

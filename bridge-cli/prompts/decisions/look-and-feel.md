@@ -2,7 +2,7 @@
 
 How Bridge's pages and emails look to the developer's users: the sign-in pages, the subscription pages, and the emails Bridge sends in the app's name.
 
-> Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). The customisation levels in full, with every design token: `bridge guide mechanisms`.
+> How roles, plans, limits and flags fit together: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`). Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). The customisation levels in full, with every design token: `bridge guide mechanisms`.
 
 ## Two places pages can live
 
