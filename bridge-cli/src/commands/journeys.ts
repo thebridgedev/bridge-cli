@@ -76,6 +76,7 @@ export const JOURNEYS: Journey[] = [
     steps: [
       'Goal: a feature in the app is controlled by a Bridge flag.',
       'Read the current flags with `bridge flag list`.',
+      'How flags, plans, roles and limits fit together: `bridge guide fit-together`. A feature a plan sells goes on the plan (`bridge plan feature add`) and the rule points at `bridge:billing.entitlement.<feature>`; who someone is goes in a rule on a privilege, never a role check in code.',
       'Who should see the feature is the developer\'s call: ask, then `bridge flag create` with that rule.',
       'Read the flag in the app with the SDK surface the guide names, never by hand against SDK internals.',
     ],
@@ -88,7 +89,7 @@ export const JOURNEYS: Journey[] = [
     feature: 'team',
     steps: [
       'Goal: a customer can invite teammates into their workspace, each with a role.',
-      'Read the current roles with `bridge role list`.',
+      'Read the current roles with `bridge role list`: what a role can do is only the default setup until you have read it.',
       'Which roles exist and what each may do are product decisions: ask the developer, then `bridge role create` / `bridge role update`.',
       'Wire the team UI with the SDK surface the per-framework team guide names.',
     ],
@@ -235,7 +236,8 @@ export function unknownGuideMessage(name: string, frameworks: string[]): string 
   return (
     `No guide named '${name}'. Journeys: ${JOURNEYS.map((j) => j.name).join(', ')}. ` +
     `Frameworks: ${frameworks.join(', ')} (e.g. \`bridge guide svelte auth\`). ` +
-    'Also: orientation (what Bridge does), decision <domain>, flags, billing, mechanisms, custom, list. ' +
+    'Also: orientation (what Bridge does), fit-together (how roles, plans, limits and flags fit together), ' +
+    'decision <domain>, flags, billing, mechanisms, custom, list. ' +
     '`bridge guide` alone prints the integration master.'
   );
 }

@@ -1,8 +1,8 @@
 # Payments and plans — decision guide
 
-What customers pay, what each plan includes, and what happens when they reach a limit. A **plan** belongs to a workspace, not to a person. It carries the price, the trial and the limits ("3 projects on Free, 50 on Pro"). Payments run through the developer's own Stripe account.
+What customers pay, what each plan includes, and what happens when they reach a limit. A **plan** belongs to a workspace, not to a person. It carries the price, the trial, the limits ("3 projects on Free, 50 on Pro") and the list of features it sells ("Analytics on Pro"). The features themselves are switched by flags whose rules read that list; the plan never gets checked by name in code. Payments run through the developer's own Stripe account.
 
-> Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). The full model behind limits and upgrade prompts: `bridge guide mechanisms`.
+> Read first: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`), how roles, plans, limits and flags fit together. Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). The full model behind limits and upgrade prompts: `bridge guide mechanisms`.
 
 ## Start from what is there
 
@@ -22,8 +22,9 @@ Product questions. Ask, wait, never guess. Then show the answer back as tables (
 3. **Is there a free trial, and how many days?**
 4. **What does each plan limit, and how much?** In their words: "2 tickets on Free, 100 on Pro", "10 seats", "1,000 exports a month".
 5. **For each limit: at the limit, block, or keep going and charge per extra unit?** If they charge, how much per unit?
-6. **Which features are only on some plans?** ("Analytics on Pro only.")
-7. **Do they want a welcome page for new customers** where they choose a plan? Offer it; create it only if they say yes.
+6. **For each limit: does the action call your server?** ("Does clicking Export send a request to your backend?") The answer decides where it is counted; see below.
+7. **Which features does each plan sell?** ("Analytics on Pro only.") They go on the plans' features lists.
+8. **Do they want a welcome page for new customers** where they choose a plan? Offer it; create it only if they say yes.
 
 **The tools will not guess these.** Called without one, a tool changes nothing and answers `DECISION_NEEDED` with the question to ask; the matching bridge command stops the same way: `create_plan` (`amount`, `interval`, `currency`, `trial`, `trialDays`) · `apply_plan` (`name`, `prices.amount`, `prices.interval`, `prices.currency`, `trial`, `trialDays`) · `set_plan_price` (`currency`). A free plan (price 0) needs no currency or trial answer, and a price added to a plan that charges in one currency reuses it.
 
@@ -47,16 +48,16 @@ Product questions. Ask, wait, never guess. Then show the answer back as tables (
 Tell the developer this plainly; it is where integrations go wrong.
 
 1. **The plan holds the number.** A limit is a quota on the plan: metric, limit, `hard`, and `counter` or `gauge`.
-2. **The backend enforces it, and only the backend.** In NestJS one decorator on the handler that creates the thing: `@RequireQuota('exports')`. Before the handler runs, a workspace at its limit gets `402` with `{ code: 'QUOTA_EXCEEDED', metric, used, limit, fix }` and the handler never runs. After a `2xx` answer, Bridge records one use. Nothing else to wire: no usage call, no counter table. If Bridge cannot answer, the request is refused with `503`, never let through.
+2. **It is counted once, where the action happens.** Ask whether the action calls the developer's server, then follow the answer. When it does, the backend counts and enforces it: in NestJS one decorator on the handler that creates the thing, `@RequireQuota('exports')`. Before the handler runs, a workspace at its limit gets `402` with `{ code: 'QUOTA_EXCEEDED', metric, used, limit, fix }` and the handler never runs. After a `2xx` answer, Bridge records one use. Nothing else to wire: no usage call, no counter table. If Bridge cannot answer, the request is refused with `503`, never let through.
 3. **Gauges send the app's own count.** `@RequireQuota('tickets', { current })` on create and `@SyncQuota('tickets', { current })` on delete, where `current` returns the app's count from its own database. There is no decrement.
 4. **Seats need no count at all.** `@RequireQuota('users')` on the invite handler checks the seat limit.
-5. **The frontend only explains the refusal.** With no code at all, the upgrade dialog opens on a `402`, names the limit, and links to the subscription page. A member who cannot manage billing is told to ask the owner. Disabling a button before the click (`<QuotaGate>`) or showing "8 of 10" (`useQuota`) is optional.
-6. **A frontend alone cannot enforce a limit.** Anyone can call the API directly. An app with no backend can report usage from the browser, but that is self-reported: Bridge counts what the client says.
+5. **With a backend, the frontend only shows the count and explains the refusal.** It does not report the same metric. With no code at all, the upgrade dialog opens on a `402`, names the limit, and links to the subscription page. A member who cannot manage billing is told to ask the owner. Disabling a button before the click (`<QuotaGate>`) or showing "8 of 10" (`useQuota`) is optional.
+6. **When the action happens in the browser, the browser counts it.** For an app whose action never reaches a server of its own (local-first, data on the device), `bridge.usage.report('exports')` records something that happened and `bridge.usage.set('projects', n)` how many exist, and `<QuotaGate metric="exports">` around the button stops it at the limit. This is a first-class way to run limits; it trusts the browser. Never count one metric in both places.
 7. **`metered` never blocks.** Past the included amount it bills per unit through Stripe.
-8. **A plan feature goes in the plan's features list.** `analytics` on `pro` makes `bridge:billing.entitlement.analytics` true on Pro and false elsewhere; the flag that controls the feature has the rule `bridge:billing.entitlement.analytics eq true`. A hard quota with limit 1 still works the same way; it is the older way. Never put `@RequireEntitlement` and `@RequireQuota` on the same name: at the cap the entitlement answers `403` first and the upgrade dialog never opens.
+8. **A feature a plan sells goes in the plan's features list, and a flag controls it.** `analytics` on `pro` makes `bridge:billing.entitlement.analytics` true on Pro and false elsewhere; the flag that controls the feature has the rule `bridge:billing.entitlement.analytics eq true`, so the rule never names a plan. Checking the feature directly without a flag (`@RequireEntitlement`, `<Entitled>`) is the exception. No upgrade dialog opens by itself: it opens when someone opens a gated route, clicks something gated, or the backend answers `402`. A hard quota with limit 1 still works the same way; it is the older way. Never put `@RequireEntitlement` and `@RequireQuota` on the same name: at the cap the entitlement answers `403` first and the upgrade dialog never opens.
 9. **The plan-choice page** (`/subscription/plan`) appears only when the app has plans and "customers must pick a plan" is on. Turn it off with `update_app` (`paymentsAutoRedirect: false`) / `bridge app update --payments-auto-redirect false`.
 
-Whether a paid feature is a plan feature or a flag with a plan rule is decided in the **feature-control** guide.
+The flag and its rule are set up in the **feature-control** guide.
 
 ## Do it
 
@@ -80,7 +81,8 @@ Whether a paid feature is a plan feature or a flag with a plan rule is decided i
 
 ## Where this connects
 
-- **Feature control:** features that depend on the plan.
+- **Fit together:** plans, limits, roles and flags side by side (`bridge guide fit-together`).
+- **Feature control:** the flag whose rule reads the plan's features list.
 - **Teams:** seats, and the plan belonging to the workspace.
 - **Roles:** who may change the plan.
 - **Going live:** live Stripe keys.

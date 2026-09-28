@@ -1,8 +1,8 @@
 # Roles and permissions — decision guide
 
-Who may do what inside a customer's workspace. A **role** (Owner, Admin, Editor…) is a named bundle of **privileges** (`USER_WRITE`, `INVOICE_APPROVE`…). Every signed-in person has one role per workspace, and their token carries its role key and privileges, so the backend can check them on every request.
+Who may do what inside a customer's workspace. A **role** (Owner, Admin, Editor…) is a named bundle of **privileges** (`USER_WRITE`, `INVOICE_APPROVE`…). Every signed-in person has one role per workspace, and their token carries its role key and privileges, so a flag rule can target them in the browser and on the backend alike.
 
-> Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
+> Read first: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`), how roles, plans, limits and flags fit together. Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
 
 ## Which tool answers which question
 
@@ -10,11 +10,12 @@ Three different questions, three different tools. Keep them apart.
 
 | The question | Answered by | Guide |
 |---|---|---|
-| Who, inside a workspace, may do this? | a **role** and its privileges | this one |
-| Is this feature on for them at all? | a **flag** | feature-control |
+| Which privileges does each kind of person have? | a **role**, a named bundle of privileges | this one |
+| Is this route, endpoint or feature on for them? | a **flag**, whose rule targets a privilege (preferred) or a role | feature-control |
 | How much do they get (projects, seats, exports)? | the **plan** | payments |
+| May they change this one record? | the app's own code | — |
 
-A role never stands in for a plan ("Pro users are Admins") and a plan never stands in for a role.
+Access by who someone is goes through a flag rule, never a role check written into the app's code: `privileges contains "REPORTS_VIEW"` keeps working when roles are renamed or reshuffled, and `user.role eq "ADMIN"` is for when the developer means the role itself. A role never stands in for a plan ("Pro users are Admins") and a plan never stands in for a role.
 
 ## Start from what is there
 
@@ -39,11 +40,12 @@ Product questions. Ask, wait, never guess.
 
 - **Name privileges after actions, in capitals: `PROJECT_DELETE`, `INVOICE_APPROVE`.** Reason: they read like the existing ones (`USER_READ`, `TENANT_WRITE`) and say exactly what they allow.
 - **Role keys in capitals too: `EDITOR`, `VIEWER`.** Reason: the token carries the key exactly as written, and a flag rule on `user.role` compares it case for case.
-- **In code, check a privilege, not a role name.** Reason: roles get reshaped as the product grows; the privilege on a handler stays true.
+- **Control access with a flag rule on a privilege, never a role check in code.** Reason: roles get reshaped as the product grows; a privilege rule stays true, and the rule changes without a release.
+- **Give each privilege a key no other key contains** (`REPORTS_VIEW`, not `REPORTS` beside `REPORTS_VIEW`). Reason: a rule matches privilege keys as text inside the person's list.
 - **Keep Owner as the one role with everything.** Never strip it: in the default setup it is the only role that can delete, and every workspace needs someone who can.
 - **Make the lowest sensible role the default**, by creating it with the default setting on or with `set_default_role` / `bridge role set-default <key>` for a role that exists. Reason: a forgotten role on an invitation then gives too little, not too much.
 - **When changing a role's privileges, send the full list.** Reason: the update replaces the list, and anything left out is revoked.
-- **Enforce on the backend; hide buttons in the frontend only as a courtesy.** Reason: anyone can call the API directly.
+- **When the action calls the backend, put the same flag on the endpoint** (NestJS `@RequireFlag`). Reason: the backend reads the same rule, and anyone can call the API directly.
 
 ## Do it
 
@@ -55,19 +57,22 @@ Product questions. Ask, wait, never guess.
 | Make an existing role the default | `set_default_role` (`key`), or `update_role` (`isDefault: true`) | `bridge role set-default EDITOR`, or `bridge role update --key EDITOR --is-default` |
 | Change a role's privileges | `update_role` (full list) | `bridge role update --key EDITOR --privileges …` (full list) |
 | Give a person a role | `update_user` | `bridge user update --email … --role EDITOR --tenant-id …` |
-| Code for the framework | `get_integration_guide` (topic `team`) | `bridge guide nestjs` (backend checks), `bridge guide svelte team` |
+| Gate a route, endpoint or feature on a privilege | `create_feature_flag` (rule on `privileges`) | `bridge flag create --key reports --state on-with-rule --rule '<json>'` |
+| Code for the framework | `get_integration_guide` (topic `feature-flags` or `team`) | `bridge guide flags --framework nestjs`, `bridge guide svelte team` |
 
-On the NestJS backend the check is a decorator on the handler: `@RequirePrivilege('PROJECT_DELETE')`, or `@RequireRole('ADMIN')` when the developer really means a role.
+On the NestJS backend the flag goes on the handler: `@RequireFlag('reports')`, whose rule is `privileges contains "REPORTS_VIEW"`. A person without it gets `403 FEATURE_NOT_PERMITTED`. `@RequirePrivilege` still exists for a check that must never change at runtime; it is the exception, and a hard-coded role check is never the answer.
 
 Setting the default on one role clears it from the previous default.
 
 ## Prove it
 
 1. `list_roles` / `bridge role list` shows each role with exactly the privileges agreed, and the default where the developer wanted it.
-2. Call a protected backend route as a user whose role lacks the privilege: it must answer 403. Then with one who has it: it must succeed.
+2. `evaluate_feature_flag` / `bridge flag eval reports --identity u1 --attribute privileges='["REPORTS_VIEW"]'`, then without the privilege: the answers differ.
+3. Call the flag-gated backend route as a user whose role lacks the privilege: it must answer 403. Then with one who has it: it must succeed.
 
 ## Where this connects
 
 - **Teams:** the role an invited person gets.
-- **Feature control:** a flag rule can target a privilege (preferred) or `user.role`, but "may this person do it" is still a privilege check on the backend.
+- **Fit together:** roles, plans, limits and flags side by side (`bridge guide fit-together`).
+- **Feature control:** the flag rule that targets a privilege (preferred) or `user.role`.
 - **Payments:** who may change the plan.

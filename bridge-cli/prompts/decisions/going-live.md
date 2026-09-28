@@ -2,7 +2,7 @@
 
 Everything between "it works on my machine" and real users signing up and paying. Bridge keeps a readiness checklist for each app; this guide is how to work through it with the developer.
 
-> Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
+> How roles, plans, limits and flags fit together: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`). Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
 
 ## Start from the checklist
 

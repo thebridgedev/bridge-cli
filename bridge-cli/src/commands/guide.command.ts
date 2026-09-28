@@ -41,6 +41,8 @@ const GUIDE_REPOS: Record<string, string> = {
 export type GuideCoverage = {
   aliases: Record<string, string>;
   frameworks: Record<string, string[]>;
+  /** Framework-agnostic guides bundled with the CLI: topic -> what it covers. */
+  topics: Record<string, string>;
 };
 
 /**
@@ -59,8 +61,8 @@ export function loadGuideCoverage(): GuideCoverage {
   ];
   for (const path of candidates) {
     try {
-      const { aliases, frameworks } = JSON.parse(readFileSync(path, 'utf-8')) as GuideCoverage;
-      return { aliases, frameworks };
+      const { aliases, frameworks, topics } = JSON.parse(readFileSync(path, 'utf-8')) as GuideCoverage;
+      return { aliases, frameworks, topics: topics ?? {} };
     } catch {
       /* try next */
     }
@@ -126,8 +128,8 @@ export function registerGuideCommands(program: Command): void {
   guide.command('list')
     .description('List available integration guides and feature guides')
     .action(() => {
-      const { aliases, frameworks } = loadGuideCoverage();
-      outputSuccess({ technologies, features: frameworks, aliases });
+      const { aliases, frameworks, topics } = loadGuideCoverage();
+      outputSuccess({ technologies, features: frameworks, aliases, topics });
     });
 
   // TBP-206 — `bridge guide flags [--framework <name>]`
@@ -283,6 +285,21 @@ export function registerGuideCommands(program: Command): void {
       } catch (err) { outputError(err); }
     });
 
+  // TBP-705 — how roles, plans, limits and flags fit together: the one rule
+  // every decision guide and the orientation point to. The MCP server serves
+  // the same file (bridge-cli/main/bridge-cli/prompts/fit-together.md).
+  guide.command('fit-together')
+    .description('How roles, plans, limits and flags fit together: the rule every decision guide builds on')
+    .option('--json', 'Emit a JSON envelope instead of the raw markdown prompt')
+    .action(async (_opts, command) => {
+      try {
+        const opts = command.optsWithGlobals() as { json?: boolean };
+        const content = await fetchFitTogetherGuide();
+        if (opts.json) outputSuccess({ topic: 'fit-together', guide: content });
+        else outputPrompt(content);
+      } catch (err) { outputError(err); }
+    });
+
   // TBP-540 — each decision guide on its own. Five of the seven also open a
   // journey (`bridge guide add-login` …); `roles` and `look-and-feel` open
   // none, so without this command the CLI could not reach them.
@@ -351,6 +368,7 @@ function guidesFor(tech: string): string[] | null {
 
 export const MECHANISMS_PROMPT_FILENAME = 'mechanisms.md';
 export const ORIENTATION_PROMPT_FILENAME = 'orientation.md';
+export const FIT_TOGETHER_PROMPT_FILENAME = 'fit-together.md';
 
 /** The mechanisms page, bundled with the CLI (`BRIDGE_GUIDE_LOCAL_DIR` wins in development). */
 export async function fetchMechanismsGuide(): Promise<string> {
@@ -360,6 +378,11 @@ export async function fetchMechanismsGuide(): Promise<string> {
 /** The orientation map, bundled with the CLI (`BRIDGE_GUIDE_LOCAL_DIR` wins in development). */
 export async function fetchOrientationGuide(): Promise<string> {
   return fetchBundledPage(ORIENTATION_PROMPT_FILENAME, 'orientation guide');
+}
+
+/** How roles, plans, limits and flags fit together, bundled with the CLI (`BRIDGE_GUIDE_LOCAL_DIR` wins in development). */
+export async function fetchFitTogetherGuide(): Promise<string> {
+  return fetchBundledPage(FIT_TOGETHER_PROMPT_FILENAME, 'fit-together guide');
 }
 
 async function fetchBundledPage(filename: string, label: string): Promise<string> {

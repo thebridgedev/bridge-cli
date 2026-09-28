@@ -164,7 +164,7 @@ describe('guide-coverage.json', () => {
   it('covers exactly the frameworks `bridge guide` serves', () => {
     const guide = program.commands.find((c) => c.name() === 'guide')!;
     const notFrameworks = [
-      'list', 'flags', 'billing', 'mechanisms', 'orientation', 'decision', 'custom', 'integration-success',
+      'list', 'flags', 'billing', 'mechanisms', 'orientation', 'fit-together', 'decision', 'custom', 'integration-success',
       ...JOURNEYS.map((j) => j.name),
     ];
     const served = guide.commands.map((c) => c.name()).filter((n) => !notFrameworks.includes(n));

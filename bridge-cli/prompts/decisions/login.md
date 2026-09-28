@@ -2,7 +2,7 @@
 
 How people sign up and sign in to the developer's app. This guide says what to ask, what to decide yourself, and which tool or command does each step. The code itself is in the per-framework guide.
 
-> Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
+> How roles, plans, limits and flags fit together: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`). Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
 
 ## Start from what is there
 

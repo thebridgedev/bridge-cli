@@ -96,7 +96,8 @@ describe('the orientation map', () => {
 describe('the payments guide says how a hard limit is enforced end to end', () => {
   const text = guide('payments');
   it.each([
-    ['the backend decorator is authoritative', /The backend enforces it, and only the backend/],
+    ['counted once, where the action happens', /It is counted once, where the action happens/],
+    ['asks whether the action calls the server', /does the action call your server\?/],
     ['the decorator', /@RequireQuota\('exports'\)/],
     ['the 402 body', /402` with `\{ code: 'QUOTA_EXCEEDED', metric, used, limit, fix \}`/],
     ['one use recorded after 2xx', /After a `2xx` answer, Bridge records one use/],
@@ -105,7 +106,7 @@ describe('the payments guide says how a hard limit is enforced end to end', () =
     ['gauges send the app\'s count', /@SyncQuota\('tickets', \{ current \}\)/],
     ['seats are a built-in gauge', /built-in `users` metric, a gauge/],
     ['the upgrade dialog with no code', /upgrade dialog opens on a `402`/],
-    ['a frontend alone cannot enforce', /A frontend alone cannot enforce a limit/],
+    ['browser counting is first-class', /first-class way to run limits; it trusts the browser/],
     ['the paywall needs plans and paymentsAutoRedirect', /only when the app has plans and "customers must pick a plan" is on/],
     ['paymentsAutoRedirect is writable over MCP', /`update_app` \(`paymentsAutoRedirect: false`\)/],
     ['/welcome is offered, not created', /Offer it; create it only if they say yes/],
