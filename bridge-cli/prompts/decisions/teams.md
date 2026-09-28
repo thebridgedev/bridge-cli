@@ -2,7 +2,7 @@
 
 How customers are grouped in the developer's app. In Bridge every signed-in person belongs to a **workspace** (the API and the CLI call it a tenant). A workspace is one customer: it holds the people, their roles, and the plan the customer pays for.
 
-> Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
+> Read first: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`), how roles, plans, limits and flags fit together. Other decision guides: `bridge guide decision <name>` (MCP: resource `bridge://guides/decisions/<name>`). How the pieces work underneath: `bridge guide mechanisms`.
 
 ## Start from what is there
 
@@ -19,7 +19,7 @@ Product questions. Ask, wait, never guess.
 
 1. **Is the app for single people or for teams?** With teams, a customer invites colleagues into a shared workspace. For single people, each person simply has a workspace of their own and never sees the word.
 2. **How does someone get in the first time?** Either they sign up and get a new workspace of their own, or they can only join by invitation from someone already inside.
-3. **When someone is invited, which role should they get?** See the **roles** guide: on a new app the default role is Owner, so an invitee without a role becomes an Owner.
+3. **When someone is invited, which role should they get?** Read the app's real roles with `list_roles` first and offer those. See the **roles** guide: in the default setup a new app's default role is Member, while older apps often still default to Owner.
 4. **Does the number of people per workspace depend on the plan?** ("1 user on Free, 10 on Pro.") If yes, that is a seat limit: see the **payments** guide.
 5. **Can one person belong to several workspaces?** Bridge supports it and shows a workspace picker at sign-in; the question is whether the developer wants to offer it in their product.
 
@@ -55,6 +55,6 @@ Pass the role key the developer chose on every invitation you make on their beha
 
 ## Where this connects
 
-- **Roles:** what each person in a workspace may do.
+- **Roles:** the privileges each kind of person has, which flag rules then target.
 - **Payments:** a plan belongs to the workspace, not to a person; seats are a plan limit.
 - **Login:** whether sign-up is open at all.

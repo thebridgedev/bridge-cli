@@ -20,7 +20,7 @@ export function registerRoleCommands(program: Command): void {
     .requiredOption('--key <key>', 'Role key')
     .option('--description <desc>', 'Description')
     .option('--privileges <list>', 'Comma-separated privilege keys (ids also accepted)', (v) => v.split(','))
-    .option('--is-default', 'Set as default role', false)
+    .option('--is-default', 'Make this the role people get when added to a workspace without a role named', false)
     .action(async (opts) => {
       try {
         // TBP-592: --privileges is documented as taking KEYS, but the API
@@ -44,6 +44,9 @@ export function registerRoleCommands(program: Command): void {
     .option('--name <name>', 'Role name')
     .option('--description <desc>', 'Description')
     .option('--privileges <list>', 'Comma-separated privilege keys (ids also accepted)', (v) => v.split(','))
+    // TBP-758: no default value — an absent flag must stay absent so an update
+    // that only renames a role never touches which role is the default.
+    .option('--is-default', 'Make this the default role (the previous default stops being default)')
     .action(async (opts) => {
       try {
         // TBP-586: `--key`/`--id` are addressing only — strip both out of the
@@ -58,6 +61,19 @@ export function registerRoleCommands(program: Command): void {
           cleaned.privileges = await resolvePrivilegeIds(opts.privileges);
         }
         outputSuccess(await getManagementClient().roles.update(roleId, cleaned));
+      } catch (err) { outputError(err); }
+    });
+
+  // TBP-758: which role people get when added to a workspace without a role
+  // named. The API keeps exactly one default per app, so promoting this role
+  // demotes the previous one; there is nothing to "unset".
+  role.command('set-default')
+    .description('Make an existing role the default for people added without a role named')
+    .argument('<key>', 'Role key, e.g. MEMBER (see `bridge role list`)')
+    .action(async (key: string) => {
+      try {
+        const id = await resolveRoleId({ key });
+        outputSuccess(await getManagementClient().roles.update(id, { isDefault: true }));
       } catch (err) { outputError(err); }
     });
 

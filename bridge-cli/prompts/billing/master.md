@@ -126,7 +126,7 @@ Use `hard` when overage should be blocked. Use `metered` when overage should bil
 | `free` | `advanced_analytics` | off |
 | `pro` | `advanced_analytics` | on |
 
-An entitlement is not configured on its own: every `hard` quota with a limit above 0 is also an entitlement of the same name. A feature that is on for `pro` is therefore a hard quota on `pro` (e.g. `--metric advanced_analytics --limit 1 --policy hard`) that nothing counts, and absent from `free`; the backend gates it with `@RequireEntitlement('advanced_analytics')`, never with `@RequireQuota`.
+A feature that is on for `pro` goes in `pro`'s features list (`bridge plan feature add pro advanced_analytics --name "Advanced analytics"`) and not in `free`'s. It reaches the app as `bridge:billing.entitlement.advanced_analytics`: the flag that controls the feature uses the rule `bridge:billing.entitlement.advanced_analytics eq true`, so no rule names a plan. A direct check without a flag, `@RequireEntitlement('advanced_analytics')` (never `@RequireQuota`), is the exception. A hard quota with limit 1 that nothing counts still works as an entitlement too; it is the older way.
 
 If there are no per-plan limits or feature differences, the quotas and entitlements tables are empty — skip those commands below.
 
@@ -188,11 +188,18 @@ bridge plan quota set <plan> --metric <key> --limit <n> --policy hard --kind gau
 bridge plan quota set <plan> --metric <key> --limit <n> --policy metered --price-amount <perUnit> [--price-currency <cur>]
 ```
 
-Run one command per row. (There is no `plan entitlement set` command —
-entitlements are derived from `hard` quotas automatically; do not invent one.)
+Run one command per row. Then add each on/off feature from the entitlements
+table to the plans that include it:
+
+```bash
+bridge plan feature add <plan> <feature_key> --name "<Display name>"
+```
+
+(There is no `plan entitlement set` command — do not invent one. Features live
+on the plan; every `hard` quota is also an entitlement of the same name.)
 Check the result with `bridge plan quota list`, which lists every metric with its kind.
 
-**Where the limit is enforced.** A quota is only a number until the backend enforces it: the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire. The frontend only shows that decision; a frontend-only app cannot enforce a limit. `bridge guide mechanisms` has the whole model.
+**Where the limit is counted.** Once, where the action happens. Ask the developer whether the action calls their server. If it does, the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire — and the frontend only shows that decision. If it happens in the browser only, the frontend reports it (`bridge.usage.report` / `bridge.usage.set`) and `<QuotaGate>` stops the button at the cap: a first-class setup that trusts the browser. Never both for one metric. `bridge guide mechanisms` has the whole model; `bridge guide fit-together` shows where limits sit next to plans, roles and flags.
 
 ## Step 4 — Fetch and apply the per-framework guide
 
@@ -315,4 +322,4 @@ Do not run these automatically — the developer decides when they want each.
 | `hard` | Entitlement flips off at cap; no overage | Seat counts, included features |
 | `metered` | Overage bills as a Stripe metered price; usage continues | API calls, storage |
 
-Bridge's usage ingest always accepts events — it never refuses on the app's behalf. The refusal at a hard cap comes from **your** backend: the plan-limit decorator (`@RequireQuota`) reads the quota and answers `402 QUOTA_EXCEEDED` before the handler runs. `bridge guide mechanisms` explains the model.
+Bridge's usage ingest always accepts events — it never refuses on the app's behalf. With a backend, the refusal at a hard cap comes from **your** backend: the plan-limit decorator (`@RequireQuota`) reads the quota and answers `402 QUOTA_EXCEEDED` before the handler runs. Without one, `<QuotaGate>` stops the button at the cap. `bridge guide mechanisms` explains the model.
