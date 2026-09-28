@@ -5,7 +5,7 @@
     "Source: PRODUCT_DECISIONS in bridge-api, microservices/account/nebulr-api/mcp/tools/product-decisions.ts.",
     "Generated, never edited by hand: in bridge-api run `bun scripts/generate-product-decisions-json.ts > <bridge-cli>/bridge-cli/prompts/product-decisions.json` (in the bridge-api container). guide-currency.spec.ts fails when the two disagree."
   ],
-  "source": "bridge-api feature/mcp-journey ecfa0a2",
+  "source": "bridge-api feature/mcp-journey c7fd854",
   "decisions": [
     {
       "tool": "create_plan",
@@ -142,7 +142,7 @@
       "field": "role",
       "guide": "teams",
       "enforcement": "ask",
-      "question": "Which role should this person get? (a role key; the app default is often Owner, rarely the right answer)",
+      "question": "Which role should this person get? (a role key from list_roles; the default role is only a starting suggestion)",
       "type": "string"
     },
     {
