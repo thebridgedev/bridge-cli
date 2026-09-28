@@ -5,7 +5,7 @@
     "Source: PRODUCT_DECISIONS in bridge-api, microservices/account/nebulr-api/mcp/tools/product-decisions.ts.",
     "Generated, never edited by hand: in bridge-api run `bun scripts/generate-product-decisions-json.ts > <bridge-cli>/bridge-cli/prompts/product-decisions.json` (in the bridge-api container). guide-currency.spec.ts fails when the two disagree."
   ],
-  "source": "bridge-api feature/mcp-journey c7fd854",
+  "source": "bridge-api feature/mcp-journey e9762f2",
   "decisions": [
     {
       "tool": "create_plan",

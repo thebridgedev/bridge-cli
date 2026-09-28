@@ -5,7 +5,7 @@
     "Generated, never edited by hand: in bridge-api run `bun scripts/generate-mcp-tools-json.ts > <bridge-cli>/bridge-cli/prompts/mcp-tools.json` (in the bridge-api container).",
     "The count must equal the number of entries in `bridgeTools` (71 at the source below). bridge-api's guide-currency.spec.ts fails when this file and the registry disagree."
   ],
-  "source": "bridge-api feature/mcp-journey c7fd854",
+  "source": "bridge-api feature/mcp-journey e9762f2",
   "tools": [
     "add_plan_feature",
     "add_redirect_uri",
