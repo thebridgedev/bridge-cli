@@ -63,7 +63,7 @@ These are the exact names and values. A rule on any other name matches nothing u
 | `bridge:billing.trial` | `true` or `false` |
 | `bridge:billing.quota.<metric>.used` / `.limit` / `.remaining` | numbers |
 | `bridge:billing.quota.<metric>.percent_used` | a fraction: `0.8` is 80% |
-| `bridge:billing.entitlement.<name>` | `true` or `false`, including `app_active` (the subscription is active, trialing, past due or cancelling) |
+| `bridge:billing.entitlement.<name>` | `true` or `false`: a feature in the plan's features list is `true` when the workspace's plan includes it, so "the plan includes analytics" is the rule `bridge:billing.entitlement.analytics eq true`. Also `app_active` (the subscription is active, trialing, past due or cancelling) |
 
 **On the NestJS backend** only the signed-in person's id is filled in (as the identity). A rule on `tenant.plan` or `user.role` sees nothing there until the app passes those values from the verified user on each call; the NestJS flags guide shows how. Never pass values the client sent.
 

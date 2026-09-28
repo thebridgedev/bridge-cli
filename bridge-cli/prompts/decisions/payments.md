@@ -53,7 +53,7 @@ Tell the developer this plainly; it is where integrations go wrong.
 5. **The frontend only explains the refusal.** With no code at all, the upgrade dialog opens on a `402`, names the limit, and links to the subscription page. A member who cannot manage billing is told to ask the owner. Disabling a button before the click (`<QuotaGate>`) or showing "8 of 10" (`useQuota`) is optional.
 6. **A frontend alone cannot enforce a limit.** Anyone can call the API directly. An app with no backend can report usage from the browser, but that is self-reported: Bridge counts what the client says.
 7. **`metered` never blocks.** Past the included amount it bills per unit through Stripe.
-8. **A plan feature is a hard limit nothing counts.** `analytics` with limit 1 on `pro` makes `@RequireEntitlement('analytics')` and `<Entitled to="analytics">` true on Pro and false elsewhere. Never put `@RequireEntitlement` and `@RequireQuota` on the same name: at the cap the entitlement answers `403` first and the upgrade dialog never opens.
+8. **A plan feature goes in the plan's features list.** `analytics` on `pro` makes `bridge:billing.entitlement.analytics` true on Pro and false elsewhere; the flag that controls the feature has the rule `bridge:billing.entitlement.analytics eq true`. A hard quota with limit 1 still works the same way; it is the older way. Never put `@RequireEntitlement` and `@RequireQuota` on the same name: at the cap the entitlement answers `403` first and the upgrade dialog never opens.
 9. **The plan-choice page** (`/subscription/plan`) appears only when the app has plans and "customers must pick a plan" is on. Turn it off with `update_app` (`paymentsAutoRedirect: false`) / `bridge app update --payments-auto-redirect false`.
 
 Whether a paid feature is a plan feature or a flag with a plan rule is decided in the **feature-control** guide.
@@ -67,6 +67,7 @@ Whether a paid feature is a plan feature or a flag with a plan rule is decided i
 | Or step by step: create a plan with its first price | `create_plan` | `bridge plan create --key pro --name Pro --amount 29 --interval month --currency usd --no-trial` |
 | Add another price | `set_plan_price` | `bridge plan price set pro --amount 290 --interval year` |
 | Add a limit | `set_plan_quota` | `bridge plan quota set pro --metric tickets --limit 100 --policy hard --kind gauge` |
+| Add an on/off feature the plan sells | `add_plan_feature` | `bridge plan feature add pro analytics --name "Analytics"` |
 | Turn off the forced plan choice | `update_app` | `bridge app update --payments-auto-redirect false` |
 | Code for the framework | `get_integration_guide` (topic `billing`) | `bridge guide billing --framework svelte`, `bridge guide billing --framework nestjs` |
 

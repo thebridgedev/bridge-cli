@@ -126,7 +126,7 @@ Use `hard` when overage should be blocked. Use `metered` when overage should bil
 | `free` | `advanced_analytics` | off |
 | `pro` | `advanced_analytics` | on |
 
-An entitlement is not configured on its own: every `hard` quota with a limit above 0 is also an entitlement of the same name. A feature that is on for `pro` is therefore a hard quota on `pro` (e.g. `--metric advanced_analytics --limit 1 --policy hard`) that nothing counts, and absent from `free`; the backend gates it with `@RequireEntitlement('advanced_analytics')`, never with `@RequireQuota`.
+A feature that is on for `pro` goes in `pro`'s features list (`bridge plan feature add pro advanced_analytics --name "Advanced analytics"`) and not in `free`'s. It reaches the app as `bridge:billing.entitlement.advanced_analytics`: the flag that controls the feature uses the rule `bridge:billing.entitlement.advanced_analytics eq true`, and a direct check is `@RequireEntitlement('advanced_analytics')`, never `@RequireQuota`. A hard quota with limit 1 that nothing counts still works as an entitlement too; it is the older way.
 
 If there are no per-plan limits or feature differences, the quotas and entitlements tables are empty — skip those commands below.
 
@@ -188,8 +188,15 @@ bridge plan quota set <plan> --metric <key> --limit <n> --policy hard --kind gau
 bridge plan quota set <plan> --metric <key> --limit <n> --policy metered --price-amount <perUnit> [--price-currency <cur>]
 ```
 
-Run one command per row. (There is no `plan entitlement set` command —
-entitlements are derived from `hard` quotas automatically; do not invent one.)
+Run one command per row. Then add each on/off feature from the entitlements
+table to the plans that include it:
+
+```bash
+bridge plan feature add <plan> <feature_key> --name "<Display name>"
+```
+
+(There is no `plan entitlement set` command — do not invent one. Features live
+on the plan; every `hard` quota is also an entitlement of the same name.)
 Check the result with `bridge plan quota list`, which lists every metric with its kind.
 
 **Where the limit is enforced.** A quota is only a number until the backend enforces it: the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire. The frontend only shows that decision; a frontend-only app cannot enforce a limit. `bridge guide mechanisms` has the whole model.

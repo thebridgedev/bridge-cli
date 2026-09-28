@@ -148,7 +148,7 @@ remove() { /* … */ }
 
 **Every hard quota is also an entitlement** with the same name, true while there is room. So never pair `@RequireEntitlement('exports')` with `@RequireQuota('exports')`: at the cap the entitlement answers `403` before the quota can answer the `402` the frontend knows how to upsell. Use `@RequireEntitlement` for a plan *feature* (`analytics`, `sso`), `@RequireQuota` for a *limit*.
 
-**A plan feature is a hard quota nothing counts.** There is no separate entitlement setting: `bridge plan quota set pro --metric analytics --limit 1 --policy hard` makes `analytics` true on `pro`, and a plan without that quota answers false. Gate it with `@RequireEntitlement('analytics')` on the backend and `<Entitled to="analytics">` in the UI. `app_active` is always there: true while the workspace's subscription is active, trialing, past due or cancelling at period end.
+**A plan feature goes in the plan's features list.** `bridge plan feature add pro analytics --name "Analytics"` makes `analytics` true on `pro`, and false on every other plan. The pricing table and the upgrade dialog name it from the same list. Control the feature with a flag whose rule is `bridge:billing.entitlement.analytics eq true`, so changing what Pro sells is one edit on the plan and no flag rule has to follow. Checking it directly, without a flag, is the exception: `@RequireEntitlement('analytics')` on the backend and `<Entitled to="analytics">` in the UI. A hard quota with limit 1 that nothing counts still works the same way; it is the older way to do this. `app_active` is always there: true while the workspace's subscription is active, trialing, past due or cancelling at period end.
 
 ## 4. Three ways to handle a limit in the UI
 
