@@ -7,7 +7,8 @@ import { DecisionNeededError, decisionField } from '../product-decisions.js';
 
 /**
  * TBP-713 — the role an invitee gets is the developer's decision. Without
- * --role the API would apply the app's default role (Owner on a new app), so
+ * --role the API would apply the app's default role (Member on a new app, often
+ * Owner on older ones), so
  * stop and offer the role keys instead, naming the current default.
  */
 async function roleDecision(): Promise<DecisionNeededError> {

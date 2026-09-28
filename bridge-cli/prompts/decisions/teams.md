@@ -19,7 +19,7 @@ Product questions. Ask, wait, never guess.
 
 1. **Is the app for single people or for teams?** With teams, a customer invites colleagues into a shared workspace. For single people, each person simply has a workspace of their own and never sees the word.
 2. **How does someone get in the first time?** Either they sign up and get a new workspace of their own, or they can only join by invitation from someone already inside.
-3. **When someone is invited, which role should they get?** See the **roles** guide: on a new app the default role is Owner, so an invitee without a role becomes an Owner.
+3. **When someone is invited, which role should they get?** See the **roles** guide: on a new app the default role is Member, while older apps often still default to Owner, so check `list_roles` before relying on it.
 4. **Does the number of people per workspace depend on the plan?** ("1 user on Free, 10 on Pro.") If yes, that is a seat limit: see the **payments** guide.
 5. **Can one person belong to several workspaces?** Bridge supports it and shows a workspace picker at sign-in; the question is whether the developer wants to offer it in their product.
 
