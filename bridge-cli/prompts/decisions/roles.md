@@ -45,7 +45,7 @@ Product questions. Ask, wait, never guess.
 - **Keep Owner as the one role with everything.** Never strip it: in the default setup it is the only role that can delete, and every workspace needs someone who can.
 - **Make the lowest sensible role the default**, by creating it with the default setting on or with `set_default_role` / `bridge role set-default <key>` for a role that exists. Reason: a forgotten role on an invitation then gives too little, not too much.
 - **When changing a role's privileges, send the full list.** Reason: the update replaces the list, and anything left out is revoked.
-- **When the action calls the backend, put the same flag on the endpoint** (NestJS `@RequireFlag`). Reason: the backend reads the same rule, and anyone can call the API directly.
+- **When the action calls the backend, put the same flag on the endpoint** (NestJS `@RequireFeatureFlag`). Reason: the backend reads the same rule, and anyone can call the API directly.
 
 ## Do it
 
@@ -60,7 +60,7 @@ Product questions. Ask, wait, never guess.
 | Gate a route, endpoint or feature on a privilege | `create_feature_flag` (rule on `privileges`) | `bridge flag create --key reports --state on-with-rule --rule '<json>'` |
 | Code for the framework | `get_integration_guide` (topic `feature-flags` or `team`) | `bridge guide flags --framework nestjs`, `bridge guide svelte team` |
 
-On the NestJS backend the flag goes on the handler: `@RequireFlag('reports')`, whose rule is `privileges contains "REPORTS_VIEW"`. A person without it gets `403 FEATURE_NOT_PERMITTED`. `@RequirePrivilege` still exists for a check that must never change at runtime; it is the exception, and a hard-coded role check is never the answer.
+On the NestJS backend the flag goes on the handler: `@RequireFeatureFlag('reports')`, whose rule is `privileges contains "REPORTS_VIEW"`. A person without it gets `403 FEATURE_NOT_PERMITTED`. `@RequirePrivilege` is for API tokens only (a machine calling with `x-api-key`), never for a person, and a hard-coded role check is never the answer.
 
 Setting the default on one role clears it from the previous default.
 

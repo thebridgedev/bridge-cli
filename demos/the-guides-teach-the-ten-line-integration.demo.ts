@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 const STAGE = 'https://api-stage.thebridge.dev';
 const API_DIR = process.env.DEMO_BRIDGE_API_DIR ?? '/Users/imanpouya/code/nebulr/thebridge-platform/bridge-api';
-const CLI_VERSION = process.env.DEMO_CLI_VERSION ?? '0.6.0-beta.6';
+const CLI_VERSION = process.env.DEMO_CLI_VERSION ?? '0.6.0-beta.7';
 const DOMAIN = 'demo-guides-short-integration';
 
 function stageKey(): string {
@@ -89,7 +89,7 @@ test('The guides teach the short integration, and how plan limits really work', 
 
 	try {
 		await step('One page now explains how Bridge works, and it opens with the whole integration a repo needs', async () => {
-			const { output } = await terminal(`${bridge(dir, 'guide mechanisms')} | head -12`, { ...at, clear: true, shown: 'bridge guide mechanisms | head -12' });
+			const { output } = await terminal(`${bridge(dir, 'guide mechanisms')} | sed -n '1,/15 lines in four files/p'`, { ...at, clear: true, shown: "bridge guide mechanisms | sed -n '1,/15 lines in four files/p'" });
 			expect(output).toContain('# How Bridge works');
 			expect(output).toContain('15 lines in four files');
 		});

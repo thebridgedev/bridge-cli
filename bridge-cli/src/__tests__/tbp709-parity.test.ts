@@ -275,7 +275,7 @@ describe('G — the same plan call', () => {
     const w = planApplyWrite({
       key: 'team', name: 'Team', trial: true, trialDays: 14,
       prices: [{ amount: 20, interval: 'month' }, { amount: 200, interval: 'year', currency: 'usd' }],
-      quotas: [{ metric: 'projects', limit: 10, policy: 'hard', kind: 'gauge' }, { metric: 'users', limit: 5, policy: 'hard' }],
+      quotas: [{ metric: 'projects', limit: 10, policy: 'hard', kind: 'gauge' }, { metric: 'seats', limit: 5, policy: 'hard', kind: 'gauge', source: 'membership' }],
     }, []);
     expect(w.created).toBe(true);
     expect(w.body).toEqual({
@@ -286,7 +286,7 @@ describe('G — the same plan call', () => {
       ],
       quotas: [
         { metric: 'projects', limit: 10, policy: 'hard', kind: 'gauge' },
-        { metric: 'users', limit: 5, policy: 'hard', kind: 'gauge' },
+        { metric: 'seats', limit: 5, policy: 'hard', kind: 'gauge', source: 'membership' },
       ],
     });
   });
@@ -312,7 +312,7 @@ describe('G — the same plan call', () => {
     [{ key: 'new', name: 'New' }, 'DECISION_NEEDED'],
     [{ key: 'new', prices: [{ amount: 0, interval: 'month' }] }, 'DECISION_NEEDED'],
     [{ key: 'pro', quotas: [{ metric: 'projects', limit: 1, policy: 'metered', priceAmount: 1 }] }, 'INVALID_QUOTA'],
-    [{ key: 'pro', quotas: [{ metric: 'users', limit: 1, policy: 'hard', kind: 'counter' }] }, 'INVALID_QUOTA'],
+    [{ key: 'pro', quotas: [{ metric: 'seats', limit: 1, policy: 'hard', kind: 'counter', source: 'membership' }] }, 'INVALID_QUOTA'],
   ])('refuses %j with %s', (spec, code) => {
     expect(() => planApplyWrite(spec as never, [PRO])).toThrow(expect.objectContaining({ code }));
   });
@@ -341,10 +341,10 @@ describe('G — the same plan call', () => {
     expect(client.plans.update).not.toHaveBeenCalled();
   });
 
-  it('`bridge plan quota list` always lists the built-in seats gauge', async () => {
+  it('`bridge plan quota list` lists only what the plans configure (no built-in users, TBP-763)', async () => {
     mockClient.mockReturnValue({ plans: { list: jest.fn().mockResolvedValue([PRO]) } });
     const metrics = (await runCli('plan', 'quota', 'list')).data;
-    expect(metrics.map((m: any) => m.metric)).toEqual(['api.calls', 'projects', 'users']);
-    expect(metrics[2]).toEqual({ metric: 'users', kind: 'gauge', builtIn: true, plans: [] });
+    expect(metrics.map((m: any) => m.metric)).toEqual(['api.calls', 'projects']);
+    expect(metrics.some((m: any) => 'builtIn' in m)).toBe(false);
   });
 });

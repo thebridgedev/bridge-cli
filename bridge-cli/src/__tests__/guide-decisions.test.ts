@@ -104,9 +104,16 @@ describe('the payments guide says how a hard limit is enforced end to end', () =
     ['fail-closed', /503/],
     ['counter vs gauge, in the owner\'s sentence', /If deleting it frees room, it's a gauge and your app counts it; if it happened, it's a counter and Bridge counts it\./],
     ['gauges send the app\'s count', /@SyncQuota\('tickets', \{ current \}\)/],
-    ['seats are a built-in gauge', /built-in `users` metric, a gauge/],
+    // TBP-763 (owner 2026-09-29) — seats are a limit the app names, counted from membership.
+    ['seats are a named limit counted from membership', /metric `seats`, kind `gauge`, source `membership`/],
+    ['asks where invites happen', /do invites go through Bridge's built-in team page, or through your own invite handler\?/],
+    ['team page setup', /<TeamManagementPanel seatsMetric="seats" \/>/],
+    ['own handler setup', /`@RequireQuota\('seats'\)` on that handler/],
+    ['pending invites count', /pending invites included/],
+    ['the invite API does not refuse', /Bridge's invite API does not refuse at the limit/],
+    ['never a flag or an entitlement', /Never gate seats with a flag or an entitlement/],
     ['the upgrade dialog with no code', /upgrade dialog opens on a `402`/],
-    ['browser counting is first-class', /first-class way to run limits; it trusts the browser/],
+    ['browser counting is first-class', /complete, first-class way to run limits/],
     ['the paywall needs plans and paymentsAutoRedirect', /only when the app has plans and "customers must pick a plan" is on/],
     ['paymentsAutoRedirect is writable over MCP', /`update_app` \(`paymentsAutoRedirect: false`\)/],
     ['/welcome is offered, not created', /Offer it; create it only if they say yes/],
@@ -199,5 +206,80 @@ describe('the flag attribute contract in the feature-control guide matches auth-
     expect(text).toContain('`bridge:billing.plan`');
     expect(text).toContain('`bridge:billing.trial`');
     expect(text).toContain('`bridge:billing.quota.<metric>.used`');
+  });
+});
+
+// ── Seats: TBP-763 (owner decisions 2026-09-29) ─────────────────────────────
+
+describe('the teams guide sets seats up as a named limit', () => {
+  const text = guide('teams');
+  it.each([
+    ['asks where invites happen', /do invites go through Bridge's built-in team page, or through your own invite handler\?/],
+    ['team page setup', /<TeamManagementPanel seatsMetric="seats" \/>/],
+    ['own handler setup', /`@RequireQuota\('seats'\)` on the app's own invite handler/],
+    ['the invite API does not refuse', /Bridge's invite API does not refuse at the limit/],
+    ['the do-it row', /bridge plan quota set pro --metric seats --limit 10 --policy hard --kind gauge --source membership/],
+    ['never a flag or an entitlement', /Never a flag or an entitlement/],
+  ])('%s', (_name, pattern) => {
+    expect(text).toMatch(pattern);
+  });
+});
+
+/**
+ * A line that teaches seats the old or the wrong way:
+ *  - `users` as a built-in / reserved seat metric (removed in TBP-763), or
+ *  - seats gated with a flag or an entitlement (the owner rule: seats are a
+ *    plan limit, checked with the limit check where invites happen).
+ * A sentence that says NOT to do it is allowed.
+ */
+function seatRuleViolations(markdown: string): Array<{ line: number; text: string }> {
+  const out: Array<{ line: number; text: string }> = [];
+  markdown.split('\n').forEach((text, i) => {
+    const seat = /\bseats?\b/i.test(text);
+    const builtInUsers =
+      /built-in `?users`?|`?users`? is (a |the )?built-in/i.test(text) ||
+      (seat && /`users`|['"]users['"]|--metric users\b/.test(text));
+    const gateWord = /\b(gate|gates|gated|gating|behind|wrap|wraps|enforce|enforces|controlled by)\b/i.test(text);
+    const flagOrEntitlement = /flag|entitle|<Entitled|FeatureFlag|\$entitlements/i.test(text);
+    const negated = /\b(never|not|no|don't|do not)\b[^.]*\b(flag|entitlement)/i.test(text);
+    const flaggedSeats = seat && gateWord && flagOrEntitlement && !negated;
+    if (builtInUsers || flaggedSeats) out.push({ line: i + 1, text });
+  });
+  return out;
+}
+
+describe('no guide teaches `users` as a built-in seat metric or gates seats with a flag', () => {
+  const files = markdownFiles(PROMPTS);
+
+  it.each(files.map((f) => [relative(PROMPTS, f), f]))('%s', (_name, file) => {
+    expect(seatRuleViolations(read(file))).toEqual([]);
+  });
+
+  it.each([
+    'Seats are the built-in `users` metric, a gauge.',
+    "`@RequireQuota('users')` on the invite handler checks the seat limit.",
+    '| Limit seats per plan | `set_plan_quota` (metric `users`, kind `gauge`) | `bridge plan quota set pro --metric users --limit 10 --policy hard --kind gauge` |',
+    '**Seats** (`users`) are a gauge Bridge keeps itself from workspace membership.',
+    'Gate the Invite button with a flag `seats-left`, one per plan, to limit seats.',
+    'Wrap the invite form in `<Entitled to="seats">` so only paying plans add seats.',
+    "Enforce seats with `@RequireEntitlement('seats')` on the invite handler.",
+  ])('goes red on the planted line: %s', (bad) => {
+    expect(seatRuleViolations(bad)).not.toEqual([]);
+  });
+
+  it('goes red on a planted line inside a real guide file', () => {
+    const planted = `${guide('teams')}\n- **Seats are the built-in \`users\` limit.** Reason: Bridge counts them.\n`;
+    const found = seatRuleViolations(planted);
+    expect(found).toHaveLength(1);
+    expect(found[0].text).toContain('built-in `users`');
+  });
+
+  it.each([
+    'Never gate seats with a flag or an entitlement.',
+    "Invites through the app's own handler: `@RequireQuota('seats')` on that handler.",
+    '| `hard` | Entitlement flips off at cap; no overage | Seat counts, included features |',
+    'Gate the team link and the team page with a flag ruled on a privilege.',
+  ])('stays green on: %s', (good) => {
+    expect(seatRuleViolations(good)).toEqual([]);
   });
 });

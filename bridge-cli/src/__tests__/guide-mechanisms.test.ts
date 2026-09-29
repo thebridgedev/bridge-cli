@@ -48,7 +48,7 @@ describe('bridge guide mechanisms', () => {
       ['the minimal frontend footprint', /export const load = bridgeBootstrap\(/],
       ['the minimal backend footprint', /BridgeModule\.forRoot\(\{ guard: \{ global: true \} \}\)/],
       ['asks where the action happens', /\*\*does this action call your server\?\*\*/],
-      ['with a backend: server authoritative, client decorative', /the server decides; the client decorates/],
+      ['with a backend: the handler counts and refuses', /the backend handler counts it and refuses at the limit/],
       ['counted once, never in both places', /Never both for one metric/],
       ['a POST increments the limit', /A POST increments the limit/],
       [
@@ -58,13 +58,20 @@ describe('bridge guide mechanisms', () => {
       ['UI level 0, the upgrade dialog', /\*\*0 — nothing\*\*.*upgrade dialog/],
       ['UI level 1, QuotaGate and a flag with the upgrade prompt', /<QuotaGate metric=.*<FeatureFlag key="analytics" upgrade>/],
       ['no upgrade dialog opens by itself', /No upgrade dialog opens by itself/],
-      ['UI level 2, useQuota and $entitlements', /useQuota\('tickets'\)` and `\$entitlements\.can/],
-      ['browser counting is first-class, and says once that it trusts the browser', /first-class way to run limits\. It is trusted-client usage: it trusts the browser/],
+      ['UI level 2, useQuota and a flag', /useQuota\('tickets'\)`, and `<FeatureFlag key="analytics">`/],
+      ['browser counting is complete and first-class', /complete, first-class way to run limits/],
       ['rung 1, the token contract', /--bridge-primary/],
       ['rung 2, frame and heading', /frame\(page, children\)`.*heading\(page\)/],
       ['rung 3, take over a page', /src\/routes\/auth\/login\/\+page\.svelte/],
       ['rung 4, headless', /getBridgeAuth\(\)/],
       ['/welcome is offered, never created unasked', /offered, never created unasked/],
+      // TBP-763 — seats are a named limit counted from membership, checked where invites happen.
+      ['seats: a named gauge counted from membership', /--metric seats --limit 10 --policy hard --kind gauge --source membership/],
+      ['seats: pending invites count', /active members, pending invites included/],
+      ['seats: the team page setting', /<TeamManagementPanel seatsMetric="seats" \/>/],
+      ['seats: the own-handler decorator', /`@RequireQuota\('seats'\)` on your own invite handler/],
+      ['seats: the invite API does not refuse', /Bridge's invite API does not refuse at the limit/],
+      ['seats: never a flag or an entitlement', /Never gate seats with a flag or an entitlement/],
     ])('%s', (_name, pattern) => {
       expect(page).toMatch(pattern);
     });

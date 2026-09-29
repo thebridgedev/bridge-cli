@@ -6,7 +6,9 @@
  * request the CLI sends and the JSON a caller reads:
  *  1. `quota set --kind gauge` writes the quota as a gauge.
  *  2. `quota set` without --kind keeps an existing gauge a gauge.
- *  3. A metered gauge and a counter `users` are refused locally, no API write.
+ *  3. A metered gauge is refused locally, no API write; `users` is an ordinary name.
+ *  6. TBP-763 — `--source membership` marks a gauge as counted by Bridge from
+ *     the workspace's members (seats); refused on a counter or metered quota.
  *  4. `quota list` with no key lists every metric once with its kind.
  *  5. `quota list <key>` resolves the kind of quotas stored without one.
  */
@@ -117,15 +119,84 @@ describe('bridge plan quota set --kind', () => {
     expect(client.plans.update).not.toHaveBeenCalled();
   });
 
-  it('rejects an unknown kind and users as a counter', () => {
+  it('rejects an unknown kind; users has no special meaning', () => {
     expect(() => validateQuotaEntry({ metric: 'm', limit: 1, policy: 'hard', kind: 'sometimes' })).toThrow(/--kind must be one of/);
-    expect(() => validateQuotaEntry({ metric: 'users', limit: 5, policy: 'hard', kind: 'counter' })).toThrow(/built-in seats gauge/);
+    expect(validateQuotaEntry({ metric: 'users', limit: 5, policy: 'hard', kind: 'counter' })).toEqual({
+      metric: 'users',
+      limit: 5,
+      policy: 'hard',
+      kind: 'counter',
+    });
     expect(validateQuotaEntry({ metric: 'users', limit: 5, policy: 'hard' })).toEqual({
       metric: 'users',
       limit: 5,
       policy: 'hard',
-      kind: 'gauge',
     });
+  });
+});
+
+describe('bridge plan quota set --source (TBP-763)', () => {
+  it('writes a seat limit as a gauge counted from membership', async () => {
+    const client = makeClient([PRO]);
+    const res = await runCli(
+      'plan', 'quota', 'set', 'pro', '--metric', 'seats', '--limit', '2', '--policy', 'hard',
+      '--kind', 'gauge', '--source', 'membership',
+    );
+    expect(res.exitCode).toBeUndefined();
+    expect(client.plans.update).toHaveBeenCalledWith('pro', {
+      quotas: [...PRO.quotas, { metric: 'seats', limit: 2, policy: 'hard', kind: 'gauge', source: 'membership' }],
+    });
+  });
+
+  it('refuses --source membership on a counter without calling the API, naming the fix', async () => {
+    const client = makeClient([PRO]);
+    const res = await runCli(
+      'plan', 'quota', 'set', 'pro', '--metric', 'seats', '--limit', '2', '--policy', 'hard', '--source', 'membership',
+    );
+    expect(res.exitCode).toBeDefined();
+    expect(res.exitCode).not.toBe(0);
+    expect(res.stderr).toContain('only a gauge can have');
+    expect(res.stderr).toContain('--kind gauge');
+    expect(client.plans.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses it on a metered quota and an unknown source', () => {
+    expect(() =>
+      validateQuotaEntry({ metric: 'seats', limit: 2, policy: 'metered', kind: 'counter', source: 'membership', priceAmount: 1, currency: 'USD' }),
+    ).toThrow(/only a gauge can have/);
+    expect(() => validateQuotaEntry({ metric: 'seats', limit: 2, policy: 'hard', kind: 'gauge', source: 'invites' })).toThrow(
+      /--source must be membership/,
+    );
+  });
+
+  it('keeps an existing source when --source is omitted, and --source none clears it', async () => {
+    const seats = { metric: 'seats', limit: 2, policy: 'hard', kind: 'gauge', source: 'membership' };
+    const client = makeClient([{ ...PRO, quotas: [seats] }]);
+    await runCli('plan', 'quota', 'set', 'pro', '--metric', 'seats', '--limit', '5', '--policy', 'hard');
+    expect(client.plans.update.mock.calls[0][1].quotas).toEqual([{ ...seats, limit: 5 }]);
+    await runCli('plan', 'quota', 'set', 'pro', '--metric', 'seats', '--limit', '5', '--policy', 'hard', '--source', 'none');
+    // Sent as null so the server's carry-over does not restore it.
+    expect(client.plans.update.mock.calls[1][1].quotas).toEqual([
+      { metric: 'seats', limit: 5, policy: 'hard', kind: 'gauge', source: null },
+    ]);
+  });
+
+  it('lists a membership-counted metric with its source', () => {
+    const metrics = listMetrics([
+      { key: 'free', quotas: [{ metric: 'seats', limit: 2, policy: 'hard', kind: 'gauge', source: 'membership' }] },
+      { key: 'pro', quotas: [{ metric: 'seats', limit: 5, policy: 'hard', kind: 'gauge', source: 'membership' }] },
+    ]);
+    expect(metrics).toEqual([
+      {
+        metric: 'seats',
+        kind: 'gauge',
+        source: 'membership',
+        plans: [
+          { planKey: 'free', kind: 'gauge', source: 'membership', limit: 2, policy: 'hard' },
+          { planKey: 'pro', kind: 'gauge', source: 'membership', limit: 5, policy: 'hard' },
+        ],
+      },
+    ]);
   });
 });
 
@@ -139,8 +210,8 @@ describe('bridge plan quota list', () => {
     const res = await runCli('plan', 'quota', 'list');
     expect(res.stderr).toBe('');
     const { data } = JSON.parse(res.stdout);
-    // TBP-709 — the built-in seats gauge is always listed.
-    expect(data.map((m: { metric: string }) => m.metric)).toEqual(['api_calls', 'projects', 'users']);
+    // TBP-763 — no built-in metric: only what the plans configure.
+    expect(data.map((m: { metric: string }) => m.metric)).toEqual(['api_calls', 'projects']);
     expect(data[0]).toMatchObject({ metric: 'api_calls', kind: 'counter' });
     expect(data[1]).toEqual({
       metric: 'projects',

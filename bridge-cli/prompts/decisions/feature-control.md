@@ -14,7 +14,7 @@ Features should be controlled with feature flags. A flag can switch a route, an 
 - **How much do they get? A plan limit.** Numbers are not flags: see the **payments** guide.
 - **May they change this one record? The app's own code.** Only the app knows who owns what.
 
-Checking a plan feature without a flag (`@RequireEntitlement` on the backend, `<Entitled>` or `$entitlements.can` in the UI) is available, and it is the exception: use it only when the developer asks for no flag.
+**Every gate in app code is a flag.** App code never reads a role, a privilege list, the plan or a plan feature to decide what someone may see or do; before calling the work done, `npx @nebulr-group/bridge-cli check gates` lists any that are left.
 
 ## Start from what is there
 
@@ -117,6 +117,11 @@ A rule for "people who may see reports":
 1. `evaluate_feature_flag` / `bridge flag eval` with a context that should get the feature, then one that should not: the answers differ as the developer intended.
 2. `list_feature_flags` / `bridge flag list` shows no warnings on the flag.
 3. In the app, as a test user on each side of the rule.
+4. `npx @nebulr-group/bridge-cli check gates` in the project: no direct role, privilege, plan or plan-feature check left.
+
+## Exceptions
+
+Checking a plan feature without a flag (`@RequireEntitlement` on the backend, `<Entitled>` or `$entitlements.can` in the UI) exists for the rare case where the developer explicitly asks for no flag. It prints a one-time note in development; mark the line `// bridge-gate-exception: <reason>` so `check gates` leaves it.
 
 ## Where this connects
 
