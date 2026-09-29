@@ -31,6 +31,30 @@ bridge auth status   # show every stored app, and which one is active
 bridge auth logout   # revoke the active token and remove it locally
 ```
 
+#### One login, every app of the workspace
+
+By default the consent screen preselects **Every app in &lt;workspace&gt;**, so one
+login covers all your apps — the same way the MCP server does. The app you pin
+at login (`--app`) is the *home* app; switch between the others locally:
+
+```bash
+bridge auth login                         # Logged in as you@acme.com. Workspace: every app (home app: Acme)
+bridge app list                           # every app, marking home and current
+bridge app use "Acme Stage"               # the default for every command, no re-login
+bridge app create --name "Acme Prod" --use
+bridge --app 66f0c0ffee0000000000abcd role list   # one command on another app
+```
+
+Precedence: `--app` > `bridge app use` > the home app. `--profile` still picks
+*which stored login*; `--app` picks the app *within* it. Acting on a non-home
+app prints `bridge: Acting on app <name> (<id>)` to stderr. Per-app tokens live
+only in memory for that one command and are never written to disk.
+
+`bridge auth login --single-app` asks for a login that covers only the home app
+(the user can still change the choice on the consent screen). On such a login,
+`--app` / `bridge app use` for another app fail and tell you to log in again.
+`BRIDGE_API_KEY` is always bound to its one app.
+
 #### Several apps at once
 
 The credentials file holds one credential per app, so you can log in to your
@@ -73,7 +97,8 @@ next time something writes.
 
 | Flag | Description |
 |------|-------------|
-| `--app <id\|name>` | Pin to a specific app, skipping the picker on the consent screen. |
+| `--app <id\|name>` | Pin the home app, skipping the picker on the consent screen. |
+| `--single-app`    | Preselect "only this app" instead of "every app in the workspace" on the consent screen. |
 | `--label <text>`  | Friendly label stored on the token (default: `bridge-cli`). Useful when listing CLI tokens at `app.thebridge.dev/keys`. |
 | `--no-browser`    | Print the authorization URL instead of opening a browser. Use this on headless boxes or over SSH. |
 
@@ -191,7 +216,11 @@ bridge auth status               # show every stored app, active one marked
 bridge auth use <label|app-id>   # switch the default app, no browser
 bridge auth logout               # revoke + remove the active app
 bridge auth logout --all         # ...or every stored app
-bridge --profile <label> <cmd>   # target one app for one command
+bridge --profile <label> <cmd>   # target one stored login for one command
+bridge app list                  # apps this login covers (home + current marked)
+bridge app use <id|name>         # switch app within a workspace login, no browser
+bridge app create --name <n> [--callback-url <url>] [--use]
+bridge --app <id|name> <cmd>     # one command on another app of the workspace
 ```
 
 ### Auth Configuration (app-level — separate from `auth login`)

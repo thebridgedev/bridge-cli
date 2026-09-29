@@ -58,6 +58,19 @@ export interface StoredCredentials {
   baseUrl: string;
   /** Optional human-friendly label set via `bridge auth login --label`. */
   label?: string;
+  /**
+   * TBP-769 — what the login covers, as chosen on the consent screen:
+   * `workspace` = every app of the workspace (`app` above is the HOME app),
+   * `app` = only `app`. Absent on credentials stored before TBP-769; those are
+   * treated as `app` until the server says otherwise.
+   */
+  appAccess?: 'app' | 'workspace';
+  /**
+   * TBP-769 — the app commands act on by default within a workspace login,
+   * set by `bridge app use`. Absent = the home app. Only ever an id + name:
+   * per-app tokens are fetched per run and never written to disk.
+   */
+  currentApp?: { id: string; name: string };
 }
 
 /** Current on-disk shape. See the module docstring for why it is a map. */
@@ -243,6 +256,29 @@ export function setActiveCredential(key: string): void {
   }
   file.active = key;
   writeCredentialsFile(file);
+}
+
+/**
+ * Update fields of ONE stored credential in place (TBP-769: `currentApp`,
+ * `appAccess`). `undefined` values remove the field. Does not move `active`.
+ */
+export function updateCredential(
+  key: string,
+  patch: Partial<Pick<StoredCredentials, 'currentApp' | 'appAccess'>>,
+): StoredCredentials {
+  const file = readCredentialsFileOrEmpty();
+  const existing = file.credentials[key];
+  if (!existing) {
+    throw new CredentialSelectorError(`No stored credential with app id ${key}.`);
+  }
+  const next: StoredCredentials = { ...existing };
+  for (const [k, v] of Object.entries(patch) as [keyof StoredCredentials, unknown][]) {
+    if (v === undefined) delete next[k];
+    else (next as unknown as Record<string, unknown>)[k] = v;
+  }
+  file.credentials[key] = next;
+  writeCredentialsFile(file);
+  return next;
 }
 
 /** Persist the store atomically with mode 0600, dir 0700. */

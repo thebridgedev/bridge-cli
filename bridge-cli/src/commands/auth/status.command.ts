@@ -96,6 +96,13 @@ function runStatus(): void {
     );
   }
 
+  if (entries.some((e) => e.creds.appAccess === 'workspace')) {
+    stdout.write(
+      '\nWithin a workspace login: `bridge app list`, `bridge app use <id|name>`, ' +
+        'or `--app <id|name>` for one command.\n',
+    );
+  }
+
   if (envProfile) {
     stdout.write(
       `\nBRIDGE_PROFILE=${envProfile} is set — it overrides the active credential above.\n`,
@@ -131,6 +138,17 @@ function writeEntry(entry: CredentialEntry, showMarker: boolean): void {
   const marker = showMarker ? (entry.isActive ? '* ' : '  ') : '';
 
   stdout.write(`  ${marker}app=${creds.app.name} (${creds.app.id})\n`);
+  // TBP-769 — what the login covers, and which app commands act on.
+  if (creds.appAccess === 'workspace') {
+    const current = creds.currentApp ?? creds.app;
+    stdout.write(`  ${marker}  scope=workspace (every app)\n`);
+    stdout.write(`  ${marker}  homeApp=${creds.app.name} (${creds.app.id})\n`);
+    stdout.write(
+      `  ${marker}  currentApp=${current.name} (${current.id})${creds.currentApp ? '' : ' — the home app'}\n`,
+    );
+  } else {
+    stdout.write(`  ${marker}  scope=single app\n`);
+  }
   if (creds.label) stdout.write(`  ${marker}  label=${creds.label}\n`);
   stdout.write(`  ${marker}  user=${creds.user.email}\n`);
   stdout.write(`  ${marker}  expires=${expiryRel} — ${creds.expiresAt}${expiredLabel}\n`);

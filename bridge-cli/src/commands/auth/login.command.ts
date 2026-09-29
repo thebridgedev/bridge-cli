@@ -39,17 +39,20 @@ interface LoginOptions {
   reauth?: boolean;
   /** TBP-593 — request the elevated `management:admin` scope. */
   admin?: boolean;
+  /** TBP-769 — preselect "only this app" instead of "every app" on consent. */
+  singleApp?: boolean;
 }
 
 
 
-export { runLogin };
+export { runLogin, buildAuthorizeUrl };
 
 export function registerAuthLoginCommand(auth: Command): void {
   auth
     .command('login')
     .description('Authenticate via browser (loopback PKCE) and save credentials')
-    .option('--app <id|name>', 'Pin to a specific app: an app id skips the picker entirely; an app name is resolved on the consent screen (falls back to the picker if not found)')
+    .option('--app <id|name>', 'Pin the home app: an app id skips the picker entirely; an app name is resolved on the consent screen (falls back to the picker if not found)')
+    .option('--single-app', 'Ask for a login that covers only the home app. By default the consent screen preselects "Every app in <workspace>", so `bridge app use` / `--app` can switch apps without logging in again')
     .option('--label <text>', 'Friendly label stored on the token (default: "bridge-cli")')
     .option('--no-browser', 'Print the authorization URL instead of opening a browser')
     .option('--reauth', 'Force the consent screen to sign you out and prompt for credentials again')
@@ -100,6 +103,7 @@ async function runLogin(opts: LoginOptions): Promise<void> {
     label: opts.label,
     reauth: opts.reauth === true,
     admin: opts.admin === true,
+    appAccess: opts.singleApp === true ? 'app' : 'workspace',
   });
 
   // 3. Open browser (or print URL if --no-browser or open fails).
@@ -157,6 +161,9 @@ async function runLogin(opts: LoginOptions): Promise<void> {
     user: { id: exchanged.user.id, email: exchanged.user.email },
     baseUrl: apiBaseUrl,
     ...(opts.label ? { label: opts.label } : {}),
+    // TBP-769 — what the user actually chose on the consent screen (the URL
+    // only preselected it). An older server omits it: that login is one app.
+    appAccess: exchanged.app_access === 'workspace' ? 'workspace' : 'app',
   };
   writeCredentials(stored);
 
@@ -166,9 +173,16 @@ async function runLogin(opts: LoginOptions): Promise<void> {
 
   // 7. Friendly confirmation.
   const expiryHuman = formatExpiryDate(exchanged.expires_at);
+  const scope =
+    stored.appAccess === 'workspace'
+      ? `Workspace: every app (home app: ${exchanged.app.name})`
+      : `App: ${exchanged.app.name}`;
   stdout.write(
-    `Logged in as ${exchanged.user.email}. App: ${exchanged.app.name}. Token valid until ${expiryHuman}.\n`,
+    `Logged in as ${exchanged.user.email}. ${scope}. Token valid until ${expiryHuman}.\n`,
   );
+  if (stored.appAccess === 'workspace') {
+    stdout.write('Run `bridge app list` to see the apps, `bridge app use <id|name>` to switch.\n');
+  }
 }
 
 function buildAuthorizeUrl(
@@ -181,6 +195,7 @@ function buildAuthorizeUrl(
     label?: string;
     reauth?: boolean;
     admin?: boolean;
+    appAccess?: 'app' | 'workspace';
   },
 ): string {
   const url = new URL(`${authBaseUrl}/cli/authorize`);
@@ -190,6 +205,8 @@ function buildAuthorizeUrl(
   url.searchParams.set('scope', params.admin ? SCOPE_MANAGEMENT_ADMIN : SCOPE_MANAGEMENT);
   if (params.appId) url.searchParams.set('app_id', params.appId);
   if (params.label) url.searchParams.set('label', params.label);
+  // TBP-769 — only PRESELECTS the choice on the consent screen; the user decides.
+  if (params.appAccess) url.searchParams.set('app_access', params.appAccess);
   // OAuth-style `prompt=login` — the consent screen reads this as "clear any
   // existing browser session and re-prompt for credentials" so users who just
   // ran `bridge auth logout` aren't dropped straight into the workspace picker.

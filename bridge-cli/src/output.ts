@@ -48,6 +48,11 @@ export function outputError(error: unknown): void {
     code = 'CONFIG_ERROR';
     message = error.message;
     exitCode = 3;
+    // TBP-769 — a config error may name its own code and next step.
+    const carriedCode = (error as { code?: unknown }).code;
+    if (typeof carriedCode === 'string' && carriedCode.length > 0) code = carriedCode;
+    const carriedHint = (error as { hint?: unknown }).hint;
+    if (typeof carriedHint === 'string' && carriedHint.length > 0) hint = carriedHint;
   } else if (error instanceof HttpError) {
     code = `HTTP_${error.status}`;
     message = error.message;
