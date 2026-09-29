@@ -106,7 +106,7 @@ describe('the payments guide says how a hard limit is enforced end to end', () =
     ['gauges send the app\'s count', /@SyncQuota\('tickets', \{ current \}\)/],
     ['seats are a built-in gauge', /built-in `users` metric, a gauge/],
     ['the upgrade dialog with no code', /upgrade dialog opens on a `402`/],
-    ['browser counting is first-class', /first-class way to run limits; it trusts the browser/],
+    ['browser counting is first-class', /complete, first-class way to run limits/],
     ['the paywall needs plans and paymentsAutoRedirect', /only when the app has plans and "customers must pick a plan" is on/],
     ['paymentsAutoRedirect is writable over MCP', /`update_app` \(`paymentsAutoRedirect: false`\)/],
     ['/welcome is offered, not created', /Offer it; create it only if they say yes/],

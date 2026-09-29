@@ -21,6 +21,7 @@ import { Command } from 'commander';
 import { registerCommands } from '../program';
 import { fetchFitTogetherGuide, loadGuideCoverage } from '../commands/guide.command';
 import { DECISION_DOMAINS, JOURNEYS } from '../commands/journeys';
+import { docGateViolations } from '../gate-rules';
 
 const PROMPTS = join(__dirname, '..', '..', 'prompts');
 const read = (path: string) => readFileSync(path, 'utf-8');
@@ -79,15 +80,19 @@ describe('bridge guide fit-together', () => {
       ['roles are the default setup only', /only ever "in the default setup"/],
       ['read list_roles first', /`list_roles` \/ `bridge role list` before writing any rule/],
       ['the agent asks where the action happens', /\*\*"Does this action call your server\?"\*\*/],
-      ['browser counting is first-class, trusting the browser, said once', /first-class way to run limits\. It trusts the browser/],
+      ['browser counting is complete and first-class', /complete, first-class way to run limits/],
+      // TBP-705, owner 2026-09-29: the rule comes first, and the guide ends with the check.
+      ['every gate is a flag, stated first', /^# [^\n]+\n\n[^\n]+\n\n## The one rule for app code\n\n\*\*Every gate in app code is a flag\.\*\*/],
+      ['app code never reads a role, privileges, the plan or a plan feature', /App code never reads a role, a privilege list, the plan or a plan feature to decide what someone may see or do/],
+      ['the gate check is the last step', /npx @nebulr-group\/bridge-cli check gates/],
       ['never counted twice', /Never count one metric in both places/],
       ['no dialog opens by itself', /No upgrade dialog opens by itself/],
     ])('%s', (_name, pattern) => {
       expect(page).toMatch(pattern);
     });
 
-    it('says "trusts the browser" once', () => {
-      expect(page.match(/trusts the browser/g)).toHaveLength(1);
+    it('leaves the trust trade-off to the human docs', () => {
+      expect(page).not.toMatch(/trusts the browser|trusted-client/);
     });
   });
 
@@ -104,48 +109,11 @@ describe('bridge guide fit-together', () => {
 // ── The access-rule currency check ──────────────────────────────────────────
 
 /**
- * Sentences a guide must never contain: telling an agent to control a feature
- * with a hard-coded role or plan-name check, a flag rule that names plans, or
- * calling browser counting demo-grade / not working. A sentence that says
- * NOT to do it ("never a role check…", "instead of naming plans") is allowed.
+ * The patterns live in `src/gate-rules.ts`, shared with `bridge check gates`
+ * so no guide teaches what the command then flags. A sentence that says NOT to
+ * do it is allowed, and so is anything in a section headed "Exceptions".
  */
-const FORBIDDEN: Array<[string, RegExp]> = [
-  ['a role compared in code', /\b(?:user|session|claims|token|me|currentUser|locals\.user|req\.user)\??\.role\s*(?:===|!==|==|!=)/],
-  ['a role compared in code', /\brole\s*(?:===|!==|==|!=)\s*['"`]/i],
-  ['a role checked in code', /\bhasRole\s*\(/],
-  ['a role decorator on a handler', /@RequireRole\s*\(/],
-  ['a role check on the page', /\brole check\b[^.\n]{0,30}\b(?:in|on) (?:the |your )?(?:page|component|code|handler|layout|controller)/i],
-  ['a role check on the page', /\bcheck\w*\b[^.\n]{0,30}\brole\b[^.\n]{0,30}\b(?:in|on) (?:the |your )?(?:page|component|code|layout)\b/i],
-  ['"target a role instead"', /target a role instead/i],
-  ['a plan name compared in code', /\.plan(?:Key|Name)?\s*(?:===|!==|==|!=)\s*['"`]/],
-  ['a plan name compared in code', /\bplan(?:Key|Name)?\s*(?:===|!==|==|!=)\s*['"`]/i],
-  ['a plan-name helper', /\bis(?:Pro|Free|Enterprise|Team|Business)(?:Plan|User)?\b\s*[(=]/],
-  ['a flag rule that names plans', /"attribute"\s*:\s*"(?:tenant\.plan|bridge:billing\.plan)"/],
-  ['browser counting called demo-grade', /demo[- ]grade/i],
-  [
-    'browser counting said not to work',
-    /\b(?:browser|frontend|client)(?:[- ](?:only|side))?\b[^.\n]{0,40}\b(?:won't|will not|does not|doesn't|cannot|can't|can not) (?:work|enforce|be trusted)/i,
-  ],
-  // TBP-757: `contains` on privileges is exact membership; advice written around the old substring match is stale.
-  ['privileges said to match as text', /\b(?:matched|matches|match) (?:privilege keys )?as text\b|\bno other (?:privilege )?key contains\b/i],
-  ['browser counting said not production-ready', /\b(?:browser|frontend|client)\b[^.\n]{0,60}\bnot (?:production|prod)[- ](?:ready|grade)/i],
-];
-
-/** A sentence that tells the reader NOT to do the forbidden thing. */
-const NEGATED = /\b(?:never|instead of|rather than)\b/i;
-
-function accessRuleViolations(markdown: string): Array<{ line: number; rule: string; text: string }> {
-  const out: Array<{ line: number; rule: string; text: string }> = [];
-  markdown.split('\n').forEach((line, i) => {
-    for (const sentence of line.split(/(?<=[.!?])\s+/)) {
-      if (NEGATED.test(sentence)) continue;
-      for (const [rule, pattern] of FORBIDDEN) {
-        if (pattern.test(sentence)) out.push({ line: i + 1, rule, text: sentence.trim() });
-      }
-    }
-  });
-  return out;
-}
+const accessRuleViolations = docGateViolations;
 
 describe('no guide teaches a hard-coded role or plan check, or talks browser counting down', () => {
   const files = markdownFiles(PROMPTS);
@@ -179,6 +147,16 @@ describe('no guide teaches a hard-coded role or plan check, or talks browser cou
       'Counting in the browser is not production-ready.',
       "Give each privilege a key no other key contains, since the list is matched as text.",
       "A rule matches privilege keys as text inside the person's list.",
+      // TBP-705, owner 2026-09-29: every gate in app code is a flag.
+      'Wrap the chart in `<Entitled to="analytics">`.',
+      "Show the button when `$entitlements.can('exports')`.",
+      "Put `@RequireEntitlement('analytics')` on the handler.",
+      "const canManageTeam = ['OWNER', 'ADMIN'].includes(role);",
+      "Show the link when `privileges.includes('USER_WRITE')`.",
+      "{ path: '/reports/*', privilege: 'REPORTS_VIEW' }",
+      "{ path: '/reports/*', privilege: 'AUTHENTICATED', plans: ['pro'] }",
+      'Browser counting is display, not enforcement.',
+      'Only a backend can refuse a click over the limit.',
     ])('%s', (bad) => {
       expect(accessRuleViolations(bad)).not.toEqual([]);
     });
@@ -200,8 +178,24 @@ describe('no guide teaches a hard-coded role or plan check, or talks browser cou
       'write the rule on `bridge:billing.entitlement.analytics` instead of naming plans: `"attribute": "tenant.plan"` is the old way.',
       'This is a first-class way to run limits. It trusts the browser: someone who edits the page could report less.',
       'Never describe browser counting as demo-grade.',
+      "{ match: '/admin/*', featureFlag: 'admin-area', redirectTo: '/' }",
+      "{ path: '/health', privilege: 'ANONYMOUS' }",
     ])('%s', (good) => {
       expect(accessRuleViolations(good)).toEqual([]);
+    });
+
+    it('a direct plan-feature check inside the Exceptions section, and only there', () => {
+      const guide = [
+        '## Gating',
+        'Use `<FeatureFlag key="analytics">`.',
+        '## Exceptions',
+        'When the developer asks for no flag, `<Entitled to="analytics">` reads the plan directly.',
+        '### Details',
+        "`$entitlements.can('analytics')` is the same check in script.",
+        '## Next',
+        'Wrap it in `<Entitled to="analytics">`.',
+      ].join('\n');
+      expect(accessRuleViolations(guide).map((v) => v.line)).toEqual([8]);
     });
   });
 });

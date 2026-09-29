@@ -31,6 +31,7 @@ Product questions. Ask, wait, never guess.
 
 - **Self-signup on for a product people try on their own; off for invitation-only products.** Take it from the answer to question 2 and set `tenantSelfSignup` to match. Reason: with it off, a stranger who signs up has nowhere to land.
 - **Use Bridge's team panel for inviting and managing people** (`TeamManagementPanel` in SvelteKit) rather than a page of your own. Reason: it already handles invitations, role changes and removal against the right permissions.
+- **Gate the team link and the team page with a flag ruled on a privilege**, for example a flag `team-admin` with `privileges contains "USER_WRITE"` after reading `list_roles`, used as `<FeatureFlag key="team-admin">` around the link and a route rule with `featureFlag: 'team-admin'` on the page. Never a list of role names in code. Reason: every gate in app code is a flag, and a privilege rule survives renamed roles.
 - **Seats are the built-in `users` limit.** Reason: Bridge counts workspace members itself, so there is nothing for the app to count or report.
 - **Never create workspaces from the app's own code for sign-ups.** Reason: Bridge creates one at signup when self-signup is on; creating them elsewhere makes duplicates.
 - **Create workspaces by hand only for setup and support** (an existing customer you are migrating, or a demo).

@@ -104,7 +104,7 @@ export class ExportsController {
 
 Ask the developer first: **does this action call your server?**
 
-- **It calls your backend:** the server decides; the client decorates. Anyone can call your API with curl, so the limit or the flag is enforced on the backend handler. Everything the frontend shows about it — the upgrade dialog, a disabled button, a hidden panel — explains or anticipates a decision the server already makes, and does not count the same metric again.
+- **It calls your backend:** the backend handler counts it and refuses at the limit, because that is where the action happens. The frontend shows the count and the upgrade dialog, and does not count the same metric again.
 - **It happens in the browser** and never reaches a server of yours (local-first, data on the device): the browser counts it and gates the button (section 5). That is a first-class setup.
 
 Never both for one metric: it would be counted twice.
@@ -155,7 +155,7 @@ remove() { /* … */ }
 
 **Every hard quota is also an entitlement** with the same name, true while there is room. So never pair `@RequireEntitlement('exports')` with `@RequireQuota('exports')`: at the cap the entitlement answers `403` before the quota can answer the `402` the frontend knows how to upsell. `@RequireQuota` is for a *limit*; `@RequireEntitlement` checks a plan *feature* (`analytics`, `sso`) without a flag, which is the exception (next paragraph).
 
-**A plan feature goes in the plan's features list.** `bridge plan feature add pro analytics --name "Analytics"` makes `analytics` true on `pro`, and false on every other plan. The pricing table and the upgrade dialog name it from the same list. Control the feature with a flag whose rule is `bridge:billing.entitlement.analytics eq true`, so changing what Pro sells is one edit on the plan and no flag rule has to follow. Checking it directly, without a flag, is the exception: `@RequireEntitlement('analytics')` on the backend and `<Entitled to="analytics">` in the UI. A hard quota with limit 1 that nothing counts still works the same way; it is the older way to do this. `app_active` is always there: true while the workspace's subscription is active, trialing, past due or cancelling at period end.
+**A plan feature goes in the plan's features list.** `bridge plan feature add pro analytics --name "Analytics"` makes `analytics` true on `pro`, and false on every other plan. The pricing table and the upgrade dialog name it from the same list. Control the feature with a flag whose rule is `bridge:billing.entitlement.analytics eq true`, so changing what Pro sells is one edit on the plan and no flag rule has to follow. Checking it directly, without a flag, is the exception (section Exceptions, at the end). A hard quota with limit 1 that nothing counts still works the same way; it is the older way to do this. `app_active` is always there: true while the workspace's subscription is active, trialing, past due or cancelling at period end.
 
 ## 4. Three ways to handle a limit in the UI
 
@@ -165,7 +165,7 @@ Pick the lowest level that does the job. Each is optional; level 0 is on without
 |---|---|---|
 | **0 — nothing** | a plain button calling your API | Your backend refuses at the cap (`402`), and `<BridgeBootstrap>` opens an **upgrade dialog** naming the metric, linking to the subscription page. A workspace member who cannot manage billing is told to ask the owner instead |
 | **1 — one component** | `<QuotaGate metric="tickets">…</QuotaGate>` around the button; `<FeatureFlag key="analytics" upgrade>…</FeatureFlag>` around a paid feature | The button is disabled at a known hard cap with an upgrade line beside it; the paid feature shows on a plan that includes it, and elsewhere an "Upgrade to use this" button that opens the dialog when clicked |
-| **2 — your own UI** | `useQuota('tickets')` and `$entitlements.can('analytics')` | Whatever you build from the live numbers |
+| **2 — your own UI** | `useQuota('tickets')`, and `<FeatureFlag key="analytics">` around what the plan sells | Whatever you build from the live numbers |
 
 ```svelte
 <script lang="ts">
@@ -211,7 +211,7 @@ await bridge.usage.set('projects', projects.length);   // a gauge: how many exis
 
 Put `<QuotaGate metric="exports">` around the button (section 4, level 1) so it stops at the limit, and the upgrade line sells the next plan.
 
-This is a first-class way to run limits. It is trusted-client usage: it trusts the browser, so someone who edits the page's code could report less than they use. When the action does call your backend, count it there instead (section 2), never in both places.
+This is a complete, first-class way to run limits. When the action does call your backend, count it there instead (section 2), never in both places.
 
 ## 6. Four levels of customising Bridge's pages
 
@@ -292,3 +292,7 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 | Backend sign-in and route protection | `bridge guide nestjs` |
 | Feature flags | `bridge guide flags` |
 | Proving sign-in works | `bridge test-user create`, then `bridge test-user verify` |
+
+## Exceptions
+
+Every gate in app code is a flag (`bridge guide fit-together`). Checking a plan feature without a flag (`@RequireEntitlement` on the backend, `<Entitled>` or `$entitlements.can` in the UI) exists for the rare case where the developer explicitly asks for no flag. It prints a one-time note in development; mark the line `// bridge-gate-exception: <reason>` so `check gates` leaves it.

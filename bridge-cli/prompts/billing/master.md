@@ -2,6 +2,8 @@
 
 You are integrating **Bridge Billing** into a user's application — plan selection, Stripe Checkout, subscription state, lifecycle notices (trial / dunning / cancel), and usage quota counters.
 
+> **The one rule for app code: every gate is a flag.** A link, a page, a button, an endpoint: if some people get it and others do not, the code asks a flag, and the flag's rule says why (a privilege, a plan feature, a rollout). App code never reads a role, a privilege list, the plan or a plan feature to decide what someone may see or do. Numbers are plan limits, and permission on one specific record stays in app code. `bridge guide fit-together` has the whole rule; the last verification step runs `npx @nebulr-group/bridge-cli check gates`.
+
 This prompt is framework-agnostic. It orchestrates discovery, pricing model setup, and verification — the actual install commands and code snippets live in the per-framework guides fetched in Step 4.
 
 > **Related master prompts** — if the user hasn't set up auth yet, stop here and route them:
@@ -199,7 +201,7 @@ bridge plan feature add <plan> <feature_key> --name "<Display name>"
 on the plan; every `hard` quota is also an entitlement of the same name.)
 Check the result with `bridge plan quota list`, which lists every metric with its kind.
 
-**Where the limit is counted.** Once, where the action happens. Ask the developer whether the action calls their server. If it does, the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire — and the frontend only shows that decision. If it happens in the browser only, the frontend reports it (`bridge.usage.report` / `bridge.usage.set`) and `<QuotaGate>` stops the button at the cap: a first-class setup that trusts the browser. Never both for one metric. `bridge guide mechanisms` has the whole model; `bridge guide fit-together` shows where limits sit next to plans, roles and flags.
+**Where the limit is counted.** Once, where the action happens. Ask the developer whether the action calls their server. If it does, the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire — and the frontend only shows that decision. If it happens in the browser only, the frontend reports it (`bridge.usage.report` / `bridge.usage.set`) and `<QuotaGate>` stops the button at the cap: a complete, first-class setup. Never both for one metric. `bridge guide mechanisms` has the whole model; `bridge guide fit-together` shows where limits sit next to plans, roles and flags.
 
 ## Step 4 — Fetch and apply the per-framework guide
 
@@ -259,6 +261,7 @@ For each integrated project, the agent verifies — do not hand this to the deve
 6. Cancel a payment — redirected back to the subscription page
 7. Paywall (unless opted out): sign in as a new tenant with no plan — you land on the paywall page (or `/welcome` if the developer chose one) and can't reach the app until a plan is chosen
 8. Plan limit (when a backend was wired): at the cap, the decorated request answers `402 QUOTA_EXCEEDED` — send it with curl, not only through the UI — and in the app the upgrade dialog opens naming the metric
+9. **Gate check** — `npx @nebulr-group/bridge-cli check gates` in the project: every direct role, privilege, plan or plan-feature check it lists becomes a flag. Run it again until it is clean
 
 If anything fails, diagnose and fix before moving on.
 

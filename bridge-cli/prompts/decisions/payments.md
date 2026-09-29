@@ -52,9 +52,9 @@ Tell the developer this plainly; it is where integrations go wrong.
 3. **Gauges send the app's own count.** `@RequireQuota('tickets', { current })` on create and `@SyncQuota('tickets', { current })` on delete, where `current` returns the app's count from its own database. There is no decrement.
 4. **Seats need no count at all.** `@RequireQuota('users')` on the invite handler checks the seat limit.
 5. **With a backend, the frontend only shows the count and explains the refusal.** It does not report the same metric. With no code at all, the upgrade dialog opens on a `402`, names the limit, and links to the subscription page. A member who cannot manage billing is told to ask the owner. Disabling a button before the click (`<QuotaGate>`) or showing "8 of 10" (`useQuota`) is optional.
-6. **When the action happens in the browser, the browser counts it.** For an app whose action never reaches a server of its own (local-first, data on the device), `bridge.usage.report('exports')` records something that happened and `bridge.usage.set('projects', n)` how many exist, and `<QuotaGate metric="exports">` around the button stops it at the limit. This is a first-class way to run limits; it trusts the browser. Never count one metric in both places.
+6. **When the action happens in the browser, the browser counts it.** For an app whose action never reaches a server of its own (local-first, data on the device), `bridge.usage.report('exports')` records something that happened and `bridge.usage.set('projects', n)` how many exist, and `<QuotaGate metric="exports">` around the button stops it at the limit. This is a complete, first-class way to run limits. Never count one metric in both places.
 7. **`metered` never blocks.** Past the included amount it bills per unit through Stripe.
-8. **A feature a plan sells goes in the plan's features list, and a flag controls it.** `analytics` on `pro` makes `bridge:billing.entitlement.analytics` true on Pro and false elsewhere; the flag that controls the feature has the rule `bridge:billing.entitlement.analytics eq true`, so the rule never names a plan. Checking the feature directly without a flag (`@RequireEntitlement`, `<Entitled>`) is the exception. No upgrade dialog opens by itself: it opens when someone opens a gated route, clicks something gated, or the backend answers `402`. A hard quota with limit 1 still works the same way; it is the older way. Never put `@RequireEntitlement` and `@RequireQuota` on the same name: at the cap the entitlement answers `403` first and the upgrade dialog never opens.
+8. **A feature a plan sells goes in the plan's features list, and a flag controls it.** `analytics` on `pro` makes `bridge:billing.entitlement.analytics` true on Pro and false elsewhere; the flag that controls the feature has the rule `bridge:billing.entitlement.analytics eq true`, so the rule never names a plan; checking the plan feature directly is the exception at the end of this guide. No upgrade dialog opens by itself: it opens when someone opens a gated route, clicks something gated, or the backend answers `402`. A hard quota with limit 1 still works the same way; it is the older way. Never put `@RequireEntitlement` and `@RequireQuota` on the same name: at the cap the entitlement answers `403` first and the upgrade dialog never opens.
 9. **The plan-choice page** (`/subscription/plan`) appears only when the app has plans and "customers must pick a plan" is on. Turn it off with `update_app` (`paymentsAutoRedirect: false`) / `bridge app update --payments-auto-redirect false`.
 
 The flag and its rule are set up in the **feature-control** guide.
@@ -78,6 +78,10 @@ The flag and its rule are set up in the **feature-control** guide.
 2. `get_stripe_status` / `bridge stripe status`: connected, webhook working.
 3. At the limit, send the decorated request with curl: it answers `402 QUOTA_EXCEEDED`. In the app, the upgrade dialog opens and names the limit.
 4. A paid plan opens Stripe Checkout and returns to the subscription page with the new plan.
+
+## Exceptions
+
+Checking a plan feature without a flag (`@RequireEntitlement` on the backend, `<Entitled>` or `$entitlements.can` in the UI) exists for the rare case where the developer explicitly asks for no flag. It prints a one-time note in development; mark the line `// bridge-gate-exception: <reason>` so `check gates` leaves it.
 
 ## Where this connects
 

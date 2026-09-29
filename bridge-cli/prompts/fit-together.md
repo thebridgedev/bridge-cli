@@ -2,7 +2,18 @@
 
 Read this before any decision guide that touches who gets what. Every other guide builds on it. MCP: resource `bridge://guides/fit-together`. CLI: `bridge guide fit-together`.
 
-## The rule
+## The one rule for app code
+
+**Every gate in app code is a flag.** A link, a page, a button, an endpoint: if some people get it and others do not, the code asks a flag, and the flag's rule says why: a privilege (`privileges contains "USER_WRITE"`), a plan feature (`bridge:billing.entitlement.analytics eq true`) or a rollout. App code never reads a role, a privilege list, the plan or a plan feature to decide what someone may see or do.
+
+Two things are not gates and are not flags: **numbers** are plan limits (`<QuotaGate>` in the browser, `@RequireQuota` on the backend), and **permission on one specific record** stays in app code ("only the author edits their post").
+
+Before calling the work done, run `npx @nebulr-group/bridge-cli check gates` in the project. It lists every direct role, privilege, plan or plan-feature check with the flag to use instead. Fix each one.
+
+- **SvelteKit:** a piece of UI or a nav link is `<FeatureFlag key="…">`; a page is a route rule `{ match: '/admin/*', featureFlag: 'admin-area', redirectTo: '/' }`.
+- **NestJS:** an endpoint is `@RequireFeatureFlag('…')` on the handler.
+
+## Why a flag
 
 Features should be controlled with feature flags. A flag can switch a route, an API endpoint, a feature or a single piece of code; its rules change without a release and update live when someone's role or plan changes. If a plan sells the feature, include it on the plan as well. This is valuable because the plan is where the customer sees what they are buying: the pricing table, the upgrade dialog and the "not on your plan" reason all read the plan's list, and the flag's rule points at that same list, so changing what Pro includes is one edit in one place.
 
@@ -22,7 +33,6 @@ The flag's rule never names plans. It points at `bridge:billing.entitlement.<fea
 
 - **Numbers are plan limits.** "100 exports a month" or "10 projects" is a quota on the plan, not a flag. Bridge refuses at the limit and the upgrade dialog explains it.
 - **Permission on one specific record stays in app code.** Whether this person may edit *this* invoice depends on data only the app has (who wrote it, which team owns it). The flag decides whether invoice editing exists for them at all; the app decides the record.
-- **Checking a plan feature without a flag is the exception.** `@RequireEntitlement('analytics')` on the backend and `<Entitled to="analytics">` or `$entitlements.can('analytics')` in the UI read the plan's list directly. They work, and they are for the rare case where the developer asks for no flag. Use a flag by default: it can also carry a rollout, a trial group or a one-customer exception later, without a code change.
 
 ## Access by who someone is
 
@@ -30,7 +40,8 @@ Control it with a flag rule, never with a role check written into the app's code
 
 - **Prefer a privilege rule** (`privileges contains "REPORTS_VIEW"`) over a role rule (`user.role eq "ADMIN"`). A privilege rule keeps working when roles are renamed or reshuffled. `contains` on `privileges` means the person holds exactly that key: `REPORTS_VIEW` does not match `REPORTS_VIEW_ALL`.
 - **A role rule is fine when the developer means the role itself.** Use the role key exactly as `list_roles` shows it; `ADMIN` and `admin` are different.
-- **An admin-only page is a flag route rule, not a check on the page.** In SvelteKit: `{ match: '/admin/*', featureFlag: 'admin-area', redirectTo: '/' }`, with the flag `admin-area` ruled on a privilege. On the NestJS backend: `@RequireFlag('admin-area')` on the handler. Both read the same rule.
+- **An admin-only page is a flag route rule, not a check on the page.** In SvelteKit: `{ match: '/admin/*', featureFlag: 'admin-area', redirectTo: '/' }`, with the flag `admin-area` ruled on a privilege. On the NestJS backend: `@RequireFeatureFlag('admin-area')` on the handler. Both read the same rule.
+- **The team page is the same.** The team link and the team route are gated by a flag ruled on the privilege that manages people (for example `privileges contains "USER_WRITE"`, after `bridge role list`), never by a list of role names.
 - **Roles are the app's own.** What a role can do is only ever "in the default setup". Read the app's real roles and privileges with `list_roles` / `bridge role list` before writing any rule, and never assume what a role grants from its name. In the default setup a new app has Owner, Admin and Member, and Member is the default for everyone after the first person in a workspace.
 
 ## The backend sees the same rule
@@ -42,7 +53,7 @@ A flag rule on a role, a privilege, the plan or a plan feature gives the same an
 Ask the developer first: **"Does this action call your server?"** Then:
 
 - **Yes, it calls the backend:** the backend counts it. One decorator on the handler (`@RequireQuota('exports')` in NestJS) refuses at the limit with `402` and records the use after a successful request. The frontend only shows the count and the upgrade dialog; it does not report the same metric.
-- **No, it happens in the browser** (local-first, data on the device, no server of the developer's own): the browser counts it. `bridge.usage.report('exports')` for something that happened, `bridge.usage.set('projects', n)` for how many exist now, and `<QuotaGate metric="exports">` around the button so it stops at the limit. This is a first-class way to run limits. It trusts the browser: someone who edits the page's code could report less than they use.
+- **No, it happens in the browser** (local-first, data on the device, no server of the developer's own): the browser counts it. `bridge.usage.report('exports')` for something that happened, `bridge.usage.set('projects', n)` for how many exist now, and `<QuotaGate metric="exports">` around the button so it stops at the limit. This is a complete, first-class way to run limits.
 
 Never count one metric in both places: it is counted twice. Never describe browser counting as a lesser or temporary option; ask the question above and follow the answer.
 
@@ -67,6 +78,11 @@ No upgrade dialog opens by itself. It opens when someone opens a gated route, cl
 1. `bridge plan feature add pro analytics --name "Analytics"`, and a flag `analytics` with the rule `bridge:billing.entitlement.analytics eq true`.
 2. `bridge role list` first. Then a flag `workspace-settings` with a privilege rule, e.g. `privileges contains "TENANT_WRITE"` if that is the privilege the app's roles use for it, and a route rule on `/settings/*`.
 3. Ask whether exporting calls the developer's server. If it does: `bridge plan quota set pro --metric exports --limit 100 --policy hard` and `@RequireQuota('exports')` on the export handler. If it does not: the same quota, `bridge.usage.report('exports')` in the browser and `<QuotaGate metric="exports">` around the button.
+4. `npx @nebulr-group/bridge-cli check gates`: nothing left that reads a role, a privilege, the plan or a plan feature directly.
+
+## Exceptions
+
+**Checking a plan feature without a flag is the exception.** `@RequireEntitlement('analytics')` on the backend and `<Entitled to="analytics">` or `$entitlements.can('analytics')` in the UI read the plan's list directly. They are for the rare case where the developer explicitly asks for no flag, and they print a one-time note in development. Mark each such line `// bridge-gate-exception: <reason>` so `check gates` leaves it. Use a flag by default: it can also carry a rollout, a trial group or a one-customer exception later, without a code change.
 
 ## Where each piece is decided
 
