@@ -2,6 +2,8 @@
 
 You are integrating **Bridge Authentication** (auth, tenant management, RBAC) into a user's application. Your job is to detect the project structure, identify the technologies, and apply the right per-framework integration for each.
 
+> **The one rule for app code: every gate is a flag.** A link, a page, a button, an endpoint: if some people get it and others do not, the code asks a flag, and the flag's rule says why (a privilege, a plan feature, a rollout). App code never reads a role, a privilege list, the plan or a plan feature to decide what someone may see or do. Numbers are plan limits, and permission on one specific record stays in app code. `bridge guide fit-together` has the whole rule; the last verification step runs `npx @nebulr-group/bridge-cli check gates`.
+
 This prompt is framework-agnostic. It orchestrates discovery, confirmation, and verification — the actual install commands, file shapes, and code snippets live in the per-framework guides fetched in Step 4.
 
 > **Related master prompts** — if the user asked for flags or billing specifically (not auth), stop here and route them:
@@ -238,8 +240,9 @@ For each integrated project:
 1. **Build check** — run the project's build command (from `package.json` scripts)
 2. **Config check** — confirm the `appId` environment variable is set
 3. **Route check** — confirm protected routes have guards and public routes are accessible
+4. **Gate check** — run `npx @nebulr-group/bridge-cli check gates` in each project. Every gate in app code is a flag: it lists each direct role, privilege, plan or plan-feature check with the flag to use instead. Fix every one and run it again until it is clean. Only a check the developer explicitly asked to keep stays, marked `// bridge-gate-exception: <reason>`
 
-If anything fails, diagnose and fix before moving on. Once the checks pass, move on to the summary in Step 6b — do NOT just dump a list of changed files at the user.
+If anything fails, including the gate check, diagnose and fix before moving on. Once the checks pass, move on to the summary in Step 6b — do NOT just dump a list of changed files at the user.
 
 ## Step 6b — Tell the developer what they just got
 

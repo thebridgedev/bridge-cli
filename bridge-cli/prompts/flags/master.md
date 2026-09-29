@@ -2,6 +2,8 @@
 
 You are integrating **Bridge Feature Flags** into a user's application — the flags-only path. No auth scaffolding, no billing components. If the user also wants auth or billing, run `bridge guide` (auth master) or `bridge guide billing` afterwards.
 
+> **The one rule for app code: every gate is a flag.** A link, a page, a button, an endpoint: if some people get it and others do not, the code asks a flag, and the flag's rule says why (a privilege, a plan feature, a rollout). App code never reads a role, a privilege list, the plan or a plan feature to decide what someone may see or do. Numbers are plan limits, and permission on one specific record stays in app code. `bridge guide fit-together` has the whole rule; the last verification step runs `npx @nebulr-group/bridge-cli check gates`.
+
 Flags are the standard way to control a route, an API endpoint, a feature or a piece of code. A feature a plan sells is listed on the plan and the flag's rule points at `bridge:billing.entitlement.<feature>`, never at plan names; access by who someone is is a rule on a privilege (preferred) or a role, never a role check in code. `bridge guide fit-together` has the whole rule; `bridge guide decision feature-control` has the questions to ask.
 
 This master prompt orchestrates discovery, confirmation, and verification. The **actual install commands, provider shapes, and runnable code snippets live in the per-framework prompts** that ship in each plugin repo's `mcp/` folder. This master does the planning; the per-framework prompts do the wiring.
@@ -195,6 +197,7 @@ For each integrated project:
 1. **Build check** — run the project's build command (from `package.json` scripts)
 2. **Eval check** — read one flag (existing or freshly created) and confirm it returns the expected value
 3. **Context check** — confirm `identity` is set when the project uses any rolled-out rule
+4. **Gate check** — `npx @nebulr-group/bridge-cli check gates` in the project: every direct role, privilege, plan or plan-feature check it lists becomes a flag. Run it again until it is clean
 
 If anything fails, diagnose and fix before moving on.
 
