@@ -80,7 +80,8 @@ function defaultRoutes(): Route[] {
       const app = APPS.apps.find((a) => a.id === m[1]);
       if (!app) return json({ code: 'INVALID_APP', message: 'Not an app id.', fix: 'Use `bridge app list`.' }, 400);
       return json({
-        apiKey: `app-token-${app.id}`,
+        // Like the server: the home app answers with the login token itself.
+        apiKey: app.id === HOME_ID ? 'login-token' : `app-token-${app.id}`,
         expiresAt: new Date(Date.now() + 120_000).toISOString(),
         app: { id: app.id, name: app.name },
       });
@@ -352,12 +353,30 @@ describe('bridge app create', () => {
 // ---------------------------------------------------------------------------
 
 describe('management commands on a workspace login', () => {
-  it('home app (nothing chosen): login token, no token fetch, no Acting line', async () => {
+  it('home app (nothing chosen): access is re-checked via the token route, no Acting line', async () => {
     writeCredentials(creds());
     const r = await bridge(['app', 'get']);
+    expect(tokenCalls()).toEqual([`${BASE}/v1/cli/workspace/apps/${HOME_ID}/token`]);
     expect(usedApiKey()).toBe('login-token');
-    expect(tokenCalls()).toEqual([]);
     expect(r.stderr).not.toContain('Acting on app');
+    expect(r.stderr).toContain(`bridge: Acme (${HOME_ID})`);
+  });
+
+  it('403 APP_NOT_IN_WORKSPACE for the home app stops the command with the fix', async () => {
+    writeCredentials(creds());
+    routes.unshift((url) =>
+      url.endsWith(`/apps/${HOME_ID}/token`)
+        ? json({ code: 'APP_NOT_IN_WORKSPACE', message: 'You no longer have access to this app.', fix: 'Ask a workspace admin to add you back, then run `bridge auth login`.' }, 403)
+        : undefined,
+    );
+    const r = await bridge(['app', 'get']);
+    expect(r.exitCode).toBe(1);
+    expect(JSON.parse(r.stderr).error).toMatchObject({
+      code: 'APP_NOT_IN_WORKSPACE',
+      message: 'You no longer have access to this app.',
+      hint: 'Ask a workspace admin to add you back, then run `bridge auth login`.',
+    });
+    expect(appGet).not.toHaveBeenCalled();
   });
 
   it('currentApp: fetches that app token and says so on STDERR, stdout stays JSON', async () => {
@@ -386,7 +405,7 @@ describe('management commands on a workspace login', () => {
     writeCredentials(creds({ currentApp: { id: STAGE_ID, name: 'Acme Stage' } }));
     await bridge(['--app', 'Acme', 'app', 'get']);
     expect(usedApiKey()).toBe('login-token');
-    expect(tokenCalls()).toEqual([]);
+    expect(tokenCalls()).toEqual([`${BASE}/v1/cli/workspace/apps/${HOME_ID}/token`]);
   });
 
   it('--app does not persist: the next command is back on currentApp/home', async () => {
@@ -435,10 +454,11 @@ describe('management commands on a workspace login', () => {
 });
 
 describe('single-app login and BRIDGE_API_KEY behave as before', () => {
-  it('single-app: login token, no workspace calls', async () => {
+  it('single-app: login token, no token call (nor any workspace call)', async () => {
     writeCredentials(creds({ appAccess: 'app' }));
     await bridge(['app', 'get']);
     expect(usedApiKey()).toBe('login-token');
+    expect(tokenCalls()).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

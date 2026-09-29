@@ -179,12 +179,14 @@ export function resolveSelectedCredential(): SelectedCredential {
 // TBP-769 — which app within the login: `--app` > `currentApp` > home.
 // ---------------------------------------------------------------------------
 
-/** The app a command acts on when it is not the login's home app. */
+/** The app a workspace-login command acts on, after the server re-checked access. */
 export interface AppContext {
   apiKey: string;
   app: { id: string; name: string };
   /** What picked it, for the stderr line: `--app X` or `current app`. */
   via: string;
+  /** The login's home app: access was re-checked, but no "Acting on" notice. */
+  home: boolean;
 }
 
 let _appFlag: string | null = null;
@@ -197,7 +199,7 @@ export function setAppOverride(app: string | null | undefined): void {
   _appFlag = app?.trim() || null;
 }
 
-/** The app the NEXT management client will act on, if not the home app. */
+/** The app the NEXT management client will act on (workspace logins only). */
 export function getAppContext(): AppContext | null {
   return _appContext;
 }
@@ -207,13 +209,13 @@ function isHomeSelector(selector: string, home: { id: string; name: string }): b
 }
 
 /**
- * Decide which app this command acts on and, for a workspace login targeting
- * a non-home app, fetch that app's short-lived token before the action runs
- * (`getManagementClient()` is synchronous, so this happens up front).
+ * Decide which app this command acts on and, for a workspace login, fetch
+ * the token for it before the action runs — the server re-checks access on
+ * every call (`getManagementClient()` is synchronous, so this happens up front).
  *
  * Precedence: `--app` > the credential's `currentApp` (`bridge app use`) > home.
- * The home app needs no call: its token IS the login token, unchanged from
- * before TBP-769. Single-app logins and `BRIDGE_API_KEY` behave exactly as
+ * A workspace login calls the token route for every target, the home app
+ * included, so the server re-checks access each time. Single-app logins and `BRIDGE_API_KEY` behave exactly as
  * before; asking them for another app is an error that says how to fix it.
  */
 export async function prepareAppContext(fetchImpl?: typeof fetch): Promise<void> {
@@ -242,9 +244,10 @@ export async function prepareAppContext(fetchImpl?: typeof fetch): Promise<void>
 
   const creds = selected.creds;
   const target = _appFlag ?? creds.currentApp?.id ?? null;
-  if (!target || isHomeSelector(target, creds.app)) return;
 
   if (creds.appAccess !== 'workspace') {
+    // Single-app login: unchanged, no extra call — its token IS its one app.
+    if (!target || isHomeSelector(target, creds.app)) return;
     // A stray currentApp on a single-app login cannot be honoured; ignore it
     // rather than fail every command. An explicit --app is a request: refuse.
     if (!_appFlag) return;
@@ -266,8 +269,13 @@ export async function prepareAppContext(fetchImpl?: typeof fetch): Promise<void>
     fetchImpl,
   });
 
+  // A workspace login re-checks access on EVERY command, home app included
+  // (the server answers the home app with the login token itself, after the
+  // check) — same as the MCP server.
   let targetId: string;
-  if (looksLikeAppId(target)) {
+  if (!target || isHomeSelector(target, creds.app)) {
+    targetId = creds.app.id;
+  } else if (looksLikeAppId(target)) {
     targetId = target;
   } else if (creds.currentApp && target.toLowerCase() === creds.currentApp.name.toLowerCase()) {
     targetId = creds.currentApp.id;
@@ -275,8 +283,6 @@ export async function prepareAppContext(fetchImpl?: typeof fetch): Promise<void>
     const { apps } = await client.listApps();
     targetId = resolveAppSelector(target, apps).id;
   }
-  if (targetId === creds.app.id) return;
-
   const cacheKey = `${selected.key}:${targetId}`;
   const cached = _appTokenCache.get(cacheKey);
   let token: { apiKey: string; app: { id: string; name: string } };
@@ -297,6 +303,7 @@ export async function prepareAppContext(fetchImpl?: typeof fetch): Promise<void>
     apiKey: token.apiKey,
     app: token.app,
     via: _appFlag ? `--app ${_appFlag}` : 'current app (bridge app use)',
+    home: targetId === creds.app.id,
   };
 }
 
@@ -332,7 +339,7 @@ function writeContextBanner(ctx: {
   // TBP-769 — acting on an app other than the login's home app is said out
   // loud even with BRIDGE_NO_BANNER: it is the one case where the credential
   // on disk does not name the app that is about to answer.
-  if (appContext) {
+  if (appContext && !appContext.home) {
     const home = creds ? `${creds.label ?? creds.app.name} (${creds.app.id})` : 'login';
     process.stderr.write(
       `bridge: Acting on app ${appContext.app.name} (${appContext.app.id}) · ${baseUrl} · ` +
