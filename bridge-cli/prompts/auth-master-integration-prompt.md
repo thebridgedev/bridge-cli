@@ -246,7 +246,7 @@ If anything fails, including the gate check, diagnose and fix before moving on. 
 
 ## Step 6b — Tell the developer what they just got
 
-Run `bridge guide integration-success` to fetch the success message template, then output it personalised for this project.
+Fetch the success message template (MCP: `get_integration_guide` topic `integration-success`; CLI: `bridge guide integration-success`), then output it personalised for this project.
 
 **Substitutions (always apply):**
 
