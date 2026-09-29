@@ -33,19 +33,30 @@ export interface Quota {
   policy: QuotaPolicy;
   /** TBP-699 — absent on quotas created before kinds existed: a counter. */
   kind?: QuotaKind;
+  /**
+   * TBP-763 — `membership`: Bridge counts the workspace's active members.
+   * Gauge only. `null` asks the server to remove a stored source (an omitted
+   * one is kept).
+   */
+  source?: QuotaSource | null;
   /** Required for `metered`, forbidden for `hard`. */
   pricing?: QuotaPricing;
 }
 
+/**
+ * TBP-763 — where a gauge's value comes from when the app does not set it.
+ * `membership`: Bridge answers with the workspace's active members, pending
+ * invites included. How an app limits seats, under the name it picks.
+ */
+export type QuotaSource = 'membership';
+
 const QUOTA_POLICIES: ReadonlyArray<QuotaPolicy> = ['hard', 'metered'];
 const QUOTA_KINDS: ReadonlyArray<QuotaKind> = ['counter', 'gauge'];
 
-/** TBP-699 — the built-in seats gauge: Bridge counts it from workspace membership. */
-export const SEATS_METRIC = 'users';
+const QUOTA_SOURCES: ReadonlyArray<QuotaSource> = ['membership'];
 
-/** The kind a quota resolves to — same rule as the server. */
+/** The kind a quota resolves to — same rule as the server. No metric name is special. */
 export function quotaKindOf(quota: { metric: string; kind?: string }): QuotaKind {
-  if (quota.metric === SEATS_METRIC) return 'gauge';
   return quota.kind === 'gauge' ? 'gauge' : 'counter';
 }
 
@@ -53,9 +64,9 @@ export interface MetricSummary {
   metric: string;
   /** `mixed` when the plans disagree on the metric's kind. */
   kind: QuotaKind | 'mixed';
-  /** TBP-709 — true for the seats gauge Bridge counts itself. */
-  builtIn?: boolean;
-  plans: Array<{ planKey: string; kind: QuotaKind; limit: number; policy: QuotaPolicy }>;
+  /** TBP-763 — `membership` when Bridge counts it from the workspace's members; `mixed` when plans disagree. */
+  source?: QuotaSource | 'mixed';
+  plans: Array<{ planKey: string; kind: QuotaKind; source?: QuotaSource; limit: number; policy: QuotaPolicy }>;
 }
 
 /**
@@ -69,17 +80,15 @@ export function listMetrics(
   for (const plan of plans) {
     for (const q of plan.quotas ?? []) {
       const kind = quotaKindOf(q);
-      const entry = byMetric.get(q.metric) ?? { metric: q.metric, kind, plans: [] };
+      const source = kind === 'gauge' && q.source === 'membership' ? 'membership' : undefined;
+      const entry: MetricSummary =
+        byMetric.get(q.metric) ?? { metric: q.metric, kind, ...(source ? { source } : {}), plans: [] };
       if (entry.kind !== kind) entry.kind = 'mixed';
-      entry.plans.push({ planKey: String(plan.key), kind, limit: q.limit, policy: q.policy });
+      else if (entry.source !== source) entry.source = 'mixed';
+      entry.plans.push({ planKey: String(plan.key), kind, ...(source ? { source } : {}), limit: q.limit, policy: q.policy });
       byMetric.set(q.metric, entry);
     }
   }
-  // TBP-709 — the built-in seats gauge is a metric every app may use, even
-  // before any plan limits it, so it is always listed (as MCP list_plan_quotas).
-  const seats = byMetric.get(SEATS_METRIC);
-  if (seats) seats.builtIn = true;
-  else byMetric.set(SEATS_METRIC, { metric: SEATS_METRIC, kind: 'gauge', builtIn: true, plans: [] });
   return [...byMetric.values()].sort((a, b) => a.metric.localeCompare(b.metric));
 }
 
@@ -88,6 +97,8 @@ export function validateQuotaEntry(entry: {
   limit?: number;
   policy?: string;
   kind?: string;
+  /** TBP-763 — `membership`, or `none` / null to leave the quota without one. */
+  source?: string | null;
   priceAmount?: number;
   currency?: string;
 }): Quota {
@@ -111,8 +122,8 @@ export function validateQuotaEntry(entry: {
     );
   }
 
-  // TBP-699 — counter vs gauge. Only sent when given (or implied by `users`),
-  // so an omitted kind leaves the server's default/stored kind in charge.
+  // TBP-699 — counter vs gauge. Only sent when given, so an omitted kind
+  // leaves the server's default/stored kind in charge.
   let kind: QuotaKind | undefined;
   if (entry.kind !== undefined) {
     if (!QUOTA_KINDS.includes(entry.kind as QuotaKind)) {
@@ -120,20 +131,31 @@ export function validateQuotaEntry(entry: {
     }
     kind = entry.kind as QuotaKind;
   }
-  if (metric === SEATS_METRIC) {
-    if (kind === 'counter') {
+  // TBP-763 — `membership`: Bridge counts the workspace's active members
+  // (seats). Only a hard gauge can have it.
+  let source: QuotaSource | null | undefined;
+  if (entry.source === null || entry.source === 'none') {
+    source = null;
+  } else if (entry.source !== undefined) {
+    if (!QUOTA_SOURCES.includes(entry.source as QuotaSource)) {
+      throw new Error(`--source must be membership (or none), got "${entry.source}".`);
+    }
+    source = entry.source as QuotaSource;
+    if (kind !== 'gauge') {
       throw new Error(
-        `"${SEATS_METRIC}" is the built-in seats gauge (Bridge counts the workspace's enabled members); it cannot be a counter.`,
+        `"${metric}" has --source membership, which only a gauge can have (Bridge answers it with the workspace's active members). Add --kind gauge, or drop --source for a counter the app reports.`,
       );
     }
-    kind = 'gauge';
+    if (policy === 'metered') {
+      throw new Error(`"${metric}" has --source membership and cannot be metered. Use --policy hard.`);
+    }
   }
   if (policy === 'metered' && kind === 'gauge') {
     throw new Error(
       `"${metric}" is a gauge and a gauge cannot be metered: metered billing charges for usage that happened during a period, which only a counter records. Use --policy hard, or --kind counter.`,
     );
   }
-  const withKind = kind ? { kind } : {};
+  const withKind = { ...(kind ? { kind } : {}), ...(source !== undefined ? { source } : {}) };
 
   // TBP-275 — metered quotas carry a per-unit price; hard quotas must not.
   if (policy === 'metered') {
@@ -514,7 +536,7 @@ export function registerPlanCommands(program: Command): void {
     .requiredOption(
       '--spec <json>',
       'The plan as JSON, or @file.json: { key, name?, description?, trial?, trialDays?, ' +
-        'prices?: [{ amount, interval, currency? }], quotas?: [{ metric, limit, policy, kind?, priceAmount?, priceCurrency? }], ' +
+        'prices?: [{ amount, interval, currency? }], quotas?: [{ metric, limit, policy, kind?, source?, priceAmount?, priceCurrency? }], ' +
         'features?: [{ key, name? }], removePrices?: [{ interval, currency? }], removeQuotas?: [metric], removeFeatures?: [key] }. ' +
         'Same shape as the MCP apply_plan tool. Prices, quotas and features are upserted; anything not mentioned is kept',
     )
@@ -547,7 +569,7 @@ export interface PlanSpec {
   trial?: boolean;
   trialDays?: number;
   prices?: Array<{ amount: number; interval: string; currency?: string }>;
-  quotas?: Array<{ metric: string; limit: number; policy: string; kind?: string; priceAmount?: number; priceCurrency?: string }>;
+  quotas?: Array<{ metric: string; limit: number; policy: string; kind?: string; source?: string | null; priceAmount?: number; priceCurrency?: string }>;
   removePrices?: Array<{ interval: string; currency?: string }>;
   removeQuotas?: string[];
   /** TBP-755 — on/off features, upserted by key. */
@@ -647,14 +669,16 @@ export function planApplyWrite(
   }
   const currencies = [...new Set(prices.map((p) => p.currency.toUpperCase()))];
   for (const q of spec.quotas ?? []) {
-    const existingKind = quotas.find((e) => e.metric === String(q.metric ?? '').trim())?.kind;
+    const existing = quotas.find((e) => e.metric === String(q.metric ?? '').trim());
+    const kind = q.kind ?? existing?.kind;
     let entry: Quota;
     try {
       entry = validateQuotaEntry({
         metric: q.metric,
         limit: q.limit,
         policy: q.policy,
-        kind: q.kind ?? existingKind,
+        kind,
+        source: q.source !== undefined ? q.source : kind === 'gauge' ? existing?.source : undefined,
         priceAmount: q.priceAmount,
         currency: q.priceCurrency ?? (currencies.length === 1 ? currencies[0] : undefined),
       });
@@ -807,6 +831,13 @@ function registerQuotaCommands(plan: Command): void {
         "If deleting it frees room, it's a gauge and your app counts it; if it happened, it's a counter and Bridge counts it. " +
         'Omit to keep an existing quota\'s kind',
     )
+    .option(
+      '--source <source>',
+      "membership = Bridge counts the workspace's active members, pending invites included (needs --kind gauge, --policy hard). " +
+        'Seats: name the limit (e.g. seats), --kind gauge --source membership; enforce it where invites happen ' +
+        '(the team page seat-limit setting, or @RequireQuota on your own invite handler), never with a flag or an entitlement. ' +
+        'Omit to keep an existing gauge\'s source; none removes it',
+    )
     .option('--price-amount <n>', 'Per-unit price for metered quotas (required with --policy metered)', parseFloat)
     .option('--price-currency <currency>', 'Currency for the metered price (defaults to the plan\'s price currency when unambiguous)')
     .action(async (key: string, opts) => {
@@ -821,12 +852,15 @@ function registerQuotaCommands(plan: Command): void {
           (opts.priceCurrency as string | undefined)?.toUpperCase() ??
           (planCurrencies.length === 1 ? planCurrencies[0] : undefined);
         // TBP-699 — an omitted --kind keeps the existing quota's kind.
-        const existingKind = quotas.find((q) => q.metric === String(opts.metric ?? '').trim())?.kind;
+        const existing = quotas.find((q) => q.metric === String(opts.metric ?? '').trim());
+        const kind = opts.kind ?? existing?.kind;
+        // TBP-763 — an omitted --source keeps an existing gauge's source.
         const entry = validateQuotaEntry({
           metric: opts.metric,
           limit: opts.limit,
           policy: opts.policy,
-          kind: opts.kind ?? existingKind,
+          kind,
+          source: opts.source ?? (kind === 'gauge' ? existing?.source : undefined),
           priceAmount: opts.priceAmount,
           currency,
         });

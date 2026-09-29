@@ -65,6 +65,13 @@ describe('bridge guide mechanisms', () => {
       ['rung 3, take over a page', /src\/routes\/auth\/login\/\+page\.svelte/],
       ['rung 4, headless', /getBridgeAuth\(\)/],
       ['/welcome is offered, never created unasked', /offered, never created unasked/],
+      // TBP-763 — seats are a named limit counted from membership, checked where invites happen.
+      ['seats: a named gauge counted from membership', /--metric seats --limit 10 --policy hard --kind gauge --source membership/],
+      ['seats: pending invites count', /active members, pending invites included/],
+      ['seats: the team page setting', /<TeamManagementPanel seatsMetric="seats" \/>/],
+      ['seats: the own-handler decorator', /`@RequireQuota\('seats'\)` on your own invite handler/],
+      ['seats: the invite API does not refuse', /Bridge's invite API does not refuse at the limit/],
+      ['seats: never a flag or an entitlement', /Never gate seats with a flag or an entitlement/],
     ])('%s', (_name, pattern) => {
       expect(page).toMatch(pattern);
     });

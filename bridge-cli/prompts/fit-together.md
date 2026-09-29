@@ -24,6 +24,7 @@ Features should be controlled with feature flags. A flag can switch a route, an 
 | Is this route, API endpoint, feature or piece of code on for them? | a **flag** | The code asks for the flag by key; the flag's rule decides |
 | Does their plan sell it? | the plan's **features list**, read by the flag's rule | `bridge plan feature add pro analytics`, then the rule `bridge:billing.entitlement.analytics eq true` |
 | How many do they get (projects, exports, seats)? | a **plan limit** | `bridge plan quota set pro --metric exports --limit 100 --policy hard` |
+| How many people fit in a workspace? | a **plan limit** counted from membership (seats) | `bridge plan quota set pro --metric seats --limit 10 --policy hard --kind gauge --source membership` |
 | Who is this person, and may they do this kind of thing? | a flag rule on a **privilege** (preferred) or a **role** | `privileges contains "REPORTS_VIEW"`, or `user.role eq "ADMIN"` |
 | May this person change this one record? | the app's own code | "Only the author edits their post" |
 
@@ -32,6 +33,7 @@ The flag's rule never names plans. It points at `bridge:billing.entitlement.<fea
 ## Where a flag is not the tool
 
 - **Numbers are plan limits.** "100 exports a month" or "10 projects" is a quota on the plan, not a flag. Bridge refuses at the limit and the upgrade dialog explains it.
+- **Seats are a plan limit too, counted from membership.** Bridge counts the workspace's active members; the check sits where invites happen (the team page's seat-limit setting, or `@RequireQuota('seats')` on the app's own invite handler), never in a flag or an entitlement.
 - **Permission on one specific record stays in app code.** Whether this person may edit *this* invoice depends on data only the app has (who wrote it, which team owns it). The flag decides whether invoice editing exists for them at all; the app decides the record.
 
 ## Access by who someone is

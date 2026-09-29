@@ -119,7 +119,7 @@ From their answer, map everything to confirmation tables before creating anythin
 
 Use `hard` when overage should be blocked. Use `metered` when overage should bill via Stripe.
 
-**Counter or gauge?** If deleting it frees room, it's a gauge and your app counts it; if it happened, it's a counter and Bridge counts it. AI completions, exports and API calls are counters (reset each period); projects, tickets and seats (`users`) are gauges (never reset). The developer decides the metric list; you decide the kind from that sentence and say why in one line.
+**Counter or gauge?** If deleting it frees room, it's a gauge and your app counts it; if it happened, it's a counter and Bridge counts it. AI completions, exports and API calls are counters (reset each period); projects, tickets and seats are gauges (never reset). Seats are a gauge the app names (e.g. `seats`) with source `membership`: Bridge counts the workspace's active members itself, pending invites included, and the app never reports them. The developer decides the metric list; you decide the kind from that sentence and say why in one line.
 
 **Entitlements** (features on for some plans, off for others):
 
