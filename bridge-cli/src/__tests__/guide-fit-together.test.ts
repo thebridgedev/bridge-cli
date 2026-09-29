@@ -156,6 +156,7 @@ describe('no guide teaches a hard-coded role or plan check, or talks browser cou
       "{ path: '/reports/*', privilege: 'REPORTS_VIEW' }",
       "{ path: '/reports/*', privilege: 'AUTHENTICATED', plans: ['pro'] }",
       'Browser counting is display, not enforcement.',
+      "{ match: '/admin/*', role: 'ADMIN' }",
       'Only a backend can refuse a click over the limit.',
     ])('%s', (bad) => {
       expect(accessRuleViolations(bad)).not.toEqual([]);
@@ -180,6 +181,7 @@ describe('no guide teaches a hard-coded role or plan check, or talks browser cou
       'Never describe browser counting as demo-grade.',
       "{ match: '/admin/*', featureFlag: 'admin-area', redirectTo: '/' }",
       "{ path: '/health', privilege: 'ANONYMOUS' }",
+      "await team.updateUser({ email, role: 'MEMBER' });",
     ])('%s', (good) => {
       expect(accessRuleViolations(good)).toEqual([]);
     });
