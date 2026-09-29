@@ -16,6 +16,8 @@ export interface CliTokenExchangeResponse {
   expires_at: string;
   app: { id: string; name: string };
   user: { id: string; email: string };
+  /** TBP-769 — what the login covers. Absent from servers before TBP-769. */
+  app_access?: 'app' | 'workspace';
 }
 
 export interface CliApiClientOptions {

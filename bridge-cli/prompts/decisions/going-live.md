@@ -38,7 +38,7 @@ Product questions. Ask, wait, never guess.
 |---|---|---|
 | Readiness checklist | `get_setup_status` | `bridge setup status` |
 | Check a project's env files | `diagnose_integration` | `bridge diagnose` |
-| Create a production app | `create_app`, then `use_app` | — (create it in the dashboard, then `bridge auth login --app <id>`) |
+| Create a production app | `create_app`, then `use_app` | `bridge app create --name <name> --use` |
 | Production URL, default callback, allowed origins | `update_app` | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
 | Production callback URL | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
 | Live Stripe keys | `setup_payments` | `bridge setup payments --stripe-key sk_live_… --stripe-public-key pk_live_…` |

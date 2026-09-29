@@ -6,6 +6,11 @@ import {
   readCredentials,
   type StoredCredentials,
 } from './credentials.js';
+import {
+  createWorkspaceClient,
+  looksLikeAppId,
+  resolveAppSelector,
+} from './auth/workspace-client.js';
 
 export const DEFAULT_BASE_URL = 'https://api.thebridge.dev';
 
@@ -61,13 +66,54 @@ export function getManagementClient(): BridgeManagement {
   if (_client) return _client;
 
   const debug = process.env.BRIDGE_DEBUG === 'true';
-  const envApiKey = process.env.BRIDGE_API_KEY?.trim();
   const envBaseUrl = process.env.BRIDGE_BASE_URL?.trim();
 
-  let apiKey: string;
-  let baseUrl: string;
-  let source: string;
-  let creds: StoredCredentials | null = null;
+  const selected = resolveSelectedCredential();
+  const { creds, source, selector, baseUrl } = selected;
+  // TBP-769 — a workspace login acting on another app swaps in that app's
+  // short-lived token, fetched by `prepareAppContext()` before the action ran.
+  const apiKey = _appContext ? _appContext.apiKey : selected.apiKey;
+
+  writeContextBanner({ creds, source, baseUrl, selector, appContext: _appContext });
+
+  if (debug) {
+    const baseSource =
+      envBaseUrl && envBaseUrl.length > 0
+        ? 'env'
+        : source === 'env'
+          ? 'default'
+          : 'credentials-file';
+    console.error(`[bridge-cli] apiKey=<redacted from ${source}> baseUrl=${baseUrl} (${baseSource})`);
+  }
+
+  _client = new BridgeManagement({ apiKey, baseUrl, debug });
+  _baseUrl = baseUrl;
+  _apiKey = apiKey;
+
+  return _client;
+}
+
+export interface SelectedCredential {
+  /** Map key of the stored credential (its home app id); null for BRIDGE_API_KEY. */
+  key: string | null;
+  creds: StoredCredentials | null;
+  /** The key to send: the login token, or BRIDGE_API_KEY. */
+  apiKey: string;
+  baseUrl: string;
+  source: 'profile' | 'credentials-file' | 'env';
+  selector: string | null;
+}
+
+/**
+ * WHICH login is in force, per the resolution order documented on
+ * `getManagementClient()`. Throws `ConfigError` exactly as it always has.
+ * Offline; prints nothing.
+ */
+export function resolveSelectedCredential(): SelectedCredential {
+  const envApiKey = process.env.BRIDGE_API_KEY?.trim();
+  const envBaseUrl = process.env.BRIDGE_BASE_URL?.trim();
+  const withBase = (fallback: string) =>
+    envBaseUrl && envBaseUrl.length > 0 ? envBaseUrl : fallback;
 
   const selector = activeProfileSelector();
   if (selector) {
@@ -86,53 +132,186 @@ export function getManagementClient(): BridgeManagement {
           'Refusing to fall back to another app.',
       );
     }
-    creds = entry.creds;
-    apiKey = creds.apiKey;
-    baseUrl = envBaseUrl && envBaseUrl.length > 0 ? envBaseUrl : creds.baseUrl;
-    source = 'profile';
-  } else {
-    // 2. Active credential from `bridge auth login` / `bridge auth use`.
-    const active = safeReadCredentials();
-    if (active && !isExpired(active)) {
-      creds = active;
-      apiKey = active.apiKey;
-      // Env override still wins for baseUrl (useful for hitting a local
-      // bridge-api with a token issued by prod, or vice versa during dev).
-      baseUrl = envBaseUrl && envBaseUrl.length > 0 ? envBaseUrl : active.baseUrl;
-      source = 'credentials-file';
-    } else if (envApiKey && envApiKey.length > 0) {
-      // 3. BRIDGE_API_KEY env var (CI / service-account fallback).
-      apiKey = envApiKey;
-      baseUrl = envBaseUrl && envBaseUrl.length > 0 ? envBaseUrl : DEFAULT_BASE_URL;
-      source = 'env';
-    } else if (active && isExpired(active)) {
-      // 4a. Found a credentials file but token expired; no env fallback either.
+    return {
+      key: entry.key,
+      creds: entry.creds,
+      apiKey: entry.creds.apiKey,
+      baseUrl: withBase(entry.creds.baseUrl),
+      source: 'profile',
+      selector,
+    };
+  }
+
+  // 2. Active credential from `bridge auth login` / `bridge auth use`.
+  const active = safeReadCredentials();
+  if (active && !isExpired(active)) {
+    // Env override still wins for baseUrl (useful for hitting a local
+    // bridge-api with a token issued by prod, or vice versa during dev).
+    return {
+      key: active.app.id,
+      creds: active,
+      apiKey: active.apiKey,
+      baseUrl: withBase(active.baseUrl),
+      source: 'credentials-file',
+      selector: null,
+    };
+  }
+  if (envApiKey && envApiKey.length > 0) {
+    // 3. BRIDGE_API_KEY env var (CI / service-account fallback).
+    return {
+      key: null,
+      creds: null,
+      apiKey: envApiKey,
+      baseUrl: withBase(DEFAULT_BASE_URL),
+      source: 'env',
+      selector: null,
+    };
+  }
+  if (active && isExpired(active)) {
+    // 4a. Found a credentials file but token expired; no env fallback either.
+    throw new ConfigError('Token expired. Run `bridge auth login` to re-authenticate.');
+  }
+  // 4b. No credentials at all.
+  throw new ConfigError('Not logged in. Run `bridge auth login`.');
+}
+
+// ---------------------------------------------------------------------------
+// TBP-769 — which app within the login: `--app` > `currentApp` > home.
+// ---------------------------------------------------------------------------
+
+/** The app a workspace-login command acts on, after the server re-checked access. */
+export interface AppContext {
+  apiKey: string;
+  app: { id: string; name: string };
+  /** What picked it, for the stderr line: `--app X` or `current app`. */
+  via: string;
+  /** The login's home app: access was re-checked, but no "Acting on" notice. */
+  home: boolean;
+}
+
+let _appFlag: string | null = null;
+let _appContext: AppContext | null = null;
+/** Per-app tokens, in memory for this process only. Never written to disk. */
+const _appTokenCache = new Map<string, { apiKey: string; app: { id: string; name: string }; expiresAt: number }>();
+
+/** The global `--app` value for this invocation, set by the preAction hook. */
+export function setAppOverride(app: string | null | undefined): void {
+  _appFlag = app?.trim() || null;
+}
+
+/** The app the NEXT management client will act on (workspace logins only). */
+export function getAppContext(): AppContext | null {
+  return _appContext;
+}
+
+function isHomeSelector(selector: string, home: { id: string; name: string }): boolean {
+  return selector === home.id || selector.toLowerCase() === home.name.toLowerCase();
+}
+
+/**
+ * Decide which app this command acts on and, for a workspace login, fetch
+ * the token for it before the action runs — the server re-checks access on
+ * every call (`getManagementClient()` is synchronous, so this happens up front).
+ *
+ * Precedence: `--app` > the credential's `currentApp` (`bridge app use`) > home.
+ * A workspace login calls the token route for every target, the home app
+ * included, so the server re-checks access each time. Single-app logins and `BRIDGE_API_KEY` behave exactly as
+ * before; asking them for another app is an error that says how to fix it.
+ */
+export async function prepareAppContext(fetchImpl?: typeof fetch): Promise<void> {
+  _appContext = null;
+  _client = null;
+  _http = null;
+
+  let selected: SelectedCredential;
+  try {
+    selected = resolveSelectedCredential();
+  } catch (err) {
+    // Without --app, leave "not logged in" etc. to the command, as before.
+    if (!_appFlag) return;
+    throw err;
+  }
+
+  if (selected.source === 'env' || !selected.creds || !selected.key) {
+    if (_appFlag) {
       throw new ConfigError(
-        'Token expired. Run `bridge auth login` to re-authenticate.',
+        '--app needs a workspace login from `bridge auth login`. ' +
+          'BRIDGE_API_KEY is bound to the one app it was issued for.',
       );
-    } else {
-      // 4b. No credentials at all.
-      throw new ConfigError('Not logged in. Run `bridge auth login`.');
     }
+    return;
   }
 
-  writeContextBanner({ creds, source, baseUrl, selector });
+  const creds = selected.creds;
+  const target = _appFlag ?? creds.currentApp?.id ?? null;
 
-  if (debug) {
-    const baseSource =
-      envBaseUrl && envBaseUrl.length > 0
-        ? 'env'
-        : source === 'env'
-          ? 'default'
-          : 'credentials-file';
-    console.error(`[bridge-cli] apiKey=<redacted from ${source}> baseUrl=${baseUrl} (${baseSource})`);
+  if (creds.appAccess !== 'workspace') {
+    // Single-app login: unchanged, no extra call — its token IS its one app.
+    if (!target || isHomeSelector(target, creds.app)) return;
+    // A stray currentApp on a single-app login cannot be honoured; ignore it
+    // rather than fail every command. An explicit --app is a request: refuse.
+    if (!_appFlag) return;
+    throw Object.assign(
+      new ConfigError(
+        `This login covers only the app ${creds.app.name} (${creds.app.id}), so --app ${_appFlag} is not available.`,
+      ),
+      {
+        hint:
+          'Run `bridge auth login` again and choose "Every app in <workspace>" on the consent ' +
+          'screen to work across apps with one login.',
+      },
+    );
   }
 
-  _client = new BridgeManagement({ apiKey, baseUrl, debug });
-  _baseUrl = baseUrl;
-  _apiKey = apiKey;
+  const client = createWorkspaceClient({
+    baseUrl: selected.baseUrl,
+    loginToken: creds.apiKey,
+    fetchImpl,
+  });
 
-  return _client;
+  // A workspace login re-checks access on EVERY command, home app included
+  // (the server answers the home app with the login token itself, after the
+  // check) — same as the MCP server.
+  let targetId: string;
+  if (!target || isHomeSelector(target, creds.app)) {
+    targetId = creds.app.id;
+  } else if (looksLikeAppId(target)) {
+    targetId = target;
+  } else if (creds.currentApp && target.toLowerCase() === creds.currentApp.name.toLowerCase()) {
+    targetId = creds.currentApp.id;
+  } else {
+    const { apps } = await client.listApps();
+    targetId = resolveAppSelector(target, apps).id;
+  }
+  const cacheKey = `${selected.key}:${targetId}`;
+  const cached = _appTokenCache.get(cacheKey);
+  let token: { apiKey: string; app: { id: string; name: string } };
+  if (cached && cached.expiresAt - Date.now() > 15_000) {
+    token = cached;
+  } else {
+    const res = await client.appToken(targetId);
+    const exp = Date.parse(res.expiresAt);
+    _appTokenCache.set(cacheKey, {
+      apiKey: res.apiKey,
+      app: res.app,
+      expiresAt: Number.isNaN(exp) ? Date.now() + 60_000 : exp,
+    });
+    token = res;
+  }
+
+  _appContext = {
+    apiKey: token.apiKey,
+    app: token.app,
+    via: _appFlag ? `--app ${_appFlag}` : 'current app (bridge app use)',
+    home: targetId === creds.app.id,
+  };
+}
+
+/** For tests: forget --app, the chosen app and every cached per-app token. */
+export function resetAppContext(): void {
+  _appFlag = null;
+  _appContext = null;
+  _appTokenCache.clear();
 }
 
 /**
@@ -153,10 +332,24 @@ function writeContextBanner(ctx: {
   source: string;
   baseUrl: string;
   selector: string | null;
+  appContext: AppContext | null;
 }): void {
+  const { creds, source, baseUrl, selector, appContext } = ctx;
+
+  // TBP-769 — acting on an app other than the login's home app is said out
+  // loud even with BRIDGE_NO_BANNER: it is the one case where the credential
+  // on disk does not name the app that is about to answer.
+  if (appContext && !appContext.home) {
+    const home = creds ? `${creds.label ?? creds.app.name} (${creds.app.id})` : 'login';
+    process.stderr.write(
+      `bridge: Acting on app ${appContext.app.name} (${appContext.app.id}) · ${baseUrl} · ` +
+        `via ${appContext.via}, workspace login ${home}\n`,
+    );
+    return;
+  }
+
   if (process.env.BRIDGE_NO_BANNER === 'true') return;
 
-  const { creds, source, baseUrl, selector } = ctx;
   const who = creds
     ? `${creds.label ?? creds.app.name} (${creds.app.id})`
     : 'BRIDGE_API_KEY (app unknown — the key carries it)';
@@ -174,13 +367,14 @@ function writeContextBanner(ctx: {
   if (source !== 'env' && process.env.BRIDGE_API_KEY?.trim()) {
     process.stderr.write(
       'bridge: BRIDGE_API_KEY is set but IGNORED — the credentials file wins. ' +
-        'Use `--profile <label>` to pick a stored app, or `bridge auth logout` to use the key.\n',
+        'Use `--profile <label>` to pick a stored login, `--app` to pick an app within it, ' +
+        'or `bridge auth logout` to use the key.\n',
     );
   }
   if (process.env.BRIDGE_APP_ID?.trim()) {
     process.stderr.write(
       'bridge: BRIDGE_APP_ID has no effect — the app is carried by the credential itself. ' +
-        'Use `--profile <label|app id>` or `BRIDGE_PROFILE` to target another app.\n',
+        'Use `--app <id|name>` (workspace login) or `--profile <label|app id>` to target another app.\n',
     );
   }
 }
@@ -228,6 +422,7 @@ export function getManagementHttp(): ManagementHttpClient {
  * to reset the cached client between operations.
  */
 export function resetManagementClient(): void {
+  _appContext = null;
   _client = null;
   _baseUrl = null;
   _apiKey = null;
