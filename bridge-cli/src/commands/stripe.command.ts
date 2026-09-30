@@ -1,30 +1,18 @@
 import { Command } from 'commander';
+import type { CredentialsState } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 
 /*
- * TBP-670: read the fields the SERVER returns, not the ones auth-core's
- * `CredentialsState` type declares. auth-core (<= 0.4.6) types the response of
- * `GET /v1/account/app/credentialsState` and `PUT /v1/account/app/credentials`
- * as `{ hasStripeCredentials, hasSendgridCredentials }`, but bridge-api answers
- * both with `CredentialsStateModel` (bridge-api-types/ts-client/platform/models/
- * credentials-state.model.ts), whose Stripe field is `stripeCredentialsAdded`.
- * Trusting the client type made `connected` undefined, so `stripe status`
- * always said "not connected". Same bug as TBP-656 (MCP); auth-core's type is
- * corrected in TBP-663, and until that ships this local type is the contract.
+ * TBP-670: `stripe status` reads `stripeCredentialsAdded`, the field bridge-api
+ * really sends (`CredentialsStateModel`). auth-core <= 0.4.6 typed the
+ * response as `{ hasStripeCredentials, ... }`, which made `connected` always
+ * undefined. auth-core 0.8 (TBP-663) types it as the server sends it, so the
+ * SDK type is the contract again. The readers below still take `unknown` and
+ * compare with `=== true`, so an older server that omits a field reads as
+ * "not connected" / "not reported", never as a crash.
  */
-export interface ServerCredentialsState {
-  stripeCredentialsAdded: boolean;
-  /** TBP-658. Optional: older account APIs do not send it. */
-  stripeWebhookConfigured?: boolean;
-  azureMarketplaceCredentialsAdded: boolean;
-  azureAdSsoCredentialsAdded: boolean;
-  linkedinSsoCredentialsAdded: boolean;
-  googleSsoCredentialsAdded: boolean;
-  appleSsoCredentialsAdded: boolean;
-  githubSsoCredentialsAdded: boolean;
-  facebookSsoCredentialsAdded: boolean;
-}
+export type ServerCredentialsState = CredentialsState;
 
 /** Webhook health fields on the app response (TBP-658). All optional: older APIs omit them. */
 export interface ServerAppStripeState {
