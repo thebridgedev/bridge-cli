@@ -698,3 +698,51 @@ describe('evaluateLocally (canonical auth-core evaluator)', () => {
     stderrSpy.mockRestore();
   });
 });
+
+/*
+ * TBP-757 — `bridge flag eval` previews a rule with auth-core's evaluator, so
+ * the preview must answer as the server and the SDKs do: a list attribute
+ * (`privileges`) is matched by exact element membership. Under auth-core
+ * 0.4.6 `contains` joined the list into "A,B" and substring-matched (a rule on
+ * REPORTS_VIEW also granted REPORTS_VIEW_ALL) and `in` never matched a list at
+ * all. The first and third cases fail on the old evaluator.
+ */
+describe('evaluateLocally — list attributes use exact membership (TBP-757)', () => {
+  const privilegeFlag = (operator: 'contains' | 'not_contains' | 'in', values: string[]) => ({
+    key: 'reports',
+    state: 'on-with-rule' as const,
+    valueType: 'boolean' as const,
+    offValue: false,
+    onValue: true,
+    rule: {
+      branches: [{ conditions: [{ attribute: 'privileges', operator, values }], returnValue: true }],
+      otherwiseValue: false,
+      rolloutPct: 100,
+    },
+  });
+  // What `--attribute privileges='["REPORTS_VIEW_ALL"]'` parses to.
+  const ctx = (privileges: string[]) => ({ identity: 'u-1', attributes: parseAttributes([`privileges=${JSON.stringify(privileges)}`]) });
+
+  it('contains does not match a longer key that merely starts with the value', () => {
+    const result = evaluateLocally(privilegeFlag('contains', ['REPORTS_VIEW']), ctx(['REPORTS_VIEW_ALL']));
+    expect(result.matched).toBe(false);
+    expect(result.value).toBe(false);
+  });
+
+  it('contains matches the exact key in the list', () => {
+    const result = evaluateLocally(privilegeFlag('contains', ['REPORTS_VIEW']), ctx(['USER_READ', 'REPORTS_VIEW']));
+    expect(result.matched).toBe(true);
+    expect(result.value).toBe(true);
+  });
+
+  it('in matches when any element of the list is one of the values', () => {
+    const result = evaluateLocally(privilegeFlag('in', ['REPORTS_VIEW', 'ADMIN']), ctx(['USER_READ', 'ADMIN']));
+    expect(result.matched).toBe(true);
+    expect(result.value).toBe(true);
+  });
+
+  it('not_contains is true when only a longer key is present', () => {
+    const result = evaluateLocally(privilegeFlag('not_contains', ['REPORTS_VIEW']), ctx(['REPORTS_VIEW_ALL']));
+    expect(result.matched).toBe(true);
+  });
+});

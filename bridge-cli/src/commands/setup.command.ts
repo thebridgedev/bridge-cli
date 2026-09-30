@@ -1,4 +1,5 @@
 import { Command, Option } from 'commander';
+import type { UpdateAppRequest, UpdateCredentialsRequest } from '@nebulr-group/bridge-auth-core';
 import { getManagementClient } from '../config.js';
 import { outputSuccess, outputError } from '../output.js';
 
@@ -19,7 +20,16 @@ import { outputSuccess, outputError } from '../output.js';
  * microservices/account/nebulr-api/app/dto/update-credentials-request.dto.ts
  * and update-app-request.dto.ts. Same table as auth-core's `setupSSO` and the
  * MCP `setup_sso` tool. `setup-command.test.ts` pins them to those DTOs.
+ * Since auth-core 0.8 `UpdateCredentialsRequest` / `UpdateAppRequest` declare
+ * exactly those fields, so the `satisfies` below fails the build on a typo.
  */
+
+type ProviderFieldNames = {
+  clientId: keyof UpdateCredentialsRequest;
+  clientSecret: keyof UpdateCredentialsRequest;
+  tenantId?: keyof UpdateCredentialsRequest;
+  enable: keyof UpdateAppRequest;
+};
 
 export const SSO_PROVIDERS = {
   google: { clientId: 'googleClientId', clientSecret: 'googleClientSecret', enable: 'googleSsoEnabled' },
@@ -32,7 +42,7 @@ export const SSO_PROVIDERS = {
     tenantId: 'microsoftAzureADTenantId',
     enable: 'azureAdSsoEnabled',
   },
-} as const;
+} as const satisfies Record<string, ProviderFieldNames>;
 
 export type SupportedSsoProvider = keyof typeof SSO_PROVIDERS;
 
