@@ -4,7 +4,7 @@ One page for the rules every Bridge guide builds on. Read it before you write co
 
 Who gets which feature, and how plans, roles, limits and flags divide the work, is on its own page: `bridge guide fit-together` (MCP: resource `bridge://guides/fit-together`).
 
-The examples use the SvelteKit frontend (`@nebulr-group/bridge-svelte`) and the NestJS backend (`@nebulr-group/bridge-nestjs`), the two plugins with this surface today.
+The examples use the SvelteKit frontend (`@nebulr-group/bridge-svelte`) and the NestJS backend (`@nebulr-group/bridge-nestjs`). The other plugins carry the same surface in their own idiom: React and Next.js serve the pages with `<BridgeAuthRoutes>` and `<BridgeBillingRoutes>`, Angular with `...bridgeAuthRoutes()` and `...bridgeBillingRoutes()`, and Express answers limits with `bridge.requireQuota('exports')` and `bridge.syncQuota('tickets', { current })` (plus `bridge.requireEntitlement` for the one documented exception) — the same `402` / `403` bodies as the NestJS decorators. `bridge guide <framework>` has each one's files.
 
 ## The whole integration
 
@@ -286,10 +286,10 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 
 | Topic | Command |
 |---|---|
-| Sign-in, hosted or in-app | `bridge guide svelte` · `bridge guide svelte sdk-auth` |
+| Sign-in, hosted or in-app | `bridge guide <framework>` · `bridge guide <framework> sdk-auth` (svelte, react, nextjs, angular) |
 | Plans, the subscription pages, the UI levels | `bridge guide svelte billing` |
-| Backend limits and entitlements | `bridge guide nestjs billing` |
-| Backend sign-in and route protection | `bridge guide nestjs` |
+| Backend limits and entitlements | `bridge guide nestjs billing` · `bridge guide express billing` |
+| Backend sign-in and route protection | `bridge guide nestjs` · `bridge guide express` |
 | Feature flags | `bridge guide flags` |
 | Proving sign-in works | `bridge test-user create`, then `bridge test-user verify` |
 

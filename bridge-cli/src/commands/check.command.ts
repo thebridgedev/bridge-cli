@@ -76,7 +76,7 @@ export function formatGateReport(scanned: number, findings: GateFinding[]): stri
     lines.push('');
   }
   lines.push(
-    'Not gates, and fine as they are: plan limits (`<QuotaGate>`, `useQuota`, `@RequireQuota`) and permission on one',
+    'Not gates, and fine as they are: plan limits (`<QuotaGate>`, `useQuota`, `@RequireQuota`, `bridge.requireQuota`) and permission on one',
     `specific record ("only the author edits their post"). A direct check the developer explicitly asked for stays with a`,
     `\`// ${GATE_EXCEPTION_MARKER}: <reason>\` comment on the line or the line above.`,
   );

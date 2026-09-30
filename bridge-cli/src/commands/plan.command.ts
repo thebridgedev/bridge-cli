@@ -835,7 +835,7 @@ function registerQuotaCommands(plan: Command): void {
       '--source <source>',
       "membership = Bridge counts the workspace's active members, pending invites included (needs --kind gauge, --policy hard). " +
         'Seats: name the limit (e.g. seats), --kind gauge --source membership; enforce it where invites happen ' +
-        '(the team page seat-limit setting, or @RequireQuota on your own invite handler), never with a flag or an entitlement. ' +
+        '(the team page seat-limit setting, or @RequireQuota / bridge.requireQuota on your own invite handler), never with a flag or an entitlement. ' +
         'Omit to keep an existing gauge\'s source; none removes it',
     )
     .option('--price-amount <n>', 'Per-unit price for metered quotas (required with --policy metered)', parseFloat)

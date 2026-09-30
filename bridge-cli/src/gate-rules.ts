@@ -34,7 +34,7 @@ export const GATE_EXCEPTION_MARKER = 'bridge-gate-exception';
 const ROLE_INSTEAD =
   'A flag ruled on the privilege this role stands for (`bridge role list` shows which privileges each role holds), ' +
   'e.g. `privileges contains "USER_WRITE"`. Then `<FeatureFlag key="…">` or a route rule with `featureFlag` in SvelteKit, ' +
-  '`@RequireFeatureFlag(\'…\')` in NestJS. A role rule (`user.role eq "ADMIN"`) only when the developer means the role itself.';
+  '`@RequireFeatureFlag(\'…\')` in NestJS, `bridge.protect({ featureFlag: \'…\' })` in Express. A role rule (`user.role eq "ADMIN"`) only when the developer means the role itself.';
 
 const PLAN_NAME_INSTEAD =
   'List the feature on the plans that sell it (`bridge plan feature add <plan> <feature>`) and gate with a flag ruled ' +
@@ -44,7 +44,7 @@ function planFeatureInstead(key: string | undefined): string {
   const k = key ?? '<feature>';
   return (
     `A flag \`${k}\` ruled \`bridge:billing.entitlement.${k} eq true\` ` +
-    '(SvelteKit `<FeatureFlag key>` / route rule `featureFlag`, NestJS `@RequireFeatureFlag`). ' +
+    '(SvelteKit `<FeatureFlag key>` / route rule `featureFlag`, NestJS `@RequireFeatureFlag`, Express `bridge.protect({ featureFlag })`). ' +
     `A direct plan-feature check is the documented exception: keep it only if the developer asked for no flag, and mark the line \`// ${GATE_EXCEPTION_MARKER}: <reason>\`.`
   );
 }
@@ -52,7 +52,7 @@ function planFeatureInstead(key: string | undefined): string {
 function privilegeInstead(key: string | undefined): string {
   return (
     `A flag ruled \`privileges contains "${key ?? '<PRIVILEGE>'}"\`, read with \`<FeatureFlag key>\` / a route rule ` +
-    '`featureFlag` (SvelteKit) or `@RequireFeatureFlag` (NestJS).'
+    '`featureFlag` (SvelteKit), `@RequireFeatureFlag` (NestJS) or `bridge.protect({ featureFlag })` (Express).'
   );
 }
 
@@ -87,10 +87,25 @@ export const CODE_CHECKS: CodeCheck[] = [
   { kind: 'plan-feature', pattern: /<Entitled\b[^>]*?\bto=(.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
   { kind: 'plan-feature', pattern: /\bentitlements\s*\??\.\s*can\s*\((.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
   { kind: 'plan-feature', pattern: /@RequireEntitlement\s*\((.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
+  // Express twin of `@RequireEntitlement` (bridge-express 0.7, TBP-745).
+  { kind: 'plan-feature', pattern: /\brequireEntitlement\s*\((.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
   // Plan names compared
   { kind: 'plan-name', pattern: /\bplan(?:Key|Name|Slug|Id)?\s*(?:===|!==|==|!=)\s*['"`]/i, instead: () => PLAN_NAME_INSTEAD },
   { kind: 'plan-name', pattern: /\.plan(?:\??\.(?:key|slug|name|id))?\s*(?:===|!==|==|!=)\s*['"`]/, instead: () => PLAN_NAME_INSTEAD },
   { kind: 'plan-name', pattern: /\bis(?:Pro|Free|Enterprise|Team|Business|Premium)(?:Plan|User)?\b\s*[(=]/, instead: () => PLAN_NAME_INSTEAD },
+  // bridge-express 0.7 (TBP-745) removed `protect({ role | plans | entitlement | entitlements })`;
+  // each now fails at startup. `plans: [` is caught by the rule below.
+  {
+    kind: 'removed-api',
+    pattern: /\bprotect\s*\(\s*\{[^}]*\brole\s*:/,
+    instead: () => `\`bridge.protect({ role })\` is gone in bridge-express 0.7. ${ROLE_INSTEAD}`,
+  },
+  {
+    kind: 'removed-api',
+    pattern: /\bprotect\s*\(\s*\{[^}]*\bentitlements?\s*:\s*(.*)/,
+    instead: (m) =>
+      `\`bridge.protect({ entitlement })\` is gone in bridge-express 0.7. ${planFeatureInstead(leadingLiteral(m[1]))}`,
+  },
   {
     kind: 'removed-api',
     pattern: /\bplans\s*:\s*\[/,
@@ -146,6 +161,8 @@ export const DOC_FORBIDDEN: Array<[string, RegExp]> = [
   ['a direct plan-feature check', /<Entitled\b/],
   ['a direct plan-feature check', /\bentitlements\s*\??\.\s*can\s*\(/],
   ['a direct plan-feature check', /@RequireEntitlement\s*\(/],
+  ['a direct plan-feature check', /\brequireEntitlement\s*\(/],
+  ['a removed Express protect option', /\bprotect\s*\(\s*\{[^}\n]*\b(?:role|plans|entitlements?)\s*:/],
   ['a plan name compared in code', /\.plan(?:Key|Name|Slug)?\s*(?:===|!==|==|!=)\s*['"`]/],
   ['a plan name compared in code', /\bplan(?:Key|Name|Slug)?\s*(?:===|!==|==|!=)\s*['"`]/i],
   ['a plan-name helper', /\bis(?:Pro|Free|Enterprise|Team|Business)(?:Plan|User)?\b\s*[(=]/],
