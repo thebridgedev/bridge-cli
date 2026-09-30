@@ -47,7 +47,7 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 
 3. **Bridge Auth installed?** — look for `@nebulr-group/bridge-<framework>` in dependencies. Billing is scoped to a workspace/tenant and requires Bridge Auth. If not present, stop and run `bridge guide` first.
 
-4. **Billing already wired?** — check whether the subscription pages are served (on SvelteKit: `src/routes/subscription/[...bridge]/+page.svelte` rendering `<BridgeBillingRoutes />`) and whether `bridge plan list` returns at least one plan. If billing looks complete, jump to **Step 1b**.
+4. **Billing already wired?** — check whether the subscription pages are served (SvelteKit: `src/routes/subscription/[...bridge]/+page.svelte` rendering `<BridgeBillingRoutes />`; React: `<BridgeBillingRoutes />` on `/subscription/*`; Next.js: `app/subscription/[[...bridge]]/page.tsx`; Angular: `...bridgeBillingRoutes()` in `app.routes.ts`) and whether `bridge plan list` returns at least one plan. If billing looks complete, jump to **Step 1b**.
 
 5. **Existing billing system?** — look for `stripe`, `@stripe/*`, `paddle-*`, `lemon-squeezy`, `chargebee`. Flag any found.
 
@@ -58,7 +58,7 @@ If Step 1 found billing already partially or fully set up, audit it before doing
 - Run `bridge plan list` — are plans defined?
 - Check the subscription pages are served (SvelteKit: the `subscription/[...bridge]` file above; other frameworks: the route the per-framework guide names)
 - Check the root layout for `<BridgeBillingNotice />`
-- Check every backend handler that creates a limited thing carries the plan-limit decorator (NestJS: `@RequireQuota`)
+- Check every backend handler that creates a limited thing carries the plan-limit check (NestJS: `@RequireQuota`; Express: `bridge.requireQuota`)
 
 **Decision:**
 - **Fully wired** (plans exist, subscription pages served, notice in layout, limits on the backend) → skip to **Step 6** and output the success message
@@ -201,7 +201,7 @@ bridge plan feature add <plan> <feature_key> --name "<Display name>"
 on the plan; every `hard` quota is also an entitlement of the same name.)
 Check the result with `bridge plan quota list`, which lists every metric with its kind.
 
-**Where the limit is counted.** Once, where the action happens. Ask the developer whether the action calls their server. If it does, the plan-limit decorator on the handler that creates the thing (NestJS `@RequireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire — and the frontend only shows that decision. If it happens in the browser only, the frontend reports it (`bridge.usage.report` / `bridge.usage.set`) and `<QuotaGate>` stops the button at the cap: a complete, first-class setup. Never both for one metric. `bridge guide mechanisms` has the whole model; `bridge guide fit-together` shows where limits sit next to plans, roles and flags.
+**Where the limit is counted.** Once, where the action happens. Ask the developer whether the action calls their server. If it does, the plan-limit check on the handler that creates the thing (NestJS `@RequireQuota`, Express `bridge.requireQuota`) refuses at the cap and records the use after a successful request — a POST increments the limit, nothing else to wire — and the frontend only shows that decision. If it happens in the browser only, the frontend reports it (`bridge.usage.report` / `bridge.usage.set`) and `<QuotaGate>` stops the button at the cap: a complete, first-class setup. Never both for one metric. `bridge guide mechanisms` has the whole model; `bridge guide fit-together` shows where limits sit next to plans, roles and flags.
 
 ## Step 4 — Fetch and apply the per-framework guide
 
@@ -325,4 +325,4 @@ Do not run these automatically — the developer decides when they want each.
 | `hard` | Entitlement flips off at cap; no overage | Seat counts, included features |
 | `metered` | Overage bills as a Stripe metered price; usage continues | API calls, storage |
 
-Bridge's usage ingest always accepts events — it never refuses on the app's behalf. With a backend, the refusal at a hard cap comes from **your** backend: the plan-limit decorator (`@RequireQuota`) reads the quota and answers `402 QUOTA_EXCEEDED` before the handler runs. Without one, `<QuotaGate>` stops the button at the cap. `bridge guide mechanisms` explains the model.
+Bridge's usage ingest always accepts events — it never refuses on the app's behalf. With a backend, the refusal at a hard cap comes from **your** backend: the plan-limit check (`@RequireQuota` in NestJS, `bridge.requireQuota` in Express) reads the quota and answers `402 QUOTA_EXCEEDED` before the handler runs. Without one, `<QuotaGate>` stops the button at the cap. `bridge guide mechanisms` explains the model.

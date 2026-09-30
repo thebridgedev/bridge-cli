@@ -112,7 +112,7 @@ The framework guide tells you precisely what must exist (bootstrap call, provide
 **General decision matrix** (independent of framework):
 
 - **Wiring complete AND the auth pages are served** → Bridge is fully integrated. Skip to **Step 6b** and output the success message.
-- **Bootstrap wiring complete BUT the auth pages are missing** → Bridge is partially integrated. Without them signup verification, password reset and the SSO callback land on a 404. On SvelteKit the fix is one file, `src/routes/auth/[...bridge]/+page.svelte` rendering `<BridgeAuthRoutes />`; hand-written pages that only render a Bridge component can then be deleted. On other frameworks the guide names the files. Add only what's missing.
+- **Bootstrap wiring complete BUT the auth pages are missing** → Bridge is partially integrated. Without them signup verification, password reset and the SSO callback land on a 404. On SvelteKit the fix is one file, `src/routes/auth/[...bridge]/+page.svelte` rendering `<BridgeAuthRoutes />`; hand-written pages that only render a Bridge component can then be deleted. React: one `/auth/*` route rendering `<BridgeAuthRoutes />`. Next.js: `app/auth/[...bridge]/page.tsx` rendering `<BridgeAuthRoutes />` (hosted sign-in with the `withBridgeAuth` middleware uses `app/auth/oauth-callback/route.ts` instead). Angular: `...bridgeAuthRoutes()` spread into `app.routes.ts`. Add only what's missing.
 - **Bootstrap wiring incomplete** (regardless of route state) → Offer to complete the initial setup (proceed to Step 4).
 - **Bridge is NOT installed** → Continue with Steps 2–6 for fresh setup.
 
@@ -210,10 +210,10 @@ For each confirmed project, fetch the framework-specific integration prompt.
 | Express | `bridge guide express` |
 
 Follow the per-framework guide instructions verbatim. Pass these values from Step 3:
-- `appId` — same for all projects; it goes in the project's `.env` (`VITE_BRIDGE_APP_ID` on SvelteKit, `BRIDGE_APP_ID` on NestJS), which the plugin reads itself
+- `appId` — same for all projects; it goes in the project's `.env` (`VITE_BRIDGE_APP_ID` on SvelteKit and React, `NEXT_PUBLIC_BRIDGE_APP_ID` on Next.js, `BRIDGE_APP_ID` on NestJS and Express), which the plugin reads itself. Angular has no env convention: `appId` goes in `provideBridge({ appId })` from `environment.ts`. On every plugin an option passed explicitly wins over the environment
 - `packageManager` — detected in Step 1 (use it for all install commands)
 
-**What the handover looks like.** The guides are short because the plugins serve their own pages. On SvelteKit the whole frontend integration is the `.env` line, `src/routes/+layout.ts` (`export const load = bridgeBootstrap({ rules })`), `src/routes/+layout.svelte` (`<BridgeBootstrap>`) and one auth file, `src/routes/auth/[...bridge]/+page.svelte` — about fifteen lines. On NestJS it is `BridgeModule.forRoot({ guard: { global: true } })` in `AppModule` and the `.env` line. Do not write login, signup, callback or password pages by hand, and no fetch helper for tokens. `bridge guide mechanisms` explains the levels and customisation rungs if the developer asks for more.
+**What the handover looks like.** The guides are short because the plugins serve their own pages. On SvelteKit the whole frontend integration is the `.env` line, `src/routes/+layout.ts` (`export const load = bridgeBootstrap({ rules })`), `src/routes/+layout.svelte` (`<BridgeBootstrap>`) and one auth file, `src/routes/auth/[...bridge]/+page.svelte` — about fifteen lines. React, Next.js and Angular follow the same shape: the provider (`<BridgeProvider>` / `provideBridge()`), one auth route (`<BridgeAuthRoutes>` / `...bridgeAuthRoutes()`) and, with plans, one subscription route on `/subscription` (`<BridgeBillingRoutes>` / `...bridgeBillingRoutes()`). On NestJS it is `BridgeModule.forRoot({ guard: { global: true } })` in `AppModule` and the `.env` line; on Express, `createBridge()` and `app.use(bridge.auth())`. Do not write login, signup, callback or password pages by hand, and no fetch helper for tokens. `bridge guide mechanisms` explains the levels and customisation rungs if the developer asks for more.
 
 **Order:** Frontend first, then backend. This lets you verify login works before adding backend guards.
 

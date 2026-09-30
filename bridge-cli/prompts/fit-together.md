@@ -54,7 +54,7 @@ A flag rule on a role, a privilege, the plan or a plan feature gives the same an
 
 Ask the developer first: **"Does this action call your server?"** Then:
 
-- **Yes, it calls the backend:** the backend counts it. One decorator on the handler (`@RequireQuota('exports')` in NestJS) refuses at the limit with `402` and records the use after a successful request. The frontend only shows the count and the upgrade dialog; it does not report the same metric.
+- **Yes, it calls the backend:** the backend counts it. One check on the handler (`@RequireQuota('exports')` in NestJS, `bridge.requireQuota('exports')` in Express) refuses at the limit with `402` and records the use after a successful request. The frontend only shows the count and the upgrade dialog; it does not report the same metric.
 - **No, it happens in the browser** (local-first, data on the device, no server of the developer's own): the browser counts it. `bridge.usage.report('exports')` for something that happened, `bridge.usage.set('projects', n)` for how many exist now, and `<QuotaGate metric="exports">` around the button so it stops at the limit. This is a complete, first-class way to run limits.
 
 Never count one metric in both places: it is counted twice. Never describe browser counting as a lesser or temporary option; ask the question above and follow the answer.
