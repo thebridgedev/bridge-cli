@@ -48,7 +48,7 @@ export const JOURNEYS: Journey[] = [
     steps: [
       'Goal: users can sign up and sign in to this app through the Bridge.',
       'Read the current setup with `bridge app get` and `bridge auth config`.',
-      'Ask the developer which sign-in methods they want before changing them; SSO is `bridge setup sso`.',
+      'See every sign-in method with `bridge auth methods list`; ask the developer which they want, then `bridge auth methods enable|disable`. A social provider needs its credentials first: `bridge setup sso`.',
       'Register the callback URL with `bridge app redirect-uris add` (never replace the list).',
       'Prove it works at the end: `bridge test-user create`, then `bridge test-user verify`.',
     ],
