@@ -7,6 +7,7 @@
  *   - `status`          (TBP-113): show current login state.
  *   - `use`             (TBP-628): switch the default app, offline.
  *   - `config`/`mfa`/`password-policy`: pre-existing app auth-config commands.
+ *   - `methods`         (TBP-547): list every login method, switch any one.
  */
 import type { Command } from 'commander';
 import { registerAuthLoginCommand } from './auth/login.command.js';
@@ -14,6 +15,7 @@ import { registerAuthLogoutCommand } from './auth/logout.command.js';
 import { registerAuthStatusCommand } from './auth/status.command.js';
 import { registerAuthUseCommand } from './auth/use.command.js';
 import { registerAuthConfigCommands } from './auth/config.command.js';
+import { registerAuthMethodsCommands } from './auth/methods.command.js';
 
 export function registerAuthCommands(program: Command): void {
   const auth = program
@@ -30,4 +32,7 @@ export function registerAuthCommands(program: Command): void {
 
   // Pre-existing — app-level auth configuration.
   registerAuthConfigCommands(auth);
+
+  // TBP-547 — every login method in one place.
+  registerAuthMethodsCommands(auth);
 }

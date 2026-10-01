@@ -44,14 +44,15 @@ Apply these without asking. Say the reason in one line.
 
 | Step | MCP | CLI |
 |---|---|---|
-| Turn magic link, passkeys or two-factor on or off | `update_auth_methods` | `bridge app update --magic-link-enabled true` (also `--passkeys-enabled`, `--mfa-enabled`) |
+| See every login method and whether it is on | `get_auth_config` | `bridge auth methods list` |
+| Turn magic link, passkeys, two-factor or a social provider on or off | `update_auth_methods` | `bridge auth methods enable magicLink` / `bridge auth methods disable google` |
 | Add a social provider with its credentials | `setup_sso` | `bridge setup sso --provider google --client-id … --client-secret …` |
 | Register the callback URL | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
 | Set UI URL, default callback, allowed origins | `update_app` | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
 | Change token lifetimes (seconds) | `update_password_policy` | `bridge auth password-policy --access-token-ttl 900` |
 | Code for the framework | `get_integration_guide` (topic `auth`) | `bridge guide svelte` (hosted) or `bridge guide svelte sdk-auth` (in-app) |
 
-`setup_sso` returns a callback URL. The developer must paste it into the provider's console, or that provider's sign-in fails with a redirect mismatch. Always show it to them with that instruction. `update_auth_methods` can switch a provider on but never saves its credentials.
+`setup_sso` returns a callback URL. The developer must paste it into the provider's console, or that provider's sign-in fails with a redirect mismatch. Always show it to them with that instruction. `update_auth_methods` / `bridge auth methods` never save credentials: Bridge refuses to switch a social provider on until they are saved, and switching one off keeps them. Bridge also refuses to switch off the last remaining sign-in method.
 
 ## Prove it
 
