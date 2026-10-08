@@ -1,7 +1,7 @@
 {
   "name": "@nebulr-group/bridge-cli",
   "version": "0.6.2",
-  "description": "Bridge platform CLI for AI coding agents and developers",
+  "description": "The Bridge CLI: set up and manage sign-in, roles, plans, feature flags and API tokens from your terminal or AI coding agent.",
   "author": "Nebulr Group",
   "license": "MIT",
   "type": "module",
@@ -35,16 +35,27 @@
     "typescript": "^5.7.3"
   },
   "keywords": [
-    "bridge",
     "cli",
     "ai-agent",
-    "management",
-    "auth",
-    "feature-flags"
+    "claude-code",
+    "cursor",
+    "mcp",
+    "devtools",
+    "the-bridge",
+    "bridge",
+    "authentication",
+    "feature-flags",
+    "stripe",
+    "subscriptions",
+    "saas",
+    "management"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/thebridgedev/bridge-cli"
   },
-  "homepage": "https://thebridge.dev"
+  "homepage": "https://thebridge.dev/docs/getting-started/",
+  "bugs": {
+    "url": "https://github.com/thebridgedev/bridge-cli/issues"
+  }
 }
