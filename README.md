@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><img src="https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/.github/assets/banner.png" alt="The Bridge CLI" width="100%"></a>
+  <a href="https://thebridge.dev/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli"><img src="https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/.github/assets/banner.png" alt="The Bridge CLI" width="100%"></a>
 </p>
 
 <p align="center">
@@ -8,17 +8,17 @@
 </p>
 
 <p align="center">
-  <a href="https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Website</b></a> ·
-  <a href="https://thebridge.dev/docs/getting-started/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Getting started</b></a> ·
-  <a href="https://thebridge.dev/docs/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Docs</b></a> ·
-  <a href="https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Set up with your AI assistant</b></a>
+  <a href="https://thebridge.dev/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli"><b>Website</b></a> ·
+  <a href="https://thebridge.dev/docs/getting-started/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli"><b>Getting started</b></a> ·
+  <a href="https://thebridge.dev/docs/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli"><b>Docs</b></a> ·
+  <a href="https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli"><b>Set up with your AI assistant</b></a>
 </p>
 
 # The Bridge CLI
 
 `@nebulr-group/bridge-cli` sets up and manages your Bridge app from the terminal: apps, sign-in methods, roles, plans and prices, feature flags and API tokens. Built for AI coding agents (Claude Code, Cursor, Copilot) as much as for people.
 
-**[The Bridge](https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)** is a hosted backend for SaaS apps. It gives you sign-in (passwords, magic links, passkeys, social login and SSO), multi-tenant workspaces with roles, Stripe subscriptions with plan limits, and feature flags, all managed from one dashboard. Your AI coding assistant can set it up for you through the [Bridge MCP server](https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli).
+**[The Bridge](https://thebridge.dev/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli)** is a hosted backend for SaaS apps. It gives you sign-in (passwords, magic links, passkeys, social login and SSO), multi-tenant workspaces with roles, Stripe subscriptions with plan limits, and feature flags, all managed from one dashboard. Your AI coding assistant can set it up for you through the [Bridge MCP server](https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli).
 
 ## Installation
 
@@ -488,11 +488,11 @@ npm test
 
 ## Learn more
 
-- [Getting started](https://thebridge.dev/docs/getting-started/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [Set up Bridge with your AI assistant](https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [Feature flags](https://thebridge.dev/docs/feature-flags/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [Subscriptions and plan limits](https://thebridge.dev/docs/billing/how-it-works/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [API reference](https://thebridge.dev/docs/api-reference/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
+- [Getting started](https://thebridge.dev/docs/getting-started/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli)
+- [Set up Bridge with your AI assistant](https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli)
+- [Feature flags](https://thebridge.dev/docs/feature-flags/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli)
+- [Subscriptions and plan limits](https://thebridge.dev/docs/billing/how-it-works/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli)
+- [API reference](https://thebridge.dev/docs/api-reference/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli)
 
 ## Other Bridge packages
 
@@ -508,4 +508,4 @@ npm test
 
 ## License
 
-[MIT](https://github.com/thebridgedev/bridge-cli/blob/main/LICENSE) © Nebulr. Built by [The Bridge](https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli).
+[MIT](https://github.com/thebridgedev/bridge-cli/blob/main/LICENSE) © Nebulr. Built by [The Bridge](https://thebridge.dev/?utm_source=github&utm_medium=readme&utm_campaign=bridge-cli).
