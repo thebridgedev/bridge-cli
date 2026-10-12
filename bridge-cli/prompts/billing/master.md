@@ -101,13 +101,15 @@ From their answer, map everything to confirmation tables before creating anythin
 
 | plan | amount | currency | interval |
 |------|--------|----------|----------|
+| `free` | 0 | USD | month |
 | `pro` | 29 | USD | month |
 | `pro` | 290 | USD | year |
 
 > **A single plan can carry both a monthly and a yearly price.** When the
 > developer gives two intervals for one tier (e.g. "$29/month or $290/year"),
 > that is **ONE plan with two prices** — never separate `pro-monthly` /
-> `pro-yearly` plans. A free plan simply has no price rows.
+> `pro-yearly` plans. A free plan gets one price of 0: a plan with no price cannot
+> be assigned to a workspace, and Bridge refuses to create one.
 
 **Quotas** (per-resource limits that differ between plans):
 
@@ -233,12 +235,14 @@ opts out** — it's the expected first-run experience.
 - The per-framework guide (Step 4) mounts the plugin's subscription pages, which include a
   default paywall page (on SvelteKit: `/subscription/plan`, served by the subscription
   catch-all). Confirm that part ran. Do **not** create a separate welcome page on your own.
-- The paywall applies once the app has plans; `paymentsAutoRedirect` (below) switches it.
+- The paywall applies once the app has plans, and only while `paymentsAutoRedirect` is on.
 - A dedicated onboarding page such as `/welcome` is a product choice: **ask the developer**
   whether they want one. Only if they say yes, add it as the per-framework guide shows and
   point `billing.paywallRoute` at it.
-- The app-level flag `paymentsAutoRedirect` drives the redirect and is **`true` by
-  default** — there is nothing to switch on.
+- Read `paymentsAutoRedirect` (`bridge app get`). **On:** nothing to do. **Off:** tell the
+  developer in one line that new customers are not asked to pick a plan while it is off,
+  and turn it on only if they say so. Do not investigate why it is off: the developer may
+  have switched it off on purpose.
 
 If the developer does **not** want a forced paywall, disable it with one command:
 
