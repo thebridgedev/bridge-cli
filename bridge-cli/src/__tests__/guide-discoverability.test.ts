@@ -4,8 +4,8 @@
  *
  * A port with bridge-svelte installed hand-wrote its login form against a
  * guessed endpoint because `bridge guide svelte` never mentioned that an
- * in-app-forms guide exists. So the framework guide opens by naming both
- * sign-in modes, and a failed `bridge guide <framework> <x>` names the guides
+ * in-app-forms guide exists. So the framework guide opens by naming the
+ * sign-in pages guide (TBP-807: and never offers a hosted alternative), and a failed `bridge guide <framework> <x>` names the guides
  * that do exist. `fetch` (GitHub) is the only fake.
  */
 jest.mock('@nebulr-group/bridge-auth-core', () => ({
@@ -46,14 +46,15 @@ async function run(...args: string[]) {
   await program.parseAsync(['node', 'bridge', ...args]);
 }
 
-describe('`bridge guide <framework>` names both sign-in modes', () => {
-  it('opens the hosted guide with the in-app-forms alternative, by command', async () => {
+describe('`bridge guide <framework>` points at the sign-in pages guide', () => {
+  it('opens the framework guide with the sign-in pages guide, by command', async () => {
     served['bridge-react/main/mcp/integration-prompt.md'] = '# React integration';
     await run('guide', 'react');
     const printed = (outputPrompt as jest.Mock).mock.calls[0][0] as string;
-    expect(printed).toMatch(/^> \*\*Two ways to sign in/);
+    expect(printed).toMatch(/^> \*\*The sign-in pages, matching the app's design:\*\*/);
+    expect(printed).not.toMatch(/hosted/i);
     expect(printed).toContain('`bridge guide react sdk-auth`');
-    expect(printed).toMatch(/never write a login form or call Bridge auth endpoints by hand/);
+    expect(printed).toMatch(/Never write a login form or call Bridge auth endpoints by hand/);
     expect(printed.endsWith('# React integration')).toBe(true);
   });
 

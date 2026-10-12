@@ -215,7 +215,7 @@ This is a complete, first-class way to run limits. When the action does call you
 
 ## 6. Four levels of customising Bridge's pages
 
-The same ladder holds for the sign-in pages (`<BridgeAuthRoutes>`) and the subscription pages (`<BridgeBillingRoutes>`). Climb only as far as you need.
+The same ladder holds for the sign-in pages (`<BridgeAuthRoutes>`) and the subscription pages (`<BridgeBillingRoutes>`). The pages must end up looking like the app they sit in: rung 1, with the tokens taken from the app's own styles, is always applied, and rung 2 too when the app frames its pages in a card or shell. Climb further only as far as you need.
 
 | Rung | What you do | What you own |
 |---|---|---|
@@ -276,7 +276,7 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 
 ## 7. Pages Bridge serves, and the one it only offers
 
-- **Sign-in:** `src/routes/auth/[...bridge]/+page.svelte` serves login, signup, the OAuth callback, set password (where signup verification and password-reset emails land), forgot password, magic link, passkey setup and workspace selection. Which methods appear comes from the app's settings at runtime, so turning magic links on needs no code. Hosted and in-app sign-in use the same file; `loginRoute: '/auth/login'` in `bridgeBootstrap()` is the whole switch to in-app.
+- **Sign-in:** `src/routes/auth/[...bridge]/+page.svelte` serves login, signup, the OAuth callback, set password (where signup verification and password-reset emails land), forgot password, magic link, passkey setup and workspace selection. Which methods appear comes from the app's settings at runtime, so turning magic links on needs no code. The pages render inside the app: `loginRoute: '/auth/login'` in `bridgeBootstrap()`. (If the developer explicitly asks for Bridge's hosted sign-in page, or the app already uses it, respect that: leave out `loginRoute`.)
 - **Subscription:** `src/routes/subscription/[...bridge]/+page.svelte` serves `/subscription`, the paywall `/subscription/plan`, and the checkout return pages `/subscription/success` and `/subscription/error`. Bridge's redirects and upgrade links point there by default.
 - **The paywall** redirects a signed-in workspace with no plan to `/subscription/plan` before any page renders — only when the app has plans and its `paymentsAutoRedirect` setting is on (the default). `bridge app update --payments-auto-redirect false` turns it off.
 - **A `/welcome` onboarding page is offered, never created unasked.** It is a product decision: ask the developer. Only if they say yes, add a one-line page rendering `<BridgePaywallPage />` and `billing: { paywallRoute: '/welcome' }` in `bridgeBootstrap()`.
@@ -286,12 +286,12 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 
 | Topic | Command |
 |---|---|
-| Sign-in, hosted or in-app | `bridge guide <framework>` · `bridge guide <framework> sdk-auth` (svelte, react, nextjs, angular) |
+| Sign-in and the sign-in pages | `bridge guide <framework>` · `bridge guide <framework> sdk-auth` (svelte, react, nextjs, angular) |
 | Plans, the subscription pages, the UI levels | `bridge guide svelte billing` |
 | Backend limits and entitlements | `bridge guide nestjs billing` · `bridge guide express billing` |
 | Backend sign-in and route protection | `bridge guide nestjs` · `bridge guide express` |
 | Feature flags | `bridge guide flags` |
-| Proving sign-in works | `bridge test-user create`, then `bridge test-user verify` |
+| Proving sign-in works | The developer signs up and signs in in the app; `bridge event auth-attempts --user <email>` explains a failure |
 
 ## Exceptions
 

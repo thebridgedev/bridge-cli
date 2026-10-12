@@ -51,7 +51,7 @@ Pass the role key the developer chose on every invitation you make on their beha
 
 ## Prove it
 
-1. Create a test user (`create_test_user` / `bridge test-user create`) and sign in (`verify_login` / `bridge test-user verify`): the response names the workspace.
+1. Ask the developer to sign up themselves in the running app; their workspace then appears in `list_tenants` / `bridge tenant list`.
 2. Invite a second address into that workspace and check it appears in `list_users` / `bridge user list` with the role you meant.
 
 ## Where this connects

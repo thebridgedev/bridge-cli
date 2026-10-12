@@ -26,9 +26,9 @@ Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it
 | Set the frontend URL, callback and allowed origins (Step 3b) | `update_app` (`uiUrl`, `defaultCallbackUri`, `allowedOrigins`); `allowedOrigins` replaces the whole list, so send every origin | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
 | Add one redirect URI, keeping the others (Step 3b) | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
 | This prompt | `get_integration_guide` (topic `master`) | `bridge guide` |
-| A per-framework guide (Step 4) | `get_integration_guide` (topic `auth`) with the framework; topic `integration` for the hosted setup | `bridge guide <framework> sdk-auth` / `bridge guide <framework>` |
+| A per-framework guide (Step 4) | `get_integration_guide` (topic `integration`, then `auth`) with the framework | `bridge guide <framework>`, then `bridge guide <framework> sdk-auth` |
 | Check the project's env vars against the app (Step 6) | `diagnose_integration` | `bridge diagnose` |
-| Prove a real sign-in works (Step 6) | `create_test_user`, then `verify_login` | `bridge test-user create`, then `bridge test-user verify` |
+| Why the developer's own sign-in failed (Step 6) | `debug_auth_issue` with their email | `bridge event auth-attempts --user <email>` |
 | Roles and flags for route protection (Step 5) | `list_roles`, `list_feature_flags` | `bridge role list`, `bridge flag list` |
 
 ---
@@ -103,8 +103,8 @@ If Step 1 detected a Bridge plugin (`@nebulr-group/bridge-<framework>`) in `depe
 **Delegate the audit to the per-framework guide.** Each plugin's guide ships an "Integration audit" section that lists the exact files / providers / route shapes the framework requires. Run:
 
 ```
-bridge guide <framework>              # hosted-auth audit checklist
-bridge guide <framework> sdk-auth     # SDK-auth audit checklist (in-app forms)
+bridge guide <framework>              # integration audit checklist
+bridge guide <framework> sdk-auth     # the sign-in pages and their design
 ```
 
 The framework guide tells you precisely what must exist (bootstrap call, provider wrapping, the auth pages, environment variables). Apply that checklist to the project on disk.
@@ -112,7 +112,7 @@ The framework guide tells you precisely what must exist (bootstrap call, provide
 **General decision matrix** (independent of framework):
 
 - **Wiring complete AND the auth pages are served** → Bridge is fully integrated. Skip to **Step 6b** and output the success message.
-- **Bootstrap wiring complete BUT the auth pages are missing** → Bridge is partially integrated. Without them signup verification, password reset and the SSO callback land on a 404. On SvelteKit the fix is one file, `src/routes/auth/[...bridge]/+page.svelte` rendering `<BridgeAuthRoutes />`; hand-written pages that only render a Bridge component can then be deleted. React: one `/auth/*` route rendering `<BridgeAuthRoutes />`. Next.js: `app/auth/[...bridge]/page.tsx` rendering `<BridgeAuthRoutes />` (hosted sign-in with the `withBridgeAuth` middleware uses `app/auth/oauth-callback/route.ts` instead). Angular: `...bridgeAuthRoutes()` spread into `app.routes.ts`. Add only what's missing.
+- **Bootstrap wiring complete BUT the auth pages are missing** → Bridge is partially integrated. Without them signup verification, password reset and the SSO callback land on a 404. On SvelteKit the fix is one file, `src/routes/auth/[...bridge]/+page.svelte` rendering `<BridgeAuthRoutes />`; hand-written pages that only render a Bridge component can then be deleted. React: one `/auth/*` route rendering `<BridgeAuthRoutes />`. Next.js: `app/auth/[...bridge]/page.tsx` rendering `<BridgeAuthRoutes />`. Angular: `...bridgeAuthRoutes()` spread into `app.routes.ts`. Add only what's missing.
 - **Bootstrap wiring incomplete** (regardless of route state) → Offer to complete the initial setup (proceed to Step 4).
 - **Bridge is NOT installed** → Continue with Steps 2–6 for fresh setup.
 
@@ -136,20 +136,7 @@ Which projects should I integrate? (all / select by number)
 
 Wait for confirmation before proceeding. If the user selects specific projects, only integrate those.
 
-**Auth approach (frontend projects only):**
-
-After confirming which projects to integrate, ask about the auth approach:
-
-```
-Which auth approach do you want for the frontend?
-
-- Hosted (default) — Bridge handles the login page. Fastest setup, zero UI to build.
-- SDK — In-app login/signup forms. Full control over the auth UX.
-```
-
-Note the user's choice. It determines which guide to fetch in Step 4:
-- **Hosted** → `bridge guide <framework>` (default)
-- **SDK** → `bridge guide <framework> sdk-auth`
+**Sign-in (frontend projects only).** Sign-in happens inside the app (SDK mode): the plugin serves the login, signup and password pages on the app's own routes, inside its own layout, styled to match the app's existing design (Step 4). There is nothing to choose; tell the developer in one line, e.g. "Sign-in will be in your app, styled to match it." (If the developer explicitly asks for Bridge's hosted sign-in page, or the app already uses it, respect that.)
 
 ## Step 3 — Get Bridge app context
 
@@ -179,13 +166,7 @@ bridge app update \
   --allowed-origins <frontend-url>
 ```
 
-`--ui-url` is also where links in Bridge's emails point. When your **backend** calls the Bridge API — inviting a user, triggering a password reset — the request carries no browser origin, so Bridge falls back to this URL to build the link. Leave it unset and those users land on Bridge's hosted sign-in pages instead of your app. The URL must also appear in `--allowed-origins`, or Bridge ignores it and uses the hosted pages.
-
-If the hosted sign-in UI is on a different origin (e.g., `http://localhost:3091` in local dev, `https://app.thebridge.dev` in prod), add it to `--allowed-origins` as well:
-
-```bash
-bridge app update --allowed-origins <frontend-url>,<hosted-url>
-```
+`--ui-url` is also where links in Bridge's emails point. When your **backend** calls the Bridge API — inviting a user, triggering a password reset — the request carries no browser origin, so Bridge falls back to this URL to build the link. Leave it unset and those users land on a Bridge page instead of your app. The URL must also appear in `--allowed-origins`, or Bridge ignores it.
 
 Without this, the Bridge API will reject the OAuth redirect (invalid redirect_uri) and block CORS requests from the frontend (origin not allowed).
 
@@ -193,14 +174,16 @@ Without this, the Bridge API will reject the OAuth redirect (invalid redirect_ur
 
 For each confirmed project, fetch the framework-specific integration prompt.
 
-**Frontend projects** — use the auth approach chosen in Step 2:
+**Frontend projects** — the setup, then the sign-in pages:
 
-| Framework | Hosted (default) | SDK |
-|-----------|-------------------|-----|
+| Framework | Setup | Sign-in pages and their design |
+|-----------|-------|--------------------------------|
 | SvelteKit | `bridge guide svelte` | `bridge guide svelte sdk-auth` |
 | React | `bridge guide react` | `bridge guide react sdk-auth` |
 | Next.js | `bridge guide nextjs` | `bridge guide nextjs sdk-auth` |
 | Angular | `bridge guide angular` | `bridge guide angular sdk-auth` |
+
+**Match the app's design.** The sign-in pages render inside the app, so they must look like the rest of it, not like Bridge's defaults. Before you finish, read the app's existing styles (global CSS, CSS variables, Tailwind or theme config, the font it loads, an existing button and input) and set the `--bridge-*` design tokens from them; if the app wraps its pages in a card or shell, give the sign-in pages the same frame. The per-framework guide's *Match the app's design* section has the mapping. Ask for colours only when the project has no styles of its own.
 
 **Backend projects:**
 
@@ -240,7 +223,8 @@ For each integrated project:
 1. **Build check** — run the project's build command (from `package.json` scripts)
 2. **Config check** — confirm the `appId` environment variable is set
 3. **Route check** — confirm protected routes have guards and public routes are accessible
-4. **Gate check** — run `npx @nebulr-group/bridge-cli check gates` in each project. Every gate in app code is a flag: it lists each direct role, privilege, plan or plan-feature check with the flag to use instead. Fix every one and run it again until it is clean. Only a check the developer explicitly asked to keep stays, marked `// bridge-gate-exception: <reason>`
+4. **Sign-in check** — ask the developer to sign up and sign in themselves in the running app: sign up at `/auth/signup`, open the verification email, set a password, sign in, sign out. Do not create test users for them. If a step fails, `bridge event auth-attempts --user <their email>` (MCP: `debug_auth_issue`) names the reason and the fix.
+5. **Gate check** — run `npx @nebulr-group/bridge-cli check gates` in each project. Every gate in app code is a flag: it lists each direct role, privilege, plan or plan-feature check with the flag to use instead. Fix every one and run it again until it is clean. Only a check the developer explicitly asked to keep stays, marked `// bridge-gate-exception: <reason>`
 
 If anything fails, including the gate check, diagnose and fix before moving on. Once the checks pass, move on to the summary in Step 6b — do NOT just dump a list of changed files at the user.
 

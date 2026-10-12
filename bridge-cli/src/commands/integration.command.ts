@@ -176,7 +176,7 @@ export async function checkPluginWiring(cwd: string): Promise<PluginWiring[]> {
   return installed.map(([framework, w]) => {
     if (!pending.has(framework)) return { framework, package: w.pkg, wired: true };
     const guides = w.sdkAuth
-      ? `\`bridge guide ${framework}\` (hosted sign-in) or \`bridge guide ${framework} sdk-auth\` (forms in your app)`
+      ? `\`bridge guide ${framework}\`, then \`bridge guide ${framework} sdk-auth\` for the sign-in pages`
       : `\`bridge guide ${framework}\``;
     return {
       framework,
