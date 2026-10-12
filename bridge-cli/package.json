@@ -1,6 +1,6 @@
 {
   "name": "@nebulr-group/bridge-cli",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "The Bridge CLI: set up and manage sign-in, roles, plans, feature flags and API tokens from your terminal or AI coding agent.",
   "author": "Nebulr Group",
   "license": "MIT",
