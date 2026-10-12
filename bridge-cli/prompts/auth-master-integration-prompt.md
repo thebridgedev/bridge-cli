@@ -26,7 +26,7 @@ Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it
 | Set the frontend URL, callback and allowed origins (Step 3b) | `update_app` (`uiUrl`, `defaultCallbackUri`, `allowedOrigins`); `allowedOrigins` replaces the whole list, so send every origin | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
 | Add one redirect URI, keeping the others (Step 3b) | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
 | This prompt | `get_integration_guide` (topic `master`) | `bridge guide` |
-| A per-framework guide (Step 4) | `get_integration_guide` (topic `auth`) with the framework; topic `integration` for the hosted setup | `bridge guide <framework> sdk-auth` / `bridge guide <framework>` |
+| A per-framework guide (Step 4) | `get_integration_guide` (topic `auth`) with the framework; topic `integration` only for a hosted setup the developer asked for | `bridge guide <framework> sdk-auth` / `bridge guide <framework>` |
 | Check the project's env vars against the app (Step 6) | `diagnose_integration` | `bridge diagnose` |
 | Prove a real sign-in works (Step 6) | `create_test_user`, then `verify_login` | `bridge test-user create`, then `bridge test-user verify` |
 | Roles and flags for route protection (Step 5) | `list_roles`, `list_feature_flags` | `bridge role list`, `bridge flag list` |
@@ -103,8 +103,8 @@ If Step 1 detected a Bridge plugin (`@nebulr-group/bridge-<framework>`) in `depe
 **Delegate the audit to the per-framework guide.** Each plugin's guide ships an "Integration audit" section that lists the exact files / providers / route shapes the framework requires. Run:
 
 ```
-bridge guide <framework>              # hosted-auth audit checklist
-bridge guide <framework> sdk-auth     # SDK-auth audit checklist (in-app forms)
+bridge guide <framework> sdk-auth     # SDK-auth audit checklist (in-app sign-in, the default)
+bridge guide <framework>              # hosted-auth audit checklist (an app already on hosted sign-in)
 ```
 
 The framework guide tells you precisely what must exist (bootstrap call, provider wrapping, the auth pages, environment variables). Apply that checklist to the project on disk.
@@ -138,18 +138,13 @@ Wait for confirmation before proceeding. If the user selects specific projects, 
 
 **Auth approach (frontend projects only):**
 
-After confirming which projects to integrate, ask about the auth approach:
+**Auth approach (frontend projects only): SDK mode.** Do not ask the developer to choose. Sign-in happens inside the app: the plugin serves the login, signup and password pages on the app's own routes, inside its own layout, styled to match the app's existing design (Step 4). Tell the developer in one line, e.g. "Sign-in will be in-app (SDK mode), styled to match your app."
 
-```
-Which auth approach do you want for the frontend?
+Use Bridge's **hosted** sign-in page only when the developer explicitly asks for it, or when the app is already wired for hosted sign-in (no `loginRoute`) and they have not asked to change it.
 
-- Hosted (default) — Bridge handles the login page. Fastest setup, zero UI to build.
-- SDK — In-app login/signup forms. Full control over the auth UX.
-```
-
-Note the user's choice. It determines which guide to fetch in Step 4:
-- **Hosted** → `bridge guide <framework>` (default)
-- **SDK** → `bridge guide <framework> sdk-auth`
+The approach determines which guide to fetch in Step 4:
+- **SDK** (default) → `bridge guide <framework> sdk-auth`
+- **Hosted** (only on explicit request) → `bridge guide <framework>`
 
 ## Step 3 — Get Bridge app context
 
@@ -193,14 +188,16 @@ Without this, the Bridge API will reject the OAuth redirect (invalid redirect_ur
 
 For each confirmed project, fetch the framework-specific integration prompt.
 
-**Frontend projects** — use the auth approach chosen in Step 2:
+**Frontend projects** — SDK mode unless the developer explicitly asked for hosted (Step 2):
 
-| Framework | Hosted (default) | SDK |
-|-----------|-------------------|-----|
-| SvelteKit | `bridge guide svelte` | `bridge guide svelte sdk-auth` |
-| React | `bridge guide react` | `bridge guide react sdk-auth` |
-| Next.js | `bridge guide nextjs` | `bridge guide nextjs sdk-auth` |
-| Angular | `bridge guide angular` | `bridge guide angular sdk-auth` |
+| Framework | SDK (default) | Hosted (only on request) |
+|-----------|---------------|--------------------------|
+| SvelteKit | `bridge guide svelte sdk-auth` | `bridge guide svelte` |
+| React | `bridge guide react sdk-auth` | `bridge guide react` |
+| Next.js | `bridge guide nextjs sdk-auth` | `bridge guide nextjs` |
+| Angular | `bridge guide angular sdk-auth` | `bridge guide angular` |
+
+**Match the app's design.** The sign-in pages render inside the app, so they must look like the rest of it, not like Bridge's defaults. Before you finish, read the app's existing styles (global CSS, CSS variables, Tailwind or theme config, the font it loads, an existing button and input) and set the `--bridge-*` design tokens from them; if the app wraps its pages in a card or shell, give the sign-in pages the same frame. The per-framework guide's *Match the app's design* section has the mapping. Ask for colours only when the project has no styles of its own.
 
 **Backend projects:**
 

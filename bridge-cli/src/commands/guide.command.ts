@@ -345,13 +345,16 @@ export function registerGuideCommands(program: Command): void {
  * hand-wrote a login form against `/auth/login` (a 404) and shipped it. So a
  * framework that has an SDK-auth guide opens by naming both modes; one that
  * has none (the backends) is unchanged.
+ *
+ * TBP-807 — in-app (SDK) sign-in is the default; hosted is only for a
+ * developer who explicitly asks for it. The preface says so, so an agent
+ * that lands here first is sent to the in-app guide rather than asked to pick.
  */
 export function authModesPreface(tech: string, coverage: Record<string, string[]>): string | null {
   if (!coverage[tech]?.includes('sdk-auth')) return null;
   return [
-    '> **Two ways to sign in — pick before you start.**',
-    `> - **Hosted** (this guide): Bridge serves the sign-in pages and your app redirects to them. Fastest, no UI to build.`,
-    `> - **In your own app**: sign-in and sign-up forms inside your layout, with the SDK handling password, magic link, passkeys, SSO, two-factor and workspace choice. Run \`bridge guide ${tech} sdk-auth\` instead.`,
+    `> **Sign-in is in-app (SDK mode) by default.** Run \`bridge guide ${tech} sdk-auth\` for it: sign-in and sign-up inside the app's own layout and design, with the SDK handling password, magic link, passkeys, SSO, two-factor and workspace choice. Do not ask the developer to choose.`,
+    `> - **Hosted** (this guide): only when the developer explicitly asked for Bridge's hosted sign-in page.`,
     '>',
     '> Either way, never write a login form or call Bridge auth endpoints by hand: the SDK does it, and a guessed endpoint fails as a silent 404.',
   ].join('\n');

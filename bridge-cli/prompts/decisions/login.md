@@ -22,9 +22,8 @@ Product questions. Ask, wait, never guess.
 
 1. **Which ways should people be able to sign in?** Password is always there. Offer magic link, passkeys, Google, GitHub, Microsoft (Azure AD), LinkedIn, Facebook. Company SSO (SAML or OIDC) is set up in the Bridge dashboard, not from here.
 2. **Should two-factor sign-in be available?**
-3. **Should sign-in happen on Bridge's hosted page, or inside the app on its own address?** Both use the same one route file; the look-and-feel guide covers what each looks like.
-4. **Can anyone sign up, or only people who are invited?** This is a teams question: see the **teams** guide before changing it.
-5. **For each social provider they pick: the client id and client secret** from that provider's console. Never invent, guess or reuse a credential.
+3. **Can anyone sign up, or only people who are invited?** This is a teams question: see the **teams** guide before changing it.
+4. **For each social provider they pick: the client id and client secret** from that provider's console. Never invent, guess or reuse a credential.
 
 **Only changed when you pass them.** No tool sets these on its own; left out, the current value stays: `update_auth_methods` (`mfaEnabled`, `passkeysEnabled`, `magicLinkEnabled`, `googleSsoEnabled`, `linkedinSsoEnabled`, `azureAdSsoEnabled`, `appleSsoEnabled`, `githubSsoEnabled`, `facebookSsoEnabled`).
 
@@ -32,6 +31,7 @@ Product questions. Ask, wait, never guess.
 
 Apply these without asking. Say the reason in one line.
 
+- **Sign-in is in-app (SDK mode).** Do not ask the developer to choose; tell them in one line. The pages render on the app's own address, inside its layout, styled to match the app (the **look and feel** guide says how). Reason: users never leave the app, and the pages look like the rest of it. Use Bridge's hosted page only when the developer explicitly asks for it, or when the app is already on hosted sign-in and they have not asked to change it. Both use the same one route file.
 - **Callback URL is `<frontend-url>/auth/oauth-callback`,** registered as a redirect URI and as the default callback. Reason: the sign-in route file serves that address, and Bridge refuses any callback it has not seen.
 - **Add redirect URIs one at a time** with `add_redirect_uri` / `bridge app redirect-uris add`. Reason: they keep the rest of the list; nothing is lost.
 - **Before changing allowed origins, read the current list and pass it back with the new origin added.** Reason: `update_app` and `bridge app update --allowed-origins` replace the whole list.
@@ -50,7 +50,7 @@ Apply these without asking. Say the reason in one line.
 | Register the callback URL | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
 | Set UI URL, default callback, allowed origins | `update_app` | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
 | Change token lifetimes (seconds) | `update_password_policy` | `bridge auth password-policy --access-token-ttl 900` |
-| Code for the framework | `get_integration_guide` (topic `auth`) | `bridge guide svelte` (hosted) or `bridge guide svelte sdk-auth` (in-app) |
+| Code for the framework | `get_integration_guide` (topic `auth`) | `bridge guide svelte sdk-auth` (in-app, the default) or `bridge guide svelte` (hosted, only on request) |
 
 `setup_sso` returns a callback URL. The developer must paste it into the provider's console, or that provider's sign-in fails with a redirect mismatch. Always show it to them with that instruction. `update_auth_methods` / `bridge auth methods` never save credentials: Bridge refuses to switch a social provider on until they are saved, and switching one off keeps them. Bridge also refuses to switch off the last remaining sign-in method.
 
@@ -67,5 +67,5 @@ Do not say "it should work". Show it working.
 
 - **Teams:** who can sign up, and whether they create a workspace or join one.
 - **Roles:** what a person can do once signed in.
-- **Look and feel:** hosted or in-app sign-in, and how the pages look.
+- **Look and feel:** how the in-app sign-in pages take on the app's design, and hosted branding when hosted was asked for.
 - **Going live:** production URLs and redirect URIs replace the localhost ones.

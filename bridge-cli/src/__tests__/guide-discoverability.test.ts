@@ -51,7 +51,7 @@ describe('`bridge guide <framework>` names both sign-in modes', () => {
     served['bridge-react/main/mcp/integration-prompt.md'] = '# React integration';
     await run('guide', 'react');
     const printed = (outputPrompt as jest.Mock).mock.calls[0][0] as string;
-    expect(printed).toMatch(/^> \*\*Two ways to sign in/);
+    expect(printed).toMatch(/^> \*\*Sign-in is in-app \(SDK mode\) by default/);
     expect(printed).toContain('`bridge guide react sdk-auth`');
     expect(printed).toMatch(/never write a login form or call Bridge auth endpoints by hand/);
     expect(printed.endsWith('# React integration')).toBe(true);

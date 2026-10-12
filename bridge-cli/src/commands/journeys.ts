@@ -47,6 +47,7 @@ export const JOURNEYS: Journey[] = [
     feature: 'auth',
     steps: [
       'Goal: users can sign up and sign in to this app through the Bridge.',
+      'Sign-in is in-app (SDK mode): the sign-in pages render inside the app, styled to match its existing design. Do not ask the developer to choose; say it in one line. Use Bridge\'s hosted sign-in page only when the developer explicitly asks for it.',
       'Read the current setup with `bridge app get` and `bridge auth config`.',
       'See every sign-in method with `bridge auth methods list`; ask the developer which they want, then `bridge auth methods enable|disable`. A social provider needs its credentials first: `bridge setup sso`.',
       'Register the callback URL with `bridge app redirect-uris add` (never replace the list).',
