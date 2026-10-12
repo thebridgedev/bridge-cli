@@ -118,45 +118,43 @@ The framework guide tells you precisely what must exist (bootstrap call, provide
 
 When you find missing pieces, list each one explicitly to the user — they need to know what's broken and why (e.g., "the signup verification email route is missing — every new signup is currently hitting a 404 after clicking the verification link").
 
-## Step 2 — Present findings and confirm
+## Step 2 — Tell the developer the plan, ask only what you cannot detect
 
-Show the user what you found. Example:
+**Talk to the developer in plain words, once, briefly.** Say what you are about to do. Ask only questions whose answer you could not find in the project. Do not recite what you detected (framework versions, package manager, the Bridge app's settings, enabled sign-in methods), show commands, or name configuration fields. That detail is for you; the developer did not ask for it.
+
+- **One project:** integrate it. Do not ask which.
+- **Several projects:** ask once which to integrate ("I found a SvelteKit app in `./web` and a NestJS API in `./api` — set up both?").
+- **Existing auth** (nblocks or a third-party library): say so in one line and what will happen to it. This is the one thing about the current state worth mentioning.
+
+**Sign-in (frontend projects only).** Sign-in happens inside the app (SDK mode): the plugin serves the login, signup and password pages on the app's own routes, inside its own layout, styled to match the app's existing design (Step 4). There is nothing to choose. (If the developer explicitly asks for Bridge's hosted sign-in page, or the app already uses it, respect that.)
+
+Example — the whole message:
 
 ```
-I detected the following projects:
+I'll add sign-in to QR Studio: sign-in and sign-up pages inside the app, styled to
+match it. Every page will need sign-in except those. I'll connect your Bridge app to
+http://localhost:5180.
 
-1. ./my-app-ui — SvelteKit 5 (frontend, bun)
-   Existing auth: @nebulr/nblocks-svelte (will migrate to Bridge)
-
-2. ./my-app-api — NestJS 11 (backend, bun)
-   No existing auth detected
-
-Which projects should I integrate? (all / select by number)
+One question: should sign-in also work when you open the app over Tailscale? If so,
+paste the full https://….ts.net:8445 address.
 ```
 
-Wait for confirmation before proceeding. If the user selects specific projects, only integrate those.
+With no question left to ask, say what you are doing and carry on; do not wait for a "yes".
 
-**Sign-in (frontend projects only).** Sign-in happens inside the app (SDK mode): the plugin serves the login, signup and password pages on the app's own routes, inside its own layout, styled to match the app's existing design (Step 4). There is nothing to choose; tell the developer in one line, e.g. "Sign-in will be in your app, styled to match it." (If the developer explicitly asks for Bridge's hosted sign-in page, or the app already uses it, respect that.)
-
-## Step 3 — Get Bridge app context
-
-Run these commands to get the app configuration:
+## Step 3 — Read the Bridge app (for you, not the developer)
 
 ```bash
 bridge app get
 bridge info auth-config
 ```
 
-Extract and note:
-- `appId` — needed by both frontend and backend
-- Enabled auth methods (password, magic link, SSO providers, passkeys, MFA)
-- App URLs (apiUrl, uiUrl, callbackUrl)
+Note the `appId` (frontend and backend both need it), the enabled sign-in methods and the app's URLs. Use them to decide what to change; do not report them. If the CLI is not available or not configured, ask the developer for the `appId`; it is in the Bridge dashboard.
 
-If `bridge` CLI is not available or not configured, ask the user for the `appId` directly. They can find it in the Bridge dashboard.
+## Step 3b — Point the Bridge app at the frontend
 
-## Step 3b — Configure the Bridge app for the frontend
+Take the frontend URL from the project: a port fixed in `vite.config.*`, `--port` in a dev script, the framework default otherwise. Ask only when it is genuinely unclear, or when the project also serves the app on another address (a tunnel, a LAN or Tailscale host, a second dev script) — then ask whether sign-in should work there too, and add each address they confirm.
 
-Detect the frontend URL from dev scripts in `package.json` (e.g., `--port 3000`, `--port 5173`). **Show the detected URL to the user and ask for confirmation before proceeding.** Then configure the Bridge app so it accepts OAuth callbacks and CORS requests from the frontend:
+Then update the app. Change only what is missing; read the current values first, and pass the full list back for `--allowed-origins`, which replaces it:
 
 ```bash
 bridge app update \
@@ -166,9 +164,9 @@ bridge app update \
   --allowed-origins <frontend-url>
 ```
 
-`--ui-url` is also where links in Bridge's emails point. When your **backend** calls the Bridge API — inviting a user, triggering a password reset — the request carries no browser origin, so Bridge falls back to this URL to build the link. Leave it unset and those users land on a Bridge page instead of your app. The URL must also appear in `--allowed-origins`, or Bridge ignores it.
+Why each matters (for you): without the callback in the redirect URIs Bridge rejects the sign-in redirect; without the origin it blocks the browser's requests. `--ui-url` is where links in Bridge's emails point when your backend sends them; unset, people land on a Bridge page instead of your app, and it must also be one of the allowed origins.
 
-Without this, the Bridge API will reject the OAuth redirect (invalid redirect_uri) and block CORS requests from the frontend (origin not allowed).
+Tell the developer at most one line about this ("Connected your Bridge app to http://localhost:5180"), never the field names.
 
 ## Step 4 — Fetch and apply per-framework guides
 

@@ -41,7 +41,8 @@ Product questions. Ask, wait, never guess. Then show the answer back as tables (
 - **Reuse metric names the app already has** (`list_plan_quotas`) before inventing new ones. Reason: two names for one thing split the count.
 - **Connect Stripe with test keys first; live keys only when going live.** Reason: nobody is charged while you build. Use `setup_payments` / `bridge setup payments`: it stores the keys and switches payments on in one step.
 - **Connect Stripe before adding paid prices.** Reason: each price is created in Stripe as it is saved.
-- **Leave "customers must pick a plan" on** (it is on by default) unless the developer says otherwise. Reason: a new workspace then always has a plan, so every limit and feature check has something to read.
+- **Leave "customers must pick a plan" on** (it is on by default) unless the developer says otherwise. Reason: a new workspace is then asked to choose a plan before it uses the app.
+- **A workspace with no plan is normal.** It has none of the plan's features, and the plan-choice page or the app's own upgrade prompt shows it the plans. Never report it as a fault.
 - **One plan, one call:** `apply_plan` / `bridge plan apply` sets name, trial, prices and limits together. Reason: a plan is never left half set up.
 
 ## How a hard limit is enforced, end to end
