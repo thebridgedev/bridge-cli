@@ -28,7 +28,7 @@ Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it
 | This prompt | `get_integration_guide` (topic `master`) | `bridge guide` |
 | A per-framework guide (Step 4) | `get_integration_guide` (topic `auth`) with the framework; topic `integration` only for a hosted setup the developer asked for | `bridge guide <framework> sdk-auth` / `bridge guide <framework>` |
 | Check the project's env vars against the app (Step 6) | `diagnose_integration` | `bridge diagnose` |
-| Prove a real sign-in works (Step 6) | `create_test_user`, then `verify_login` | `bridge test-user create`, then `bridge test-user verify` |
+| Why the developer's own sign-in failed (Step 6) | `debug_auth_issue` with their email | `bridge event auth-attempts --user <email>` |
 | Roles and flags for route protection (Step 5) | `list_roles`, `list_feature_flags` | `bridge role list`, `bridge flag list` |
 
 ---
@@ -237,7 +237,8 @@ For each integrated project:
 1. **Build check** — run the project's build command (from `package.json` scripts)
 2. **Config check** — confirm the `appId` environment variable is set
 3. **Route check** — confirm protected routes have guards and public routes are accessible
-4. **Gate check** — run `npx @nebulr-group/bridge-cli check gates` in each project. Every gate in app code is a flag: it lists each direct role, privilege, plan or plan-feature check with the flag to use instead. Fix every one and run it again until it is clean. Only a check the developer explicitly asked to keep stays, marked `// bridge-gate-exception: <reason>`
+4. **Sign-in check** — ask the developer to sign up and sign in themselves in the running app: sign up at `/auth/signup`, open the verification email, set a password, sign in, sign out. Do not create test users for them. If a step fails, `bridge event auth-attempts --user <their email>` (MCP: `debug_auth_issue`) names the reason and the fix.
+5. **Gate check** — run `npx @nebulr-group/bridge-cli check gates` in each project. Every gate in app code is a flag: it lists each direct role, privilege, plan or plan-feature check with the flag to use instead. Fix every one and run it again until it is clean. Only a check the developer explicitly asked to keep stays, marked `// bridge-gate-exception: <reason>`
 
 If anything fails, including the gate check, diagnose and fix before moving on. Once the checks pass, move on to the summary in Step 6b — do NOT just dump a list of changed files at the user.
 

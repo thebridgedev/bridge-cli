@@ -30,7 +30,6 @@ Product questions. Ask, wait, never guess.
 - **Add redirect URIs one at a time and send allowed origins as a full list** (read first). Reason: the first keeps the list; the second replaces it.
 - **Register the production callback in every social provider's console** (`setup_sso` returns it). Reason: providers refuse callbacks they do not know.
 - **Never put a secret key in a browser variable** (`VITE_*`, `NEXT_PUBLIC_*`). Reason: everything in those ships to every visitor. `diagnose_integration` flags it.
-- **A test user on a production app needs the developer's say-so.** Reason: it creates a workspace in the app real users share; the tool refuses without confirmation.
 
 ## Do it
 
@@ -49,7 +48,7 @@ Product questions. Ask, wait, never guess.
 ## Prove it
 
 1. `get_setup_status` / `bridge setup status` again: show the developer what is left. Nothing in `productionNeeds` should be a surprise to them.
-2. With the developer's agreement, `create_test_user` then `verify_login` (`bridge test-user create --confirm "<app name>"`, then `bridge test-user verify`) against the production app: a real sign-in from the production origin.
+2. Ask the developer to sign up and sign in themselves on the production address: a real sign-in from the production origin. If it fails, `debug_auth_issue` / `bridge event auth-attempts --user <their email>` names the reason.
 3. `get_stripe_status` / `bridge stripe status`: live keys, webhook working.
 4. The first real sign-in appears on the checklist once someone signs up.
 

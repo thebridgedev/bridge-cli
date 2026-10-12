@@ -51,7 +51,7 @@ export const JOURNEYS: Journey[] = [
       'Read the current setup with `bridge app get` and `bridge auth config`.',
       'See every sign-in method with `bridge auth methods list`; ask the developer which they want, then `bridge auth methods enable|disable`. A social provider needs its credentials first: `bridge setup sso`.',
       'Register the callback URL with `bridge app redirect-uris add` (never replace the list).',
-      'Prove it works at the end: `bridge test-user create`, then `bridge test-user verify`.',
+      'Prove it works at the end by asking the developer to sign up and sign in themselves in the running app: sign up at /auth/signup, open the verification email, set a password, sign in, sign out. Do not create test users. If any step fails, `bridge event auth-attempts --user <their email>` names the reason and the fix.',
     ],
   },
   {
@@ -117,7 +117,7 @@ export const JOURNEYS: Journey[] = [
       'Goal: evidence that sign-in works end to end, not an opinion.',
       '1. `bridge diagnose` in the project: it reads the .env files and reports every difference with its fix.',
       '2. `bridge setup status` for the readiness checklist.',
-      '3. `bridge test-user create`, then `bridge test-user verify` with its email and password.',
+      '3. Ask the developer to sign up and sign in themselves in the running app (signup, the verification email, sign-in, sign-out). Do not create test users. If a step fails, `bridge event auth-attempts --user <their email>` gives the reason and the fix.',
     ],
   },
   {

@@ -59,8 +59,8 @@ Apply these without asking. Say the reason in one line.
 Do not say "it should work". Show it working.
 
 1. `diagnose_integration` / `bridge diagnose`: compares the project's env files with the real app and names every difference with its fix.
-2. `create_test_user`, then `verify_login` / `bridge test-user create`, then `bridge test-user verify`: a real sign-in, with the token checked.
-3. If sign-in works there but not in the app, the app code is the difference.
+2. Ask the developer to sign up and sign in themselves in the running app: sign up, open the verification email, set a password, sign in, sign out. Do not create test users; a real signup is the only check that covers the app's own pages and the emails.
+3. If a step fails, `debug_auth_issue` / `bridge event auth-attempts --user <their email>` names the reason and the fix.
 4. When a real person cannot sign in: `debug_auth_issue` / `bridge event auth-attempts --user <email>` gives each failed attempt with its reason and fix.
 
 ## Where this connects

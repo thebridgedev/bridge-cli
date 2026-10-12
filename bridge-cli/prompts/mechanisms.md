@@ -291,7 +291,7 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 | Backend limits and entitlements | `bridge guide nestjs billing` · `bridge guide express billing` |
 | Backend sign-in and route protection | `bridge guide nestjs` · `bridge guide express` |
 | Feature flags | `bridge guide flags` |
-| Proving sign-in works | `bridge test-user create`, then `bridge test-user verify` |
+| Proving sign-in works | The developer signs up and signs in in the app; `bridge event auth-attempts --user <email>` explains a failure |
 
 ## Exceptions
 
