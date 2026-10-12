@@ -31,11 +31,11 @@ Product questions. Ask, wait, never guess.
 
 Apply these without asking. Say the reason in one line.
 
-- **Sign-in is in-app (SDK mode).** Do not ask the developer to choose; tell them in one line. The pages render on the app's own address, inside its layout, styled to match the app (the **look and feel** guide says how). Reason: users never leave the app, and the pages look like the rest of it. Use Bridge's hosted page only when the developer explicitly asks for it, or when the app is already on hosted sign-in and they have not asked to change it. Both use the same one route file.
+- **Sign-in happens inside the app (SDK mode).** The pages render on the app's own address, inside its layout, styled to match the app (the **look and feel** guide says how). There is nothing to choose; tell the developer in one line. Reason: users never leave the app, and the pages look like the rest of it. (If the developer explicitly asks for Bridge's hosted sign-in page, or the app already uses it, respect that.)
 - **Callback URL is `<frontend-url>/auth/oauth-callback`,** registered as a redirect URI and as the default callback. Reason: the sign-in route file serves that address, and Bridge refuses any callback it has not seen.
 - **Add redirect URIs one at a time** with `add_redirect_uri` / `bridge app redirect-uris add`. Reason: they keep the rest of the list; nothing is lost.
 - **Before changing allowed origins, read the current list and pass it back with the new origin added.** Reason: `update_app` and `bridge app update --allowed-origins` replace the whole list.
-- **Set the UI URL to the frontend's address.** Reason: links in invitation and password-reset emails are built from it; unset, people land on Bridge's hosted pages.
+- **Set the UI URL to the frontend's address.** Reason: links in invitation and password-reset emails are built from it; unset, people land on a Bridge page instead of the app.
 - **Leave token lifetimes at their defaults** unless the developer raises it. Reason: the defaults are safe. There are no password-complexity rules to set; if asked, say so.
 - **Write no sign-in pages by hand, and no token fetch helper.** Reason: the plugin serves every sign-in page (login, signup, callback, set password, forgot password, magic link, passkey setup, workspace selection) from one file.
 - **Protect every route by default; make only `/auth/*` public.** Reason: a new page is private until someone decides otherwise.
@@ -50,7 +50,7 @@ Apply these without asking. Say the reason in one line.
 | Register the callback URL | `add_redirect_uri` | `bridge app redirect-uris add <url>` |
 | Set UI URL, default callback, allowed origins | `update_app` | `bridge app update --ui-url … --default-callback-uri … --allowed-origins …` |
 | Change token lifetimes (seconds) | `update_password_policy` | `bridge auth password-policy --access-token-ttl 900` |
-| Code for the framework | `get_integration_guide` (topic `auth`) | `bridge guide svelte sdk-auth` (in-app, the default) or `bridge guide svelte` (hosted, only on request) |
+| Code for the framework | `get_integration_guide` (topic `integration`, then `auth`) | `bridge guide svelte`, then `bridge guide svelte sdk-auth` |
 
 `setup_sso` returns a callback URL. The developer must paste it into the provider's console, or that provider's sign-in fails with a redirect mismatch. Always show it to them with that instruction. `update_auth_methods` / `bridge auth methods` never save credentials: Bridge refuses to switch a social provider on until they are saved, and switching one off keeps them. Bridge also refuses to switch off the last remaining sign-in method.
 
@@ -67,5 +67,5 @@ Do not say "it should work". Show it working.
 
 - **Teams:** who can sign up, and whether they create a workspace or join one.
 - **Roles:** what a person can do once signed in.
-- **Look and feel:** how the in-app sign-in pages take on the app's design, and hosted branding when hosted was asked for.
+- **Look and feel:** how the sign-in pages take on the app's design.
 - **Going live:** production URLs and redirect URIs replace the localhost ones.

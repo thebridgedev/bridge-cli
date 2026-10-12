@@ -276,7 +276,7 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 
 ## 7. Pages Bridge serves, and the one it only offers
 
-- **Sign-in:** `src/routes/auth/[...bridge]/+page.svelte` serves login, signup, the OAuth callback, set password (where signup verification and password-reset emails land), forgot password, magic link, passkey setup and workspace selection. Which methods appear comes from the app's settings at runtime, so turning magic links on needs no code. In-app sign-in (SDK mode) is the default; hosted uses the same file and is used only when the developer asks for it. `loginRoute: '/auth/login'` in `bridgeBootstrap()` is the whole switch to in-app.
+- **Sign-in:** `src/routes/auth/[...bridge]/+page.svelte` serves login, signup, the OAuth callback, set password (where signup verification and password-reset emails land), forgot password, magic link, passkey setup and workspace selection. Which methods appear comes from the app's settings at runtime, so turning magic links on needs no code. The pages render inside the app: `loginRoute: '/auth/login'` in `bridgeBootstrap()`. (If the developer explicitly asks for Bridge's hosted sign-in page, or the app already uses it, respect that: leave out `loginRoute`.)
 - **Subscription:** `src/routes/subscription/[...bridge]/+page.svelte` serves `/subscription`, the paywall `/subscription/plan`, and the checkout return pages `/subscription/success` and `/subscription/error`. Bridge's redirects and upgrade links point there by default.
 - **The paywall** redirects a signed-in workspace with no plan to `/subscription/plan` before any page renders — only when the app has plans and its `paymentsAutoRedirect` setting is on (the default). `bridge app update --payments-auto-redirect false` turns it off.
 - **A `/welcome` onboarding page is offered, never created unasked.** It is a product decision: ask the developer. Only if they say yes, add a one-line page rendering `<BridgePaywallPage />` and `billing: { paywallRoute: '/welcome' }` in `bridgeBootstrap()`.
@@ -286,7 +286,7 @@ All default rules use `:where()`, so any selector of yours wins without `!import
 
 | Topic | Command |
 |---|---|
-| Sign-in, in-app (default) or hosted (on request) | `bridge guide <framework> sdk-auth` · `bridge guide <framework>` (svelte, react, nextjs, angular) |
+| Sign-in and the sign-in pages | `bridge guide <framework>` · `bridge guide <framework> sdk-auth` (svelte, react, nextjs, angular) |
 | Plans, the subscription pages, the UI levels | `bridge guide svelte billing` |
 | Backend limits and entitlements | `bridge guide nestjs billing` · `bridge guide express billing` |
 | Backend sign-in and route protection | `bridge guide nestjs` · `bridge guide express` |
