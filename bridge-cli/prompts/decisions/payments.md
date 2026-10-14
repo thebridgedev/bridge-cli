@@ -70,6 +70,7 @@ The flag and its rule are set up in the **feature-control** guide.
 | Or step by step: create a plan with its first price | `create_plan` | `bridge plan create --key pro --name Pro --amount 29 --interval month --currency usd --no-trial` |
 | Add another price | `set_plan_price` | `bridge plan price set pro --amount 290 --interval year` |
 | Add a limit | `set_plan_quota` | `bridge plan quota set pro --metric tickets --limit 100 --policy hard --kind gauge` |
+| Remove a plan (archived instead when workspaces are on it) | `delete_plan` | `bridge plan delete --key pro` |
 | Add an on/off feature the plan sells | `add_plan_feature` | `bridge plan feature add pro analytics --name "Analytics"` |
 | Turn off the forced plan choice | `update_app` | `bridge app update --payments-auto-redirect false` |
 | Code for the framework | `get_integration_guide` (topic `billing`) | `bridge guide billing --framework svelte`, `bridge guide billing --framework nestjs` |

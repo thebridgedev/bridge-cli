@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
-import { getManagementClient } from '../config.js';
+import { getManagementClient, getManagementHttp } from '../config.js';
+import { dryRunPreview } from '../preview.js';
 import { outputSuccess, outputError } from '../output.js';
 import { shapePlan } from '../shape.js';
 import { DecisionNeededError, decisionField, type DecisionField } from '../product-decisions.js';
@@ -528,6 +529,24 @@ export function registerPlanCommands(program: Command): void {
         const { key, ...data } = opts;
         const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
         outputSuccess(shapePlan(await getManagementClient().plans.update(key, cleaned)));
+      } catch (err) { outputError(err); }
+    });
+
+  // TBP-806 — the server decides: a plan no workspace is on is deleted, one
+  // that workspaces are on is archived (they keep it, nobody new can pick it).
+  // The answer's `action` says which happened.
+  plan.command('delete')
+    .description('Remove a plan: deleted when no workspace is on it, archived when some are (they keep it; nobody new can choose it)')
+    .requiredOption('--key <key>', 'Plan key')
+    .option('--dry-run', 'Show whether the plan would be deleted or archived, and which workspaces are on it, and change nothing')
+    .action(async (opts) => {
+      try {
+        const path = `/v1/account/payments/plan/${encodeURIComponent(opts.key)}`;
+        if (opts.dryRun) {
+          outputSuccess(await dryRunPreview(path));
+          return;
+        }
+        outputSuccess(await getManagementHttp().delete(path));
       } catch (err) { outputError(err); }
     });
 

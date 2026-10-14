@@ -330,6 +330,10 @@ bridge plan list
 # A free tier is a zero-amount price: --amount 0
 bridge plan create --key pro --name "Pro Plan" --amount 29 --interval month
 bridge plan update --key pro --name "Pro Plan v2"
+# Remove a plan. Deleted when no workspace is on it; archived when some are
+# (they keep it, nobody new can choose it). Needs `bridge auth login --admin`.
+bridge plan delete --key pro --dry-run   # delete or archive, and who is on it
+bridge plan delete --key pro
 
 # Prices — a plan can have several (one per currency + interval). Idempotent.
 bridge plan price set pro --amount 290 --currency usd --interval year
