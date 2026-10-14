@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
-import { getManagementClient } from '../config.js';
+import { getManagementClient, getManagementHttp } from '../config.js';
+import { dryRunPreview } from '../preview.js';
 import { outputSuccess, outputError } from '../output.js';
 import { shapePlan } from '../shape.js';
 import { DecisionNeededError, decisionField, type DecisionField } from '../product-decisions.js';
@@ -528,6 +529,37 @@ export function registerPlanCommands(program: Command): void {
         const { key, ...data } = opts;
         const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
         outputSuccess(shapePlan(await getManagementClient().plans.update(key, cleaned)));
+      } catch (err) { outputError(err); }
+    });
+
+  // TBP-806 — only a plan no workspace is on is deleted. One that workspaces
+  // are on is refused (409 PLAN_IN_USE) with what to do instead: archive it,
+  // or move (`tenant set-plan`) or delete those workspaces first.
+  plan.command('delete')
+    .description('Delete a plan no workspace is on (refused, with the choices, when workspaces are on it)')
+    .requiredOption('--key <key>', 'Plan key')
+    .option('--dry-run', 'Show whether the delete would go through, and which workspaces are on the plan, and change nothing')
+    .action(async (opts) => {
+      try {
+        const path = `/v1/account/payments/plan/${encodeURIComponent(opts.key)}`;
+        if (opts.dryRun) {
+          outputSuccess(await dryRunPreview(path));
+          return;
+        }
+        outputSuccess(await getManagementHttp().delete(path));
+      } catch (err) { outputError(err); }
+    });
+
+  plan.command('archive')
+    .description('Archive a plan: workspaces on it keep it, nobody new can choose it (--undo brings it back)')
+    .requiredOption('--key <key>', 'Plan key')
+    .option('--undo', 'Bring an archived plan back')
+    .action(async (opts) => {
+      try {
+        outputSuccess(await getManagementHttp().post(
+          `/v1/account/payments/plan/${encodeURIComponent(opts.key)}/archive`,
+          { archived: !opts.undo },
+        ));
       } catch (err) { outputError(err); }
     });
 

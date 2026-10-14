@@ -3,13 +3,14 @@
     "The names of the Bridge MCP server's tools, and nothing else. The bundled guides are tested against this list: a guide that names a tool not in it fails src/__tests__/guide-decisions.test.ts.",
     "Source: the `bridgeTools` registry in bridge-api, microservices/account/nebulr-api/mcp/tools/register.ts.",
     "Generated, never edited by hand: in bridge-api run `bun scripts/generate-mcp-tools-json.ts > <bridge-cli>/bridge-cli/prompts/mcp-tools.json` (in the bridge-api container).",
-    "The count must equal the number of entries in `bridgeTools` (76 at the source below). bridge-api's guide-currency.spec.ts fails when this file and the registry disagree."
+    "The count must equal the number of entries in `bridgeTools` (79 at the source below). bridge-api's guide-currency.spec.ts fails when this file and the registry disagree."
   ],
-  "source": "bridge-api feature/mcp-journey 75c0a1f",
+  "source": "bridge-api feature/tbp-806-plan-delete 1c622b17",
   "tools": [
     "add_plan_feature",
     "add_redirect_uri",
     "apply_plan",
+    "archive_plan",
     "clear_flag_schedule",
     "connect_stripe",
     "create_api_token",
@@ -22,6 +23,7 @@
     "create_test_user",
     "debug_auth_issue",
     "delete_feature_flag",
+    "delete_plan",
     "delete_privilege",
     "delete_role",
     "delete_tenant",
@@ -67,6 +69,7 @@
     "set_plan_features",
     "set_plan_price",
     "set_plan_quota",
+    "set_tenant_plan",
     "setup_communication",
     "setup_payments",
     "setup_sso",

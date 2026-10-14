@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.5] - 2026-10-14
+
+### Added
+
+- **Remove a plan.** `bridge plan delete --key <key>` deletes a plan no workspace is on. If workspaces are on it, nothing is deleted and you are told how many and what to do instead: archive the plan, or move or delete those workspaces first. `--dry-run` shows whether the delete would go through and which workspaces are on the plan. Deleting needs `bridge auth login --admin`.
+- **Archive a plan.** `bridge plan archive --key <key>` stops selling a plan without disturbing the workspaces on it: they keep it and keep being billed, and nobody new can choose it. `--undo` brings it back.
+- **Move a workspace to another plan.** `bridge tenant set-plan --name <name> --plan <key>` does what the plan picker on a workspace in the dashboard does, including moving a paid Stripe subscription to the new plan's price. `--interval` and `--currency` choose one of the plan's prices.
+
 ## [0.6.2] - 2026-10-01
 
 ### Added
