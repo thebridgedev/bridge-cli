@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.6] - 2026-10-14
+
+### Changed
+
+- **Theming guidance for the Svelte pages.** `bridge guide` now explains how Bridge's sign-in and subscription pages match an app. They inherit its font, text size and text colour. A few `--bridge-*` variables, now including heading, button and label weights and a button shadow, cover the rest. Any plain CSS the app writes wins over Bridge's styles. The variable list in `bridge guide mechanisms` is brought up to date.
+
 ## [0.6.5] - 2026-10-14
 
 ### Added
