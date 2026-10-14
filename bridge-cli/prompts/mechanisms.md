@@ -220,7 +220,7 @@ The same ladder holds for the sign-in pages (`<BridgeAuthRoutes>`) and the subsc
 | Rung | What you do | What you own |
 |---|---|---|
 | **0 — nothing** | Bridge's pages render inside your own `+layout.svelte` | Your navigation, header and shell already surround them |
-| **1 — tokens** | Set `--bridge-*` CSS variables in your CSS | Colours, radius, spacing |
+| **1 — tokens** | Set `--bridge-*` CSS variables in your CSS, and plain CSS for anything else | Colours, radius, spacing, weights, shadows |
 | **2 — frame and heading** | Pass the `frame(page, children)` and `heading(page)` snippets | Everything around the form on every page, and each page's heading |
 | **3 — take over one page** | Create that page's own route file, e.g. `src/routes/auth/login/+page.svelte` | That one page; SvelteKit prefers it over `[...bridge]`, every other page keeps working |
 | **4 — headless** | Build your own UI on `getBridgeAuth()` | Everything |
@@ -243,36 +243,42 @@ The same ladder holds for the sign-in pages (`<BridgeAuthRoutes>`) and the subsc
 
 `heading` replaces only each page's main step (the login credentials step, the signup form, the set-password form); sub-steps such as "Reset your password" keep their own, so two headings never stack. There are no per-page snippets: to change more than frame and heading, take over the page (rung 3). A sign-in page you own navigates itself after sign-in: `<LoginForm onLogin={() => goto(readReturnTo($page.url) ?? '/')} />`.
 
-**The token contract (rung 1).** These `--bridge-*` variables are the supported way to restyle the components; each has a built-in default. Set them on `:root` or on any wrapper.
+**The token contract (rung 1).** These `--bridge-*` variables are the supported way to restyle the components; each has a built-in default. Set them on `:root` or on any wrapper. Set only what the app does not already give: Bridge inherits the app's font and text colour, and every Bridge text size follows the app's `<body>` text size.
 
 | Token | Default | Styles |
 |---|---|---|
-| `--bridge-primary` | `#4f46e5` | Primary buttons, selected plan interval, active workspace border |
-| `--bridge-primary-hover` | `#4338ca` | Primary button hover |
-| `--bridge-primary-fg` | `#ffffff` | Text on primary buttons |
-| `--bridge-primary-foreground` | `#ffffff` | Workspace avatar text; plan picker fallback when `--bridge-primary-fg` is unset |
-| `--bridge-primary-light` | `#eff6ff` | Active workspace background |
-| `--bridge-border` | `#d1d5db` | Input and secondary button borders |
-| `--bridge-border-radius` | `6px` | Corners of inputs, buttons, alerts, cards |
-| `--bridge-input-focus` | `#4f46e5` | Input focus ring |
-| `--bridge-foreground` | `#374151` | Password-toggle hover, workspace names |
+| `--bridge-primary` | `#4f46e5` | Primary buttons, the selected tab and plan interval, the active workspace |
+| `--bridge-primary-hover` | primary, 15% darker | Primary button hover |
+| `--bridge-primary-fg` | `#ffffff` | Text on primary surfaces |
+| `--bridge-primary-light` | primary at 10% | Tint behind the active workspace |
+| `--bridge-input-focus` | primary | Input focus ring |
+| `--bridge-bg` | `#ffffff` | Dialogs, menus, panels |
+| `--bridge-foreground` | `#111827` | Text on those surfaces, workspace names |
 | `--bridge-muted` | `#6b7280` | Secondary text, hints, table headings |
-| `--bridge-bg` | `#ffffff` | Plan-change confirmation panel |
-| `--bridge-bg-muted` | `#f5f5f5` | MFA backup code |
-| `--bridge-muted-bg` | `#f3f4f6` | Workspace list hover, plan interval tabs (which fall back to `--bridge-bg-muted`) |
-| `--bridge-alert-error-bg` | `#fef2f2` | Error alert background |
-| `--bridge-alert-error-fg` | `#991b1b` | Error alert text |
-| `--bridge-alert-error-border` | `#fca5a5` | Error alert border |
-| `--bridge-alert-success-bg` | `#f0fdf4` | Success alert background |
-| `--bridge-alert-success-fg` | `#166534` | Success alert text |
-| `--bridge-alert-success-border` | `#86efac` | Success alert border |
+| `--bridge-muted-bg` | `#f3f4f6` | Subtle fills: tab tracks, hovers, the MFA backup code |
+| `--bridge-border` | `#d1d5db` | Input, table, card and secondary button borders |
+| `--bridge-border-radius` | `6px` | Corners of inputs, buttons, alerts, cards and dialogs |
+| `--bridge-card-bg` | `--bridge-bg` | Plan cards and the current-plan panel on the subscription page |
+| `--bridge-card-shadow` | a soft 1–3px shadow | Plan cards, the current-plan panel and the plan-change dialog. `none` for a flat look |
+| `--bridge-button-shadow` | `none` | Every Bridge button's shadow, e.g. `4px 4px 0 #111` |
+| `--bridge-font-size` | your `<body>` text size | The base every Bridge text size scales from |
+| `--bridge-font-weight-heading` | `600` (`700` on a few titles) | Page, dialog and section titles, plan names, prices |
+| `--bridge-font-weight-button` | `500` | Every Bridge button |
+| `--bridge-font-weight-label` | `500` (`600` on a few) | Form labels, table headings, badges, names |
+| `--bridge-overlay` | `rgba(15, 23, 42, 0.45)` | Backdrop behind dialogs |
+| `--bridge-alert-error-{bg,fg,border}` | `#fef2f2` / `#991b1b` / `#fca5a5` | Errors, critical billing notices, cancelled plan badge |
+| `--bridge-alert-success-{bg,fg,border}` | `#f0fdf4` / `#166534` / `#86efac` | Confirmations, active plan badge |
+| `--bridge-alert-info-{bg,fg,border}` | `#eff6ff` / `#1e40af` / `#bfdbfe` | Info notices, trial badge |
+| `--bridge-alert-warning-{bg,fg,border}` | `#fffbeb` / `#92400e` / `#fcd34d` | Warnings, a quota nearing its limit, past-due badge |
 | `--bridge-auth-page-padding` | `3rem 1rem` | Padding of the default sign-in page container |
 | `--bridge-billing-page-width` | `60rem` | Width of the subscription pages and `<BridgePaywallPage>` |
 | `--bridge-billing-page-padding` | `3rem 1rem` | Padding of the subscription pages and `<BridgePaywallPage>` |
-| `--bridge-paywall-bg` | `rgba(15, 23, 42, 0.72)` | Backdrop of the `<BridgePaywall>` overlay |
-| `--bridge-paywall-panel-bg` | `#ffffff` | Panel of the `<BridgePaywall>` overlay |
+| `--bridge-paywall-bg` | `rgba(15, 23, 42, 0.72)` | Backdrop of the `<BridgePaywall>` overlay and the billing lockscreen |
+| `--bridge-paywall-panel-bg` | `--bridge-bg` | Panel of the `<BridgePaywall>` overlay |
 
-All default rules use `:where()`, so any selector of yours wins without `!important`. Leaving out `import '@nebulr-group/bridge-svelte/styles'` makes the components headless: plain HTML for you to style.
+The derived tokens (hover, light, focus) follow `--bridge-primary` wherever you set it, unless you set them too. Two older names still work as deprecated aliases: `--bridge-primary-foreground` for `--bridge-primary-fg`, and `--bridge-bg-muted` for `--bridge-muted-bg`.
+
+All Bridge styles sit in a CSS cascade layer named `bridge`, so plain CSS the app writes outside a layer overrides them, whatever the load order and with no `!important`: for anything the tokens don't cover, target Bridge's classes and `[data-bridge-*]` attributes (`.bridge-btn-primary:hover { transform: translate(-2px, -2px); }`). Tailwind utility classes on Bridge's elements lose where Bridge sets the same property; use plain CSS there, or Tailwind's important modifier. Leaving out `import '@nebulr-group/bridge-svelte/styles'` makes the components headless: plain HTML for you to style.
 
 ## 7. Pages Bridge serves, and the one it only offers
 
