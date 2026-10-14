@@ -532,13 +532,13 @@ export function registerPlanCommands(program: Command): void {
       } catch (err) { outputError(err); }
     });
 
-  // TBP-806 — the server decides: a plan no workspace is on is deleted, one
-  // that workspaces are on is archived (they keep it, nobody new can pick it).
-  // The answer's `action` says which happened.
+  // TBP-806 — only a plan no workspace is on is deleted. One that workspaces
+  // are on is refused (409 PLAN_IN_USE) with what to do instead: archive it,
+  // or move (`tenant set-plan`) or delete those workspaces first.
   plan.command('delete')
-    .description('Remove a plan: deleted when no workspace is on it, archived when some are (they keep it; nobody new can choose it)')
+    .description('Delete a plan no workspace is on (refused, with the choices, when workspaces are on it)')
     .requiredOption('--key <key>', 'Plan key')
-    .option('--dry-run', 'Show whether the plan would be deleted or archived, and which workspaces are on it, and change nothing')
+    .option('--dry-run', 'Show whether the delete would go through, and which workspaces are on the plan, and change nothing')
     .action(async (opts) => {
       try {
         const path = `/v1/account/payments/plan/${encodeURIComponent(opts.key)}`;
@@ -547,6 +547,19 @@ export function registerPlanCommands(program: Command): void {
           return;
         }
         outputSuccess(await getManagementHttp().delete(path));
+      } catch (err) { outputError(err); }
+    });
+
+  plan.command('archive')
+    .description('Archive a plan: workspaces on it keep it, nobody new can choose it (--undo brings it back)')
+    .requiredOption('--key <key>', 'Plan key')
+    .option('--undo', 'Bring an archived plan back')
+    .action(async (opts) => {
+      try {
+        outputSuccess(await getManagementHttp().post(
+          `/v1/account/payments/plan/${encodeURIComponent(opts.key)}/archive`,
+          { archived: !opts.undo },
+        ));
       } catch (err) { outputError(err); }
     });
 

@@ -330,10 +330,14 @@ bridge plan list
 # A free tier is a zero-amount price: --amount 0
 bridge plan create --key pro --name "Pro Plan" --amount 29 --interval month
 bridge plan update --key pro --name "Pro Plan v2"
-# Remove a plan. Deleted when no workspace is on it; archived when some are
-# (they keep it, nobody new can choose it). Needs `bridge auth login --admin`.
-bridge plan delete --key pro --dry-run   # delete or archive, and who is on it
+# Remove a plan. Only a plan no workspace is on is deleted (needs
+# `bridge auth login --admin`); with workspaces on it the delete is refused.
+bridge plan delete --key pro --dry-run   # would it go through, and who is on it
 bridge plan delete --key pro
+# Stop selling it instead: workspaces on it keep it, nobody new can choose it.
+bridge plan archive --key pro            # --undo brings it back
+# Or move the workspaces off it first (a paid subscription moves too).
+bridge tenant set-plan --name "Acme Corp" --plan free
 
 # Prices — a plan can have several (one per currency + interval). Idempotent.
 bridge plan price set pro --amount 290 --currency usd --interval year
