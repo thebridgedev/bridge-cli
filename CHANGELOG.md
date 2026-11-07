@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-alpha.0] - 2026-11-07
+
+The first alpha of 1.0, for version 2 of Bridge's API. Install it with `npm install -g @nebulr-group/bridge-cli@alpha`; `latest` stays on 0.x.
+
+### Added
+
+- **Sign-in to your issuer.** `bridge auth login` opens Bridge's sign-in page and comes back to the CLI on `127.0.0.1`, with PKCE. `bridge auth login --password` signs in in the terminal, with the workspace step, for machines with no browser. The issuer is the one address the CLI needs; every endpoint comes from its metadata.
+- **Sessions kept safely.** In the OS keychain when there is one, else in a file only you can read (0600). Renewed as you go, with a new refresh token each time. `bridge auth logout` ends the session at Bridge.
+- **App setup on version 2:** apps and their addresses (`bridge app address`), app keys (`bridge key`), plans with prices, trials, usage prices, features and limits (`bridge plan`), products, metrics, taxes and billing settings, Stripe in test mode by a pasted key (`bridge stripe connect`), feature flags and their rules (`bridge flag`, `bridge flag rule`), roles, privileges, workspaces and members.
+
+### Changed
+
+- Every command calls a pinned version 2 endpoint. Results are JSON on stdout, errors JSON on stderr, as before.
+- `bridge check gates` is unchanged.
+
+### Removed
+
+- The 0.x commands that have no version 2 endpoint yet: `guide`, `flag init`, `integration`, `setup`, `event`, `info`, `ops`, `branding`, `tenant` (except `workspace list`), `auth use`, `auth methods`, `auth config`. Stored 0.x logins are not read; sign in again.
+
 ## [0.6.6] - 2026-10-14
 
 ### Changed
