@@ -2,518 +2,147 @@
   <a href="https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/.github/assets/banner.png"><img src="https://raw.githubusercontent.com/thebridgedev/bridge-cli/main/.github/assets/banner-light.png" alt="The Bridge CLI" width="100%"></picture></a>
 </p>
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/@nebulr-group/bridge-cli"><img src="https://img.shields.io/npm/v/@nebulr-group/bridge-cli?color=20006b&label=npm" alt="npm version"></a>
-  <a href="https://github.com/thebridgedev/bridge-cli/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@nebulr-group/bridge-cli?color=20006b" alt="MIT license"></a>
-</p>
+# The Bridge CLI 1.0 (alpha)
 
-<p align="center">
-  <a href="https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Website</b></a> ·
-  <a href="https://thebridge.dev/docs/getting-started/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Getting started</b></a> ·
-  <a href="https://thebridge.dev/docs/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Docs</b></a> ·
-  <a href="https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli"><b>Set up with your AI assistant</b></a>
-</p>
+`@nebulr-group/bridge-cli` sets up your app on Bridge from the terminal. You sign in, then create your app and its addresses, its keys, plans with prices and trials, Stripe in test mode, and the feature flags your code gates on. It works the same for you and for a coding agent: every result is JSON.
 
-# The Bridge CLI
+> **This is the 1.0 alpha.** It talks to version 2 of Bridge's API only. For the Bridge you use today, stay on 0.x: `npm install -g @nebulr-group/bridge-cli` installs it (`latest`).
 
-`@nebulr-group/bridge-cli` sets up and manages your Bridge app from the terminal: apps, sign-in methods, roles, plans and prices, feature flags and API tokens. Built for AI coding agents (Claude Code, Cursor, Copilot) as much as for people.
-
-**[The Bridge](https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)** is a hosted backend for SaaS apps. It gives you sign-in (passwords, magic links, passkeys, social login and SSO), multi-tenant workspaces with roles, Stripe subscriptions with plan limits, and feature flags, all managed from one dashboard. Your AI coding assistant can set it up for you through the [Bridge MCP server](https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli).
-
-## Installation
+## Install
 
 ```bash
-npm install -g @nebulr-group/bridge-cli
+npm install -g @nebulr-group/bridge-cli@alpha
+# or, without installing
+npx @nebulr-group/bridge-cli@alpha --help
 ```
 
-Or run directly with npx:
+It needs Node.js 20 or later.
+
+## Sign in
+
+The CLI needs one address: your **issuer**, the address Bridge signs you in at. Every other endpoint is read from the issuer's published metadata. Give it once; it is saved for the commands that follow.
 
 ```bash
-npx @nebulr-group/bridge-cli tenant list
+bridge auth login --issuer https://<your Bridge>/identity-access/apps/<app id>
 ```
 
-## Authentication
+This opens Bridge's sign-in page in your browser. You sign in there, and the browser comes back to the CLI on `127.0.0.1`. The sign-in is bound to this process with PKCE, so a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
 
-bridge-cli supports two authentication paths.
-
-### 1. Interactive (recommended for humans + AI agents) — `bridge auth login`
+If no browser is at hand (a server, a container, CI), sign in in the terminal:
 
 ```bash
-bridge auth login
+bridge auth login --password --email you@example.com          # asks for the password, without echo
+echo "$PASSWORD" | bridge auth login --password --email you@example.com --password-stdin
 ```
 
-Opens your default browser, runs through a PKCE-secured loopback flow (RFC 8252), and stores a 10-day token at `~/.config/bridge/credentials.json` (mode `0600`). After that, every subsequent `bridge` command picks the token up automatically — no env vars needed.
+If you belong to several workspaces, the CLI asks which one, or takes `--workspace <id>`.
 
 ```bash
-bridge auth status   # show every stored app, and which one is active
-bridge auth logout   # revoke the active token and remove it locally
+bridge auth whoami              # who you are, which workspace, which app commands act on
+bridge auth workspace           # your workspaces
+bridge auth workspace <id>      # switch to one
+bridge auth logout              # ends the session at Bridge and removes it from this machine
 ```
 
-#### One login, every app of the workspace
+**Where the session is kept.** In your operating system's keychain (the macOS keychain, or the Secret Service keyring on Linux) when there is one, else in `~/.config/bridge/v1/sessions.json`, readable only by you (mode 0600). Set `BRIDGE_TOKEN_STORE=file` to use the file. The CLI renews the session as it goes; each renewal replaces the refresh token, and the old one stops working.
 
-By default the consent screen preselects **Every app in &lt;workspace&gt;**, so one
-login covers all your apps — the same way the MCP server does. The app you pin
-at login (`--app`) is the *home* app; switch between the others locally:
+## Set up an app
 
 ```bash
-bridge auth login                         # Logged in as you@acme.com. Workspace: every app (home app: Acme)
-bridge app list                           # every app, marking home and current
-bridge app use "Acme Stage"               # the default for every command, no re-login
-bridge app create --name "Acme Prod" --use
-bridge --app 66f0c0ffee0000000000abcd role list   # one command on another app
+# 1. Create the app. Commands act on it from now on (`bridge app use <id>` switches).
+bridge app create --name "My App" \
+  --sign-in-return http://localhost:5173/auth/callback \
+  --email-links http://localhost:5173/auth/link \
+  --browser-origin http://localhost:5173
+
+# 2. Add your production addresses next to the development ones.
+bridge app address add https://myapp.com/auth/callback --use sign-in-return
+bridge app address add https://myapp.com --use browser-origin
+bridge app address list
+
+# 3. A key for your server. The secret is shown once: put it in your server's secrets.
+bridge key create --name "production server"
+
+# 4. Plans: prices, a trial, a per-unit usage price, features and limits.
+bridge metric set exports --kind counter --name "Exports"
+bridge plan create pro --name Pro \
+  --price "19 EUR/month" --price "190 EUR/year" \
+  --usage-price "exports 0.05 EUR/month included 100" \
+  --trial-days 14 \
+  --feature analytics --limit seats=10
+
+# 5. Take payments: connect Stripe in test mode with your test secret key (asked for without echo).
+bridge stripe connect
+
+# 6. Flags: every gate in your code is a flag, and its rule says who gets it.
+bridge flag create analytics --when "bridge:billing.entitlement.analytics eq true"
+bridge flag create team-admin --when "privileges contains USER_WRITE"
 ```
 
-Precedence: `--app` > `bridge app use` > the home app. `--profile` still picks
-*which stored login*; `--app` picks the app *within* it. Acting on a non-home
-app prints `bridge: Acting on app <name> (<id>)` to stderr. Per-app tokens live
-only in memory for that one command and are never written to disk.
+## Commands
 
-`bridge auth login --single-app` asks for a login that covers only the home app
-(the user can still change the choice on the consent screen). On such a login,
-`--app` / `bridge app use` for another app fail and tell you to log in again.
-`BRIDGE_API_KEY` is always bound to its one app.
-
-#### Several apps at once
-
-The credentials file holds one credential per app, so you can log in to your
-local, stage and prod apps and move between them without a browser round-trip —
-the tokens are already on disk with days left on them.
-
-```bash
-bridge auth login --label northwhistle-local     # once per app
-bridge auth login --label northwhistle-prod
-
-bridge auth status                               # lists both, marks the active one
-bridge auth use northwhistle-local               # switch the default, offline
-bridge --profile northwhistle-prod app get       # target ONE command, default untouched
-```
-
-A profile is selected by its `--label`, its app id, or its app name, in that
-order. An ambiguous name is an error rather than a guess. `BRIDGE_PROFILE` does
-the same thing as `--profile` for a whole shell session.
-
-Prefer `--profile` over `bridge auth use` in scripts and long-running agent
-sessions: `use` mutates state another process may be reading, `--profile` does
-not.
-
-Every command prints one line to **stderr** naming the app that answered:
-
-```
-bridge: northwhistle-prod (606b4416fabdc800087d09ec) · https://api.thebridge.dev · via saved default
-```
-
-stdout stays pure JSON, so this does not disturb anything parsing it. Silence it
-with `BRIDGE_NO_BANNER=true` if you are already certain which app you are on.
-
-`bridge auth logout` removes the active app only. Use `--profile <name>` for a
-specific one, or `--all` to clear the file.
-
-Existing single-app credentials files keep working and are upgraded in place the
-next time something writes.
-
-#### `bridge auth login` flags
-
-| Flag | Description |
-|------|-------------|
-| `--app <id\|name>` | Pin the home app, skipping the picker on the consent screen. |
-| `--single-app`    | Preselect "only this app" instead of "every app in the workspace" on the consent screen. |
-| `--label <text>`  | Friendly label stored on the token (default: `bridge-cli`). Useful when listing CLI tokens at `app.thebridge.dev/keys`. |
-| `--no-browser`    | Print the authorization URL instead of opening a browser. Use this on headless boxes or over SSH. |
-
-When the token expires (10 days), the next command fails with a friendly `Token expired. Run `bridge auth login` to re-authenticate.` message.
-
-The credentials file location honors `XDG_CONFIG_HOME`:
-
-```bash
-$XDG_CONFIG_HOME/bridge/credentials.json   # if XDG_CONFIG_HOME is set
-~/.config/bridge/credentials.json          # otherwise
-```
-
-### 2. Service-account / CI — `BRIDGE_API_KEY`
-
-For non-interactive contexts (CI/CD pipelines, Docker images, headless agents) set the API key directly in the environment:
-
-```bash
-export BRIDGE_API_KEY=<your-api-token>
-```
-
-If you have logged in via `bridge auth login`, the credentials file always wins — a fresh login takes effect immediately, even when `BRIDGE_API_KEY` is still exported in your shell. `BRIDGE_API_KEY` is only used when no credentials file is present (the typical CI runner shape). To switch back to env-var auth on a developer machine, run `bridge auth logout --all` first.
-
-Because that trips people up, the CLI now says so at the moment it happens: with
-both present you get a line on stderr telling you `BRIDGE_API_KEY` is set and
-being ignored, and what to do instead. To point the CLI at a different app, use
-`--profile`, not the env vars.
-
-**`BRIDGE_APP_ID` has no effect on any path.** The app is carried by the
-credential itself — a login token and an API key are both already scoped to one
-app, so there is nothing for it to change. It is called out on stderr whenever it
-is set, rather than being quietly ignored.
-
-Optional configuration (applies to both auth paths):
-
-```bash
-export BRIDGE_BASE_URL=https://api.thebridge.dev   # default
-export BRIDGE_TENANT_ID=<tenant-id>                 # for user commands
-export BRIDGE_DEBUG=true                            # enable debug logging
-```
-
-### 3. Targeting a local stack
-
-Two exports, then log in as usual — the browser flow works against a local
-stack the same way it does against production:
-
-```bash
-export BRIDGE_BASE_URL=http://localhost:3200        # bridge-api
-export BRIDGE_AUTH_BASE_URL=http://localhost:3091   # consent screen (cloud-views)
-
-bridge auth login
-```
-
-`BRIDGE_BASE_URL` is where commands send their API calls; `BRIDGE_AUTH_BASE_URL`
-is where `bridge auth login` opens the consent screen. Set the second one too,
-or you will authenticate against production and then issue commands against
-your local API with a token it does not accept.
-
-There is deliberately **no config file to source** (TBP-121). A sourceable file
-mixed CLI settings with two demo apps' settings, pinned an undocumented app id,
-and kept a long-lived API key on disk in plaintext; two exports cover the same
-ground without any of that. For CI, use `BRIDGE_API_KEY` as described above.
-
-One more, for working on the integration guides themselves:
-
-```bash
-export BRIDGE_GUIDE_LOCAL_DIR=/path/to/thebridge-platform/bridge-plugins
-```
-
-`bridge guide` then reads prompts from that directory
-instead of fetching them from GitHub (or the copies bundled with the CLI), so edits show up without a release.
-
-## Usage
-
-All output is JSON by default for management commands. AI agents parse it directly; humans can pipe through `jq`. The `bridge auth status` and `bridge auth login` commands print human-readable text, since their primary audience is a human in a terminal.
-
-```bash
-bridge <command> <subcommand> [options]
-```
-
-### Addressing a resource
-
-Every command that acts on a single resource takes **either** its opaque id
-**or** its human-readable identifier — you never have to run a `list` first just
-to look up an id.
-
-| Noun | Human-readable option | Id option |
-|---|---|---|
-| flag | `--key <key>` (or a positional `<key>` on `get` / `eval` / `schedule`) | `--id` |
-| role | `--key <key>` (or a positional `<idOrKey>` on `get`) | `--id` |
-| plan | positional `<key>` — plans are key-native, no id anywhere | — |
-| tenant | `--name <name>` | `--id` |
-| user | `--email <email>` | `--user-id` |
-| token | `--name <name>` | `--id` |
-
-Rules, the same for every noun:
-
-- Pass exactly one. Both together, or neither, is an error.
-- An identifier that matches nothing fails and names the `list` command to run.
-- An identifier that matches **more than one** resource fails, lists the
-  candidates, and changes nothing. The CLI never picks one for you — pass `--id`
-  to disambiguate.
-
-`--name` and `--email` exist because tenants, users and tokens have no key
-field. Of those, only a user's email is unique; tenant and token names are free
-text, which is exactly why the ambiguity check is a hard failure.
-
-### Auth (interactive credentials)
-
-```bash
-bridge auth login                # default: open browser, complete PKCE flow
-bridge auth login --app acme     # pin to a specific app
-bridge auth login --label "work laptop"
-bridge auth login --no-browser   # print the URL (headless / SSH)
-bridge auth status               # show every stored app, active one marked
-bridge auth use <label|app-id>   # switch the default app, no browser
-bridge auth logout               # revoke + remove the active app
-bridge auth logout --all         # ...or every stored app
-bridge --profile <label> <cmd>   # target one stored login for one command
-bridge app list                  # apps this login covers (home + current marked)
-bridge app use <id|name>         # switch app within a workspace login, no browser
-bridge app create --name <n> [--callback-url <url>] [--use]
-bridge --app <id|name> <cmd>     # one command on another app of the workspace
-```
-
-### Auth Configuration (app-level — separate from `auth login`)
-
-```bash
-bridge auth config
-bridge auth mfa --enabled true
-bridge auth password-policy --access-token-ttl 3600
-```
-
-### App
-
-```bash
-bridge app get
-bridge app update --name "My App" --mfa-enabled true
-```
-
-### Tenants
-
-```bash
-bridge tenant list
-bridge tenant get --name "Acme Corp"              # or --id <tenant-id>
-bridge tenant create --owner-email admin@acme.com --name "Acme Corp" --plan enterprise
-bridge tenant update --name "Acme Corp" --locale sv
-bridge tenant update --name "Acme Corp" --new-name "Acme Corp Updated"
-bridge tenant delete --name "Acme Corp"           # or --id <tenant-id>
-```
-
-Tenants have no key field, so they are addressed by `--name`. Names are **not**
-enforced unique — if two tenants share one, the command fails and lists both
-rather than guessing. Use `--id` to disambiguate.
-
-`tenant update --name` addresses the tenant when `--id` is absent; passed
-alongside `--id` it keeps its original meaning and renames the tenant.
-`--new-name` always renames, whichever way you addressed it.
-
-### Users
-
-Requires tenant context via `--tenant-id` or `BRIDGE_TENANT_ID`.
-
-```bash
-bridge user list --tenant-id <tenant-id>
-bridge user get --email alice@acme.com --tenant-id <tenant-id>      # or --user-id <user-id>
-bridge user invite --email alice@acme.com --role ADMIN --tenant-id <tenant-id>
-bridge user update --email alice@acme.com --role OWNER --tenant-id <tenant-id>
-bridge user remove --email alice@acme.com --tenant-id <tenant-id>
-```
-
-Users have no key field either; `--email` is the human-readable address and is
-unique within a tenant (matched case-insensitively).
-
-### Access Roles
-
-```bash
-bridge role list
-bridge role get ADMIN
-bridge role create --name Editor --key editor --privileges READ,WRITE
-bridge role update --key editor --privileges READ,WRITE,DELETE     # or --id <role-id>
-bridge role delete --key editor                                    # or --id <role-id>
-```
-
-### Feature Flags
-
-```bash
-bridge flag list
-bridge flag create --key dark-mode --description "Dark mode UI" --enabled
-bridge flag update --key dark-mode --state on                      # or --id <flag-id>
-bridge flag update --key dark-mode --new-key dark-theme            # rename
-bridge flag toggle --key dark-mode --enabled true                  # or --id <flag-id>
-bridge flag delete --key dark-mode                                 # or --id <flag-id>
-```
-
-`flag update --key` addresses the flag when `--id` is absent; passed alongside
-`--id` it keeps its original meaning and renames the flag. `--new-key` always
-renames, whichever way you addressed it.
-
-### Branding
-
-```bash
-bridge branding get
-bridge branding update --bg-color "#ffffff" --text-color "#000000"
-```
-
-### Subscription Plans
-
-```bash
-bridge plan list
-# A plan needs at least one price — `create` takes the first one.
-# A free tier is a zero-amount price: --amount 0
-bridge plan create --key pro --name "Pro Plan" --amount 29 --interval month
-bridge plan update --key pro --name "Pro Plan v2"
-# Remove a plan. Only a plan no workspace is on is deleted (needs
-# `bridge auth login --admin`); with workspaces on it the delete is refused.
-bridge plan delete --key pro --dry-run   # would it go through, and who is on it
-bridge plan delete --key pro
-# Stop selling it instead: workspaces on it keep it, nobody new can choose it.
-bridge plan archive --key pro            # --undo brings it back
-# Or move the workspaces off it first (a paid subscription moves too).
-bridge tenant set-plan --name "Acme Corp" --plan free
-
-# Prices — a plan can have several (one per currency + interval). Idempotent.
-bridge plan price set pro --amount 290 --currency usd --interval year
-# Removing the last price is refused: a priceless plan can't be assigned.
-bridge plan price rm  pro --interval year
-
-# Usage quotas (hard | metered caps)
-# hard = block at the cap; metered = bill overage per unit (needs --price-amount)
-bridge plan quota set pro --metric ai_completions --limit 1000 --policy hard
-# Metered: first 1000 free, then $0.002/unit (currency from the plan's price)
-bridge plan quota set pro --metric ai_completions --limit 1000 --policy metered --price-amount 0.002
-# Pure per-unit (billed from unit 1)
-bridge plan quota set pro --metric api_calls --limit 0 --policy metered --price-amount 0.01 --price-currency usd
-bridge plan quota rm  pro --metric ai_completions
-
-# Included on/off features — each is `bridge:billing.entitlement.<key>` in flag rules
-bridge plan feature add    pro analytics --name "Analytics"
-bridge plan feature list   pro
-bridge plan feature remove pro analytics
-bridge plan create --key team --name Team --amount 0 --interval month --features "analytics,sso:Single sign-on"
-```
-
-### API Tokens
-
-```bash
-bridge token list
-bridge token create --name "CI Token" --privileges USER_READ,TENANT_READ
-bridge token revoke --name "CI Token"             # or --id <token-id>
-```
-
-Token names are free text and not enforced unique — a duplicate name fails and
-lists the candidates instead of revoking one at random.
-
-### Events
-
-```bash
-bridge event list
-bridge event list --type USER_CREATED --since 24h --limit 50
-```
-
-### Setup Workflows (multi-step)
-
-```bash
-bridge setup sso --provider google --client-id <id> --client-secret <secret>
-bridge setup sso --provider azure --client-id <id> --client-secret <secret> --tenant-id <entra-directory-id>
-bridge setup payments --stripe-key sk_test_xxx
-bridge setup communication --from-address noreply@acme.com --from-name "Acme"
-```
-
-`setup sso` supports google, github, linkedin, facebook and azure (azure also
-needs the Entra ID Directory (tenant) ID). SAML and OIDC are not supported by
-the Bridge API; set them up in the Bridge admin UI. The command prints the
-callback URL to register in the provider's console.
-
-`setup communication` sets only the sender name and address. Bridge sends all
-email through its own provider, so there is no provider or API key to
-configure. A new sender address is verified by email before Bridge uses it.
-
-### Info (context for AI agents)
-
-```bash
-bridge info app
-bridge info auth-config
-bridge info flags
-bridge info plans
-bridge info roles
-```
-
-### Integration Guides
-
-Three master prompts orchestrate the per-framework guides:
-
-```bash
-bridge guide              # Bridge Auth master prompt (auth, RBAC, tenants)
-bridge guide flags        # Feature Flags 2.0 master prompt
-bridge guide billing      # Billing 2.0 master prompt (subscriptions, quotas, webhooks)
-```
-
-One page explains the mechanisms all of them build on — the server decides limits and the client decorates, a POST increments the limit, counter vs gauge, the three ways to show a limit in the UI, and the four levels of customising Bridge's pages:
-
-```bash
-bridge guide mechanisms
-```
-
-Per-framework guides:
-
-```bash
-bridge guide list
-bridge guide <framework>                    # auth guide (svelte | react | nextjs | angular | nestjs | express)
-bridge guide <framework> sdk-auth           # in-app auth UI (frontend frameworks only)
-bridge guide flags --framework <name>       # flags-specific guide
-bridge guide billing --framework <name>     # billing-specific guide
-bridge guide custom                         # REST API fallback for any language
-```
-
-`bridge guide flags` and `bridge guide billing` auto-detect the framework from `package.json` when `--framework` is omitted — they fall back to the generic master prompt if no framework signal is found.
-
-## Output Format
-
-**Success:**
-
-```json
-{
-  "success": true,
-  "data": { ... }
-}
-```
-
-**Error:**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "TENANT_HAS_ACTIVE_SUBSCRIPTION",
-    "message": "Cannot delete tenant with active subscription.",
-    "details": { ... }
-  }
-}
-```
-
-`bridge auth login`, `bridge auth logout`, and `bridge auth status` print plain text (they're the only commands aimed primarily at humans).
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | Client error (4xx), or `bridge auth login` failed/cancelled |
-| 2 | Server error (5xx) |
-| 3 | Configuration error (missing API key, expired credentials, etc.) |
-
-## Security notes
-
-- `bridge auth login` uses RFC 8252 loopback PKCE — the loopback URL is always `http://127.0.0.1:<random-port>/callback` (never `localhost`, to avoid DNS spoofing).
-- The loopback HTTP server handles a single request, then closes — no port stays bound.
-- The CSRF `state` parameter is verified on the callback before the code is exchanged.
-- The credentials file is written with mode `0600` (owner-only). Its parent directory is created with mode `0700`.
-- The CLI never logs the JWT or the PKCE `code_verifier`.
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Run locally
-node bridge-cli/dist/bin.js --help
-
-# Test
-npm test
-```
-
-## Learn more
-
-- [Getting started](https://thebridge.dev/docs/getting-started/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [Set up Bridge with your AI assistant](https://thebridge.dev/docs/ai-assistants/mcp/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [Feature flags](https://thebridge.dev/docs/feature-flags/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [Subscriptions and plan limits](https://thebridge.dev/docs/billing/how-it-works/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-- [API reference](https://thebridge.dev/docs/api-reference/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli)
-
-## Other Bridge packages
-
-| Package | For |
+| Command | What it does |
 |---|---|
-| [`@nebulr-group/bridge-svelte`](https://www.npmjs.com/package/@nebulr-group/bridge-svelte) | SvelteKit |
-| [`@nebulr-group/bridge-react`](https://www.npmjs.com/package/@nebulr-group/bridge-react) | React |
-| [`@nebulr-group/bridge-nextjs`](https://www.npmjs.com/package/@nebulr-group/bridge-nextjs) | Next.js |
-| [`@nebulr-group/bridge-angular`](https://www.npmjs.com/package/@nebulr-group/bridge-angular) | Angular |
-| [`@nebulr-group/bridge-nestjs`](https://www.npmjs.com/package/@nebulr-group/bridge-nestjs) | NestJS |
-| [`@nebulr-group/bridge-express`](https://www.npmjs.com/package/@nebulr-group/bridge-express) | Express |
-| [`@nebulr-group/bridge-auth-core`](https://www.npmjs.com/package/@nebulr-group/bridge-auth-core) | Any JavaScript app (core) |
+| `auth login` · `logout` · `whoami` · `workspace` | Sign in and out, see who you are, switch workspace |
+| `app list` · `create` · `use` · `get` · `update` · `delete` | Your apps; `update` sets the name, logo, website, privacy policy and terms |
+| `app address list` · `add` · `remove` | Sign-in returns, email links, browser origins, sign-out and checkout returns |
+| `app default-return <url>` | The sign-in return used when a sign-in names none |
+| `key list` · `create` · `revoke` | App keys, for your server |
+| `plan list` · `get` · `create` · `update` · `apply` · `archive` · `delete` | Plans as one document; `apply <file>` creates or replaces one from JSON |
+| `plan price` · `usage-price` · `feature` · `limit` (`set`/`add`, `remove`) | Change one entry of a plan |
+| `product` · `metric` · `tax` · `billing settings` | Add-ons, what you count, tax rates, billing settings |
+| `stripe status` · `connect` · `disconnect` | Stripe, in test mode by your pasted test key |
+| `flag list` · `get` · `create` · `update` · `on` · `off` · `restore` · `delete` | Feature flags |
+| `flag rule show` · `add` · `set` · `clear` | A flag's rule: ordered branches of conditions, the first match wins |
+| `role` · `privilege` · `workspace list` · `member` | Roles, privileges, your customers' workspaces and their members |
+| `check gates` | Lists every direct role, privilege or plan check in your project, with the flag to use instead |
+
+`bridge <command> --help` has every option.
+
+### Prices
+
+Write prices the way you say them: `"19.99 EUR/month"`, `"190 EUR/year"`, or `"49 EUR"` for a one-time product. A usage price is a price per unit on top of a plan's price: `"api.calls 0.002 EUR/month included 10000"` charges 0.002 EUR per call above 10,000 a month. Limits are `metric=n` or `metric=unlimited`.
+
+### Flag rules
+
+`--when "<attribute> <operator> <value>"` writes a one-branch rule; repeat `--when` to require every condition. The operators are `eq`, `neq`, `contains`, `not_contains`, `in`, `not_in`, `gt`, `lt`, `between`, `regex`, `exists` and `not_exists`. `flag rule add` adds a branch, `--rollout 25` gives it to a share of the people it matches, and `--rule`/`--rule-file` take a whole rule as JSON.
+
+### Roles, members and the pasted Stripe key
+
+Bridge offers roles, privileges, workspaces, members and a pasted Stripe key to your app's own server, so these commands call Bridge with an app key. Set `BRIDGE_APP_KEY` to one of your app's keys, or leave it unset: the CLI then makes a key that lasts one day and holds only what the command needs, and revokes it as soon as the command is done. Making a key needs a recent sign-in; if yours is older, the CLI says so.
+
+## Output
+
+Results are JSON on stdout: `{ "success": true, "data": … }`. Errors are JSON on stderr: `{ "success": false, "error": { "code", "message", "hint" } }`. Messages meant for you go to stderr as plain text.
+
+Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or could not answer, `3` the CLI is not set up (no issuer, not signed in, a wrong setting).
+
+## Settings
+
+| Variable | Flag | What it is |
+|---|---|---|
+| `BRIDGE_ISSUER` | `--issuer` | Your issuer. Saved at sign-in |
+| `BRIDGE_APP` | `--app` | The app commands act on. Default: the one chosen with `bridge app use` |
+| `BRIDGE_SIGN_IN_PAGE` | `auth login --sign-in-page` | Bridge's sign-in page, when the issuer does not list it |
+| `BRIDGE_APP_KEY` | | An app key for the commands that need one |
+| `BRIDGE_TOKEN_STORE` | | `file` to keep the session in the 0600 file, `keychain` to require the keychain |
+| `BRIDGE_CONFIG_DIR` | | Where settings are kept. Default `~/.config/bridge/v1` |
+
+## Security
+
+- The issuer and every endpoint must be `https`; plain `http` only on `localhost`, `127.0.0.1` and `[::1]`, for local development.
+- The CLI never follows a redirect, so your token goes only to the addresses your issuer lists.
+- Browser sign-in listens on `127.0.0.1` only, checks the `state` it sent and the issuer the page names, and uses PKCE (S256).
+- Passwords and Stripe keys are read without echo or from stdin, never from arguments, and never kept.
+
+## Use it from code
+
+Every command is a plain function over one client, exported from the package:
+
+```ts
+import { BridgeClient, Sessions, FileStore, discover, plans } from '@nebulr-group/bridge-cli';
+```
 
 ## License
 
-[MIT](https://github.com/thebridgedev/bridge-cli/blob/main/LICENSE) © Nebulr. Built by [The Bridge](https://thebridge.dev/?utm_source=npm&utm_medium=readme&utm_campaign=bridge-cli).
+MIT

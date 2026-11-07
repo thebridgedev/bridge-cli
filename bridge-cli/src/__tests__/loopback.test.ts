@@ -1,9 +1,9 @@
 /**
- * TBP-113 — loopback HTTP server + callback parser/verifier.
+ * The loopback HTTP server, and the callback parser and verifier.
  *
  * Coverage:
  *  1. parseCallbackUrl extracts code/state/error/error_description/pathname.
- *  2. verifyCallback rejects state mismatch (CSRF), access_denied → "Login cancelled.",
+ *  2. verifyCallback rejects state mismatch (CSRF), access_denied → "Sign-in cancelled.",
  *     missing code, missing state.
  *  3. startLoopback boots, accepts a single GET /callback, returns parsed result,
  *     and the listener closes after the response is flushed.
@@ -45,13 +45,13 @@ describe('verifyCallback', () => {
     expect(r).toEqual({ code: 'a', state: 's' });
   });
 
-  it('throws "Login cancelled." for error=access_denied', () => {
+  it('throws "Sign-in cancelled." for error=access_denied', () => {
     expect(() =>
       verifyCallback(
         { error: 'access_denied', state: 's', pathname: '/callback' } as ReturnType<typeof parseCallbackUrl>,
         's',
       ),
-    ).toThrow(/Login cancelled\./);
+    ).toThrow(/Sign-in cancelled\./);
   });
 
   it('throws on state mismatch (CSRF)', () => {
@@ -87,6 +87,23 @@ describe('verifyCallback', () => {
         's',
       ),
     ).toThrow(/server_error.*boom/);
+  });
+});
+
+describe('the issuer check (RFC 9207)', () => {
+  it('accepts a callback that names the issuer, or none', () => {
+    const parsed = parseCallbackUrl('/callback?code=c&state=s&iss=https%3A%2F%2Fbridge.test%2Fidentity-access%2Fapps%2Fa');
+    expect(parsed.iss).toBe('https://bridge.test/identity-access/apps/a');
+    expect(verifyCallback(parsed, 's', 'https://bridge.test/identity-access/apps/a')).toEqual({ code: 'c', state: 's' });
+    expect(verifyCallback(parseCallbackUrl('/callback?code=c&state=s'), 's', 'https://bridge.test/identity-access/apps/a')).toEqual({ code: 'c', state: 's' });
+  });
+
+  it('refuses a callback that names another issuer', () => {
+    expect(() => verifyCallback(parseCallbackUrl('/callback?code=c&state=s&iss=https%3A%2F%2Fevil.test'), 's', 'https://bridge.test/identity-access/apps/a')).toThrow(/another issuer/);
+  });
+
+  it('checks the state before reporting an error', () => {
+    expect(() => verifyCallback(parseCallbackUrl('/callback?error=access_denied&state=forged'), 's')).toThrow(/State mismatch/);
   });
 });
 
@@ -143,7 +160,7 @@ describe('startLoopback', () => {
     await expect(lb.result).rejects.toThrow(/State mismatch/);
   });
 
-  it('rejects with "Login cancelled." for access_denied', async () => {
+  it('rejects with "Sign-in cancelled." for access_denied', async () => {
     const lb = await startLoopback({ expectedState: 'S', timeoutMs: 5000 });
     const port = Number(new URL(lb.redirectUri).port);
 
@@ -158,6 +175,6 @@ describe('startLoopback', () => {
       req.on('error', reject);
     });
 
-    await expect(lb.result).rejects.toThrow(/Login cancelled\./);
+    await expect(lb.result).rejects.toThrow(/Sign-in cancelled\./);
   });
 });

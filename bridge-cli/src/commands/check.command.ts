@@ -1,18 +1,16 @@
-// TBP-705 — `bridge check gates`: the last step of every integration guide.
+// `bridge check gates`: the last step of every integration.
 //
-// The owner's rule (2026-09-29) is that every gate in app code is a flag. An
-// agent in the owner's own test run still wrote `canManageTeam` from a list of
-// role names and wrapped analytics in `<Entitled>`, because nothing checked the
-// result. This command lists each direct role, privilege, plan or plan-feature
-// check in the project with the flag to use instead, and exits 1 while any is
-// left, so "done" is something the agent can verify rather than assert.
+// Every gate in app code is a flag. This command lists each direct role,
+// privilege, plan or plan-feature check in the project with the flag to use
+// instead, and exits 1 while any is left, so "done" is something a coding
+// agent can verify rather than assert.
 //
 // Local and read-only: it reads the developer's sources and calls nothing.
 
 import { Command } from 'commander';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { outputError, outputPrompt, outputSuccess } from '../output.js';
+import type { Deps } from './context.js';
 import {
   GATE_EXCEPTION_MARKER,
   SKIPPED_DIRS,
@@ -66,7 +64,7 @@ export function formatGateReport(scanned: number, findings: GateFinding[]): stri
     '',
     'Every gate in app code is a flag: its rule says why (a privilege, a plan feature, a rollout).',
     'Replace each check below, then run this again until it is clean. The flag rules themselves are set with',
-    '`bridge flag` / the MCP flag tools; read the app\'s roles first with `bridge role list`.',
+    '`bridge flag rule add`; read the app\'s roles first with `bridge role list`.',
     '',
   ];
   for (const f of findings) {
@@ -83,7 +81,7 @@ export function formatGateReport(scanned: number, findings: GateFinding[]): stri
   return lines.join('\n') + '\n';
 }
 
-export function registerCheckCommands(program: Command): void {
+export function registerCheckCommands(program: Command, deps: Deps): void {
   const check = program.command('check').description('Check the project against Bridge\'s rules (local, read-only)');
 
   check
@@ -97,11 +95,11 @@ export function registerCheckCommands(program: Command): void {
       try {
         const root = resolve(opts.cwd);
         const { scanned, findings } = checkGates(root);
-        if (opts.json) outputSuccess({ scanned, findings });
-        else outputPrompt(formatGateReport(scanned, findings));
-        if (findings.length > 0) process.exitCode = 1;
+        if (opts.json) deps.io.result({ scanned, findings });
+        else deps.io.text(formatGateReport(scanned, findings));
+        if (findings.length > 0) deps.io.setExitCode(1);
       } catch (error) {
-        outputError(error);
+        deps.io.error(error);
       }
     });
 }

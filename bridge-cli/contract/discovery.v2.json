@@ -1,0 +1,47 @@
+{
+  "about": "A pinned copy of the issuer's metadata document, as Bridge publishes it at <issuer>/.well-known/openid-configuration, with {base} for Bridge's address and {app} for the app's id. The tests' fake Bridge serves exactly this document, so the CLI is tested against the keys Bridge publishes.",
+  "source": {"file": "microservices/identity-access/src/controllers.ts", "commit": "21fdf0da9663008e745f79334ea66b00cdbcedb7"},
+  "document": {
+    "issuer": "{base}/identity-access/apps/{app}",
+    "authorization_challenge_endpoint": "{base}/v2/identity-access/apps/{app}/sign-in",
+    "token_endpoint": "{base}/v2/identity-access/apps/{app}/token",
+    "revocation_endpoint": "{base}/v2/identity-access/apps/{app}/revoke",
+    "introspection_endpoint": "{base}/v2/identity-access/apps/{app}/introspect",
+    "jwks_uri": "{base}/v2/identity-access/apps/{app}/jwks.json",
+    "response_types_supported": ["code"],
+    "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+    "code_challenge_methods_supported": ["S256"],
+    "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
+    "subject_types_supported": ["public"],
+    "id_token_signing_alg_values_supported": ["PS256"],
+    "authorization_response_iss_parameter_supported": true,
+    "bridge_app": "{app}",
+    "bridge_api_version": 2,
+    "bridge_access_token_audience": "{base}",
+    "bridge_revocation_lanes": {},
+    "bridge_endpoints": {
+      "2": {
+        "sign_in": "{base}/v2/identity-access/apps/{app}/sign-in",
+        "token": "{base}/v2/identity-access/apps/{app}/token",
+        "revoke": "{base}/v2/identity-access/apps/{app}/revoke",
+        "introspect": "{base}/v2/identity-access/apps/{app}/introspect",
+        "jwks": "{base}/v2/identity-access/apps/{app}/jwks.json",
+        "sign_in_options": "{base}/v2/identity-access/apps/{app}/sign-in-options",
+        "sign_up": "{base}/v2/identity-access/apps/{app}/sign-up",
+        "sign_up_verify": "{base}/v2/identity-access/apps/{app}/sign-up/verify",
+        "password_forgot": "{base}/v2/identity-access/apps/{app}/password/forgot",
+        "password": "{base}/v2/identity-access/apps/{app}/password",
+        "sign_out": "{base}/v2/identity-access/sign-out",
+        "sessions": "{base}/v2/identity-access/sessions",
+        "accounts": "{base}/v2/accounts",
+        "billing": "{base}/v2/billing",
+        "flags": "{base}/v2/flags",
+        "flags_visitor": "{base}/v2/flags/apps/{app}",
+        "live": "{base}/v2/live",
+        "live_visitor": "{base}/v2/live/apps/{app}",
+        "live_connection": "{base}/v2/live/apps/{app}/connection",
+        "events_and_logs": "{base}/v2/events-and-logs"
+      }
+    }
+  }
+}

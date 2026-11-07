@@ -1,20 +1,14 @@
 /**
- * TBP-705 — `bridge check gates`. The fixtures are the checks an agent wrote in
- * the owner's own MCP run (2026-09-29): a `canManageTeam` built from role names
- * and analytics behind `<Entitled>`. The command must list both with the flag
- * to use instead, exit 1, and stay quiet on what is not a gate.
+ * `bridge check gates`. The fixtures are checks a coding agent wrote in a real
+ * run: a `canManageTeam` built from role names and analytics behind
+ * `<Entitled>`. The command must list both with the flag to use instead,
+ * exit 1, and stay quiet on what is not a gate.
  */
-jest.mock('@nebulr-group/bridge-auth-core', () => ({
-  __esModule: true,
-  BridgeManagement: jest.fn(),
-  HttpError: class HttpError extends Error {},
-}));
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { Command } from 'commander';
-import { registerCommands } from '../program';
+import { buildProgram } from '../program';
 import { checkGates, formatGateReport } from '../commands/check.command';
 import { codeGateFindings } from '../gate-rules';
 
@@ -31,13 +25,12 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('bridge check gates', () => {
   it('is a registered command', () => {
-    const program = new Command();
-    registerCommands(program);
+    const program = buildProgram({ fetch: async () => new Response(null), env: {}, io: {} as never, openBrowser: async () => ({ ok: false }) });
     const check = program.commands.find((c) => c.name() === 'check')!;
     expect(check.commands.map((c) => c.name())).toContain('gates');
   });
 
-  it("finds the owner's run: a role list in a layout and <Entitled> on a page", () => {
+  it('finds a real run: a role list in a layout and <Entitled> on a page', () => {
     write(
       'src/routes/+layout.ts',
       "const canManageTeam = ['OWNER', 'ADMIN'].includes(profile?.role ?? '');\nexport const load = () => ({ canManageTeam });\n",

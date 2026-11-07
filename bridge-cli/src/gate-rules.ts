@@ -1,6 +1,5 @@
 /**
- * TBP-705 — the owner's rule for app code (2026-09-29): every gate in app code
- * is a flag. Its rule says why (a privilege, a plan feature, a rollout); app
+ * The rule for app code: every gate in app code is a flag. Its rule says why (a privilege, a plan feature, a rollout); app
  * code never reads a role, a privilege list, the plan or a plan feature to
  * decide what someone may see or do. Numbers (plan limits) and permission on
  * one specific record are not gates.
@@ -87,13 +86,13 @@ export const CODE_CHECKS: CodeCheck[] = [
   { kind: 'plan-feature', pattern: /<Entitled\b[^>]*?\bto=(.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
   { kind: 'plan-feature', pattern: /\bentitlements\s*\??\.\s*can\s*\((.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
   { kind: 'plan-feature', pattern: /@RequireEntitlement\s*\((.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
-  // Express twin of `@RequireEntitlement` (bridge-express 0.7, TBP-745).
+  // Express twin of `@RequireEntitlement` (bridge-express 0.7).
   { kind: 'plan-feature', pattern: /\brequireEntitlement\s*\((.*)/, instead: (m) => planFeatureInstead(leadingLiteral(m[1])) },
   // Plan names compared
   { kind: 'plan-name', pattern: /\bplan(?:Key|Name|Slug|Id)?\s*(?:===|!==|==|!=)\s*['"`]/i, instead: () => PLAN_NAME_INSTEAD },
   { kind: 'plan-name', pattern: /\.plan(?:\??\.(?:key|slug|name|id))?\s*(?:===|!==|==|!=)\s*['"`]/, instead: () => PLAN_NAME_INSTEAD },
   { kind: 'plan-name', pattern: /\bis(?:Pro|Free|Enterprise|Team|Business|Premium)(?:Plan|User)?\b\s*[(=]/, instead: () => PLAN_NAME_INSTEAD },
-  // bridge-express 0.7 (TBP-745) removed `protect({ role | plans | entitlement | entitlements })`;
+  // bridge-express 0.7 removed `protect({ role | plans | entitlement | entitlements })`;
   // each now fails at startup. `plans: [` is caught by the rule below.
   {
     kind: 'removed-api',
@@ -178,7 +177,7 @@ export const DOC_FORBIDDEN: Array<[string, RegExp]> = [
     /\b(?:browser|frontend|client)(?:[- ](?:only|side))?\b[^.\n]{0,40}\b(?:won't|will not|does not|doesn't|cannot|can't|can not) (?:work|enforce|be trusted)/i,
   ],
   ['browser counting said not production-ready', /\b(?:browser|frontend|client)\b[^.\n]{0,60}\bnot (?:production|prod)[- ](?:ready|grade)/i],
-  // TBP-757: `contains` on privileges is exact membership; advice written around the old substring match is stale.
+  // `contains` on privileges is exact membership; advice written around the old substring match is stale.
   ['privileges said to match as text', /\b(?:matched|matches|match) (?:privilege keys )?as text\b|\bno other (?:privilege )?key contains\b/i],
 ];
 

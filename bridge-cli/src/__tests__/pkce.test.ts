@@ -1,5 +1,5 @@
 /**
- * TBP-113 — PKCE (RFC 7636) helpers.
+ * PKCE (RFC 7636) helpers.
  *
  * Coverage:
  *  1. base64UrlEncode produces no padding, no '+/' chars.
