@@ -208,7 +208,7 @@ export function registerBillingCommands(program: Command, deps: Deps): void {
         const { c, appId } = await ctx.forApp();
         const connected = await withAppKey(c, appId, [], ctx.env, (key) =>
           connection.pasteKey(c, key, { secretKey, ...(opts.publishableKey === undefined ? {} : { publishableKey: opts.publishableKey }) }),
-          (message) => ctx.io.info(message),
+          { warn: (message) => ctx.io.info(message) },
         );
         ctx.io.result(connected);
       }),

@@ -12,7 +12,7 @@ import { action, collect, type Context, type Deps } from './context.js';
  */
 async function asApp<T>(ctx: Context, needs: string[], fn: (c: BridgeClient, key: string) => Promise<T>): Promise<T> {
   const { c, appId } = await ctx.forApp();
-  return withAppKey(c, appId, needs, ctx.env, (key) => fn(c, key), (message) => ctx.io.info(message));
+  return withAppKey(c, appId, needs, ctx.env, (key) => fn(c, key), { warn: (message) => ctx.io.info(message) });
 }
 
 const KEY_NOTE = ' Runs with BRIDGE_APP_KEY, or a short-lived key the CLI makes (needs a recent sign-in).';

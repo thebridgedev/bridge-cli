@@ -26,7 +26,7 @@ The CLI needs one address: your **issuer**, the address Bridge signs you in at. 
 bridge auth login --issuer https://<your Bridge>/identity-access/apps/<app id>
 ```
 
-This opens Bridge's sign-in page in your browser. You sign in there, and the browser comes back to the CLI on `127.0.0.1`. The sign-in is bound to this process with PKCE, so a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
+This opens Bridge's sign-in page in your browser: the page your issuer publishes, and the CLI says its address before it opens it. You sign in there, and the browser comes back to the CLI on `127.0.0.1`. The sign-in is bound to this process with PKCE, so a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
 
 If no browser is at hand (a server, a container, CI), sign in in the terminal:
 
@@ -123,7 +123,7 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 |---|---|---|
 | `BRIDGE_ISSUER` | `--issuer` | Your issuer. Saved at sign-in |
 | `BRIDGE_APP` | `--app` | The app commands act on. Default: the one chosen with `bridge app use` |
-| `BRIDGE_SIGN_IN_PAGE` | `auth login --sign-in-page` | Bridge's sign-in page, when the issuer does not list it |
+| `BRIDGE_SIGN_IN_PAGE` | `auth login --sign-in-page` | Bridge's sign-in page, only when the issuer publishes none, and only on the issuer's own address or on localhost. Never saved |
 | `BRIDGE_APP_KEY` | | An app key for the commands that need one |
 | `BRIDGE_TOKEN_STORE` | | `file` to keep the session in the 0600 file, `keychain` to require the keychain |
 | `BRIDGE_CONFIG_DIR` | | Where settings are kept. Default `~/.config/bridge/v1` |
@@ -132,7 +132,11 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 
 - The issuer and every endpoint must be `https`; plain `http` only on `localhost`, `127.0.0.1` and `[::1]`, for local development.
 - The CLI never follows a redirect, so your token goes only to the addresses your issuer lists.
-- Browser sign-in listens on `127.0.0.1` only, checks the `state` it sent and the issuer the page names, and uses PKCE (S256).
+- Browser sign-in opens the sign-in page the issuer publishes. Another page is taken only on the issuer's own address, or on localhost for development, and is never saved.
+- The browser is opened with no shell: the address is one argument to `open`, `xdg-open`, or `rundll32 url.dll,FileProtocolHandler` on Windows.
+- Browser sign-in listens on `127.0.0.1` only, checks the `state` it sent, requires the issuer to name itself on the callback (`iss`, RFC 9207), and uses PKCE (S256).
+- The session and settings files are written with no symlink followed: to a new 0600 file in a 0700 directory you own, then renamed into place.
+- A temporary app key is revoked when the command ends, fails or is stopped with Ctrl-C; if it cannot be, the CLI prints the key's id to revoke.
 - Passwords and Stripe keys are read without echo or from stdin, never from arguments, and never kept.
 
 ## Use it from code

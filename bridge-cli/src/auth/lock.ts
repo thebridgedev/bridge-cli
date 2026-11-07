@@ -1,5 +1,6 @@
-import { mkdir, open, stat, unlink } from 'node:fs/promises';
+import { lstat, open, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ensurePrivateDir } from '../core/private-files.js';
 
 const STALE_MS = 30_000;
 const WAIT_MS = 15_000;
@@ -13,7 +14,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * accident. A lock left by a command that crashed is taken over after 30 s.
  */
 export async function withLock<T>(dir: string, name: string, fn: () => Promise<T>): Promise<T> {
-  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await ensurePrivateDir(dir);
   const path = join(dir, `${name}.lock`);
   const deadline = Date.now() + WAIT_MS;
   for (;;) {
@@ -23,7 +24,7 @@ export async function withLock<T>(dir: string, name: string, fn: () => Promise<T
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const age = await stat(path).then((info) => Date.now() - info.mtimeMs, () => 0);
+      const age = await lstat(path).then((info) => Date.now() - info.mtimeMs, () => 0);
       if (age > STALE_MS) {
         await unlink(path).catch(() => undefined);
         continue;

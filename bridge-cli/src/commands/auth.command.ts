@@ -1,8 +1,7 @@
 import type { Command } from 'commander';
-import { signInWithBrowser, signInWithPassword, type WorkspaceChoice } from '../auth/sign-in.js';
+import { chooseSignInPage, signInWithBrowser, signInWithPassword, type WorkspaceChoice } from '../auth/sign-in.js';
 import type { StoredSession } from '../auth/store.js';
 import { CliError } from '../core/errors.js';
-import { secureUrl } from '../core/urls.js';
 import { action, type Context, type Deps } from './context.js';
 
 interface Me {
@@ -75,7 +74,7 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
     .option('--email <email>', 'Your email, with --password')
     .option('--password-stdin', 'Read the password from stdin, with --password (for scripts and CI)')
     .option('--workspace <id>', 'The workspace to sign in to, when you belong to several')
-    .option('--sign-in-page <url>', 'Bridge\'s sign-in page, when the issuer does not list it')
+    .option('--sign-in-page <url>', 'Bridge\'s sign-in page, when the issuer publishes none: only on the issuer\'s own address, or on localhost (env: BRIDGE_SIGN_IN_PAGE)')
     .option('--no-browser', 'Print the sign-in address instead of opening the browser')
     .action(
       action(deps, async (ctx, opts: LoginOptions) => {
@@ -83,7 +82,10 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
         const d = await ctx.discovery();
         const sessions = ctx.sessions();
         let session: StoredSession;
+        const issuerHost = new URL(d.issuer).host;
         if (opts.password || opts.passwordStdin) {
+          // BRIDGE_ISSUER can set the issuer unseen: say where the password goes before asking for it.
+          ctx.io.info(`Signing in to ${issuerHost}.`);
           const email = opts.email ?? (ctx.io.interactive ? (await ctx.io.ask('Email: ')).trim() : undefined);
           if (!email) throw new CliError('invalid', 'Give your email with --email.');
           const password = await readPassword(ctx, opts.passwordStdin);
@@ -94,14 +96,9 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
             chooseWorkspace: workspaceChooser(ctx),
           });
         } else {
-          const settings = await ctx.settings();
-          const page = opts.signInPage ?? ctx.env['BRIDGE_SIGN_IN_PAGE'] ?? settings.signInPage ?? d.signInPage;
-          if (!page) {
-            throw new CliError('not-offered', 'This Bridge does not offer a sign-in page for the CLI yet.', {
-              hint: 'Sign in in the terminal instead: `bridge auth login --password`.',
-            });
-          }
-          if (secureUrl(page) === null) throw new CliError('misconfigured', `The sign-in page must be an https address (http only on localhost): ${page}`);
+          const { page, ignored } = chooseSignInPage(d, opts.signInPage ?? ctx.env['BRIDGE_SIGN_IN_PAGE']);
+          if (ignored !== undefined) ctx.io.info(`Using the sign-in page ${issuerHost} publishes, not ${ignored}.`);
+          ctx.io.info(`Signing in at ${new URL(page).host} for ${issuerHost}.`);
           session = await signInWithBrowser(sessions, d, {
             signInPage: page,
             openBrowser: opts.browser === false ? async () => ({ ok: false }) : deps.openBrowser,
@@ -111,7 +108,6 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
         }
         const saved = await ctx.config.update((settings) => {
           settings.issuer = issuer;
-          if (opts.signInPage) settings.signInPage = opts.signInPage;
         });
         const who = await me(ctx);
         ctx.io.info(`Signed in${who?.email ? ` as ${who.email}` : ''}.`);

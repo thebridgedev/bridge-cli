@@ -1,7 +1,7 @@
 import type { Discovery } from '../core/discovery.js';
 import { CliError } from '../core/errors.js';
 import { call, type Fetch } from '../core/http.js';
-import { secureUrl } from '../core/urls.js';
+import { isLocalHost, secureUrl } from '../core/urls.js';
 import { LoopbackError, startLoopback, type StartedLoopback } from './loopback.js';
 import { codeChallengeFor, generateCodeVerifier, generateState } from './pkce.js';
 import type { Sessions } from './session.js';
@@ -95,6 +95,32 @@ export function signInPageUrl(page: string, d: Discovery, request: { codeChallen
   url.searchParams.set('redirect_uri', request.redirectUri);
   url.searchParams.set('state', request.state);
   return url.toString();
+}
+
+/**
+ * The sign-in page to open. The page the issuer publishes always wins. An
+ * override (`--sign-in-page`, `BRIDGE_SIGN_IN_PAGE`) is used only when the
+ * issuer publishes none, and only on the issuer's own origin, or on this
+ * machine for development: a page anywhere else could take the password
+ * and relay it. An override is never saved.
+ */
+export function chooseSignInPage(d: Discovery, override: string | undefined): { page: string; ignored?: string } {
+  if (d.signInPage !== null) {
+    return override === undefined || override === d.signInPage ? { page: d.signInPage } : { page: d.signInPage, ignored: override };
+  }
+  if (override === undefined || override === '') {
+    throw new CliError('not-offered', 'This Bridge does not offer a sign-in page for the CLI yet.', {
+      hint: 'Sign in in the terminal instead: `bridge auth login --password`.',
+    });
+  }
+  const url = secureUrl(override);
+  if (url === null) throw new CliError('misconfigured', `The sign-in page must be an https address (http only on localhost): ${override}`);
+  if (url.origin !== new URL(d.issuer).origin && !isLocalHost(url.hostname)) {
+    throw new CliError('misconfigured', `A sign-in page is taken only on the issuer's own address (${new URL(d.issuer).origin}) or on localhost, not ${url.origin}.`, {
+      hint: 'Sign in in the terminal instead: `bridge auth login --password`.',
+    });
+  }
+  return { page: url.toString() };
 }
 
 /** Browser sign-in through Bridge's own sign-in page, with a loopback on 127.0.0.1 and PKCE (RFC 8252, RFC 7636). */

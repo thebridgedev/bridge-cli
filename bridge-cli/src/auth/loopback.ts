@@ -7,12 +7,12 @@
  *  - Handle exactly one request, then close the listener.
  *
  * The server understands two response shapes from the sign-in page:
- *   `?code=<code>&state=<state>[&iss=<issuer>]`  → success
+ *   `?code=<code>&state=<state>&iss=<issuer>`    → success
  *   `?error=access_denied&state=<state>`          → the person cancelled (or another error)
  *
  * It CSRF-checks the returned `state` against the value the caller
- * generated and, when the page names the issuer (RFC 9207), checks that too,
- * so a code from another issuer is never traded.
+ * generated, and requires the issuer the page names (`iss`, RFC 9207) to be
+ * the one the CLI signs in to, so a code from another issuer is never traded.
  */
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -25,7 +25,7 @@ export interface LoopbackResult {
 export interface RunLoopbackOptions {
   /** The CSRF state the caller generated; must match what the page echoes. */
   expectedState: string;
-  /** The issuer; when the callback names one (`iss`), it must be this one. */
+  /** The issuer: the callback must name it (`iss`, RFC 9207). */
   expectedIssuer?: string;
   /** Body of the success page rendered to the browser. */
   successHtml?: string;
@@ -210,8 +210,10 @@ export function verifyCallback(
   if (!constantTimeEqual(parsed.state, expectedState)) {
     throw new LoopbackError('State mismatch on the sign-in callback (possible CSRF).', 'state_mismatch');
   }
-  if (parsed.iss !== undefined && expectedIssuer !== undefined && parsed.iss !== expectedIssuer) {
-    throw new LoopbackError('The sign-in callback names another issuer.', 'issuer_mismatch');
+  // RFC 9207: the callback must name its issuer, and it must be the one this sign-in is for.
+  if (expectedIssuer !== undefined) {
+    if (parsed.iss === undefined) throw new LoopbackError('The sign-in callback does not name its issuer (iss).', 'issuer_missing');
+    if (parsed.iss !== expectedIssuer) throw new LoopbackError('The sign-in callback names another issuer.', 'issuer_mismatch');
   }
   return { code: parsed.code, state: parsed.state };
 }

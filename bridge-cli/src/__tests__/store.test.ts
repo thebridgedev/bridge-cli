@@ -5,7 +5,7 @@
 import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chooseStore, FileStore, KeychainWithFileStore, MacKeychainStore, SecretToolStore, type Runner, type StoredSession } from '../auth/store';
+import { chooseStore, FileStore, KeychainWithFileStore, MacKeychainStore, runProgram, SecretToolStore, type Runner, type StoredSession } from '../auth/store';
 
 const session: StoredSession = {
   issuer: 'https://bridge.test/identity-access/apps/bridge-app',
@@ -24,7 +24,7 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 /** A keychain tool that keeps entries in memory and records every call. */
-function fakeKeychain(options: { refuseWrites?: boolean } = {}) {
+function fakeKeychain(options: { refuseWrites?: boolean; cutAt?: number } = {}) {
   const entries = new Map<string, string>();
   const calls: { command: string; args: readonly string[]; input?: string }[] = [];
   const run: Runner = async (command, args, input) => {
@@ -32,7 +32,8 @@ function fakeKeychain(options: { refuseWrites?: boolean } = {}) {
     if (command === 'security' && args[0] === '-i') {
       if (options.refuseWrites) return { code: 0, stdout: '', stderr: 'security: SecKeychainItemCreateFromContent: User interaction is not allowed. error' };
       const account = /-a "([^"]+)"/.exec(input ?? '')?.[1] as string;
-      entries.set(account, /-w "([^"]+)"/.exec(input ?? '')?.[1] as string);
+      const value = /-w "([^"]+)"/.exec(input ?? '')?.[1] as string;
+      entries.set(account, options.cutAt === undefined ? value : value.slice(0, options.cutAt));
       return { code: 0, stdout: '', stderr: '' };
     }
     if (command === 'security' && args[0] === 'find-generic-password') {
@@ -127,4 +128,35 @@ describe('the keychain', () => {
     expect(chooseStore({ dir, env: {}, platform: 'win32' }).describe()).toMatch(/^file /);
     expect(() => chooseStore({ dir, env: { BRIDGE_TOKEN_STORE: 'keychain' }, platform: 'win32' })).toThrow(/no keychain/);
   });
+
+  it('a keychain that cuts a long entry short is caught: the session goes to the file instead', async () => {
+    const keychain = fakeKeychain({ cutAt: 1024 });
+    const warnings: string[] = [];
+    const long = { ...session, accessToken: `at-${'x'.repeat(1500)}`, refreshToken: `rt-${'y'.repeat(100)}` };
+    const store = new KeychainWithFileStore(new MacKeychainStore(keychain.run), new FileStore(dir), (m) => warnings.push(m));
+    await store.write(long);
+    expect(warnings[0]).toContain('did not keep the session whole');
+    expect(keychain.entries.size).toBe(0);
+    expect(await store.read(session.issuer)).toEqual(long);
+  });
 });
+
+/**
+ * Opt-in, on a Mac: BRIDGE_TEST_KEYCHAIN=1 npx jest store. Writes a session of
+ * realistic size (about 2.5 KB of base64) to the real login keychain through
+ * `security -i`, reads it back, and removes it.
+ */
+const realKeychain = process.platform === 'darwin' && process.env['BRIDGE_TEST_KEYCHAIN'] === '1';
+(realKeychain ? it : it.skip)('the real macOS keychain keeps a session of realistic size whole', async () => {
+  const store = new MacKeychainStore(runProgram);
+  const issuer = 'https://keychain-selftest.invalid/identity-access/apps/selftest';
+  const big: StoredSession = { ...session, issuer, accessToken: `eyJ${'a'.repeat(1400)}`, refreshToken: `rt-${'b'.repeat(43)}` };
+  try {
+    await store.write(big);
+    expect(await store.read(issuer)).toEqual(big);
+  } finally {
+    await store.remove(issuer);
+  }
+  expect(await store.read(issuer)).toBeNull();
+});
+

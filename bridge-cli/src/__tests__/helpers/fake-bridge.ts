@@ -114,9 +114,14 @@ export function createFakeBridge() {
     return map.get(app) as T;
   };
 
+  let signInPage: string | null = null;
+
   function metadata(): Json {
     const text = JSON.stringify(DISCOVERY.document).replaceAll('{base}', BASE).replaceAll('{app}', BRIDGE_APP);
-    return JSON.parse(text) as Json;
+    const document = JSON.parse(text) as Json;
+    // Not published yet: the key the CLI reads once the issuer lists its sign-in page.
+    if (signInPage !== null) ((document['bridge_endpoints'] as Json)['2'] as Json)['sign_in_page'] = signInPage;
+    return document;
   }
 
   function issue(sessionId: string): Json {
@@ -437,6 +442,7 @@ export function createFakeBridge() {
   /** The routes version 2 offers only to the app's own server: an app key, acting on its app. */
   function asApp(method: string, path: string, headers: Record<string, string>, input: Json, appId: string): Response {
     if (path === '/v2/billing/connection' && method === 'POST') {
+      if (input['secretKey'] === 'sk_test_refused') return json(400, { statusCode: 400, message: 'Stripe refused the key: it is not valid.' });
       pastedKeys.push(String(input['secretKey']));
       const made = { connector: input['connector'], status: 'active', account: 'acct_test', publicKey: input['publishableKey'] ?? null };
       connections.set(appId, made);
@@ -502,6 +508,12 @@ export function createFakeBridge() {
     advance(ms: number) {
       clock += ms;
     },
+    /** The issuer publishes its sign-in page in its metadata. */
+    setSignInPage(url: string | null) {
+      signInPage = url;
+    },
+    /** Every token the fake gave, to check none leaks. */
+    tokens: () => [...accessTokens.keys(), ...refreshTokens.keys()],
     /** Bridge stops taking every access token it gave (a key rotation), while the sessions go on. */
     dropAccessTokens() {
       accessTokens.clear();

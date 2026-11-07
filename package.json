@@ -11,8 +11,6 @@
     "test": "npm run test --workspace=bridge-cli",
     "test:install": "bash scripts/test-install.sh",
     "package": "cd bridge-cli && npm pack --pack-destination ../",
-    "publish:local": "npm run publish:local:core && npm run publish:local:cli",
-    "publish:local:core": "cd ../auth-core && bun run publish:local",
-    "publish:local:cli": "npm run publish:local --workspace=bridge-cli"
+    "publish:local:core": "cd ../auth-core && bun run publish:local"
   }
 }

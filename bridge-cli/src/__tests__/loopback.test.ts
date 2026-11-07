@@ -91,11 +91,11 @@ describe('verifyCallback', () => {
 });
 
 describe('the issuer check (RFC 9207)', () => {
-  it('accepts a callback that names the issuer, or none', () => {
+  it('accepts a callback that names the issuer, and refuses one that names none', () => {
     const parsed = parseCallbackUrl('/callback?code=c&state=s&iss=https%3A%2F%2Fbridge.test%2Fidentity-access%2Fapps%2Fa');
     expect(parsed.iss).toBe('https://bridge.test/identity-access/apps/a');
     expect(verifyCallback(parsed, 's', 'https://bridge.test/identity-access/apps/a')).toEqual({ code: 'c', state: 's' });
-    expect(verifyCallback(parseCallbackUrl('/callback?code=c&state=s'), 's', 'https://bridge.test/identity-access/apps/a')).toEqual({ code: 'c', state: 's' });
+    expect(() => verifyCallback(parseCallbackUrl('/callback?code=c&state=s'), 's', 'https://bridge.test/identity-access/apps/a')).toThrow(/does not name its issuer/);
   });
 
   it('refuses a callback that names another issuer', () => {

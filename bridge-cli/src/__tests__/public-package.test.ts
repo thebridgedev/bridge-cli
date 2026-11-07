@@ -20,10 +20,12 @@ const FORBIDDEN: [string, RegExp][] = [
   ['an internal milestone', /\bTBP-M\d+/],
   ['an internal service name', /\b(?:bridge-api|bridge-server|cloud-views|admin-ui|nblocks|nebulr-haga|verdaccio|gitlab)\b/i],
   ['the owner', /\bthe owner\b/i],
+  ['a local registry', /host\.docker\.internal|localhost:4873|:4873\b|verdaccio/i],
 ];
 
 describe('the shipped package', () => {
-  const files = [...shipped(join(PACKAGE, 'src')), join(PACKAGE, 'README.md')];
+  // npm always ships package.json, and the README and LICENSE are in `files`.
+  const files = [...shipped(join(PACKAGE, 'src')), join(PACKAGE, 'README.md'), join(PACKAGE, 'package.json')];
 
   it.each(files.map((file) => [file.slice(PACKAGE.length + 1), file]))('%s names nothing internal', (_name, file) => {
     const text = readFileSync(file, 'utf8');

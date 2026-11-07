@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { CliError } from '../core/errors.js';
+import { readPrivateFile, removePrivateFile, writePrivateFile } from '../core/private-files.js';
 
 /**
  * Where the developer's session is kept between commands: the operating
@@ -65,29 +65,19 @@ function isSession(value: unknown): value is StoredSession {
 
 // ── File ─────────────────────────────────────────────────────────────────────
 
-/** Sessions in `<dir>/sessions.json`, readable only by its owner. */
-export class FileStore implements SessionStore {
-  private readonly file: string;
+const FILE = 'sessions.json';
 
-  constructor(private readonly dir: string) {
-    this.file = join(dir, 'sessions.json');
-  }
+/** Sessions in `<dir>/sessions.json`, readable only by its owner (see `private-files`). */
+export class FileStore implements SessionStore {
+  constructor(private readonly dir: string) {}
 
   describe(): string {
-    return `file ${this.file}`;
+    return `file ${join(this.dir, FILE)}`;
   }
 
   private async all(): Promise<Record<string, StoredSession>> {
-    let raw: string;
-    try {
-      const info = await stat(this.file);
-      // Someone else could read it: take that away before using it.
-      if (process.platform !== 'win32' && (info.mode & 0o077) !== 0) await chmod(this.file, 0o600);
-      raw = await readFile(this.file, 'utf8');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      throw error;
-    }
+    const raw = await readPrivateFile(this.dir, FILE);
+    if (raw === null) return {};
     try {
       const parsed = JSON.parse(raw) as unknown;
       if (typeof parsed !== 'object' || parsed === null) return {};
@@ -98,12 +88,7 @@ export class FileStore implements SessionStore {
   }
 
   private async save(all: Record<string, StoredSession>): Promise<void> {
-    await mkdir(this.dir, { recursive: true, mode: 0o700 });
-    const temp = `${this.file}.${String(process.pid)}.tmp`;
-    await writeFile(temp, JSON.stringify(all, null, 2) + '\n', { mode: 0o600 });
-    // The umask may have widened it; a session is for its owner only.
-    if (process.platform !== 'win32') await chmod(temp, 0o600);
-    await rename(temp, this.file);
+    await writePrivateFile(this.dir, FILE, JSON.stringify(all, null, 2) + '\n');
   }
 
   async read(issuer: string): Promise<StoredSession | null> {
@@ -121,7 +106,7 @@ export class FileStore implements SessionStore {
     if (!(issuer in all)) return;
     delete all[issuer];
     if (Object.keys(all).length === 0) {
-      await unlink(this.file).catch(() => undefined);
+      await removePrivateFile(this.dir, FILE);
       return;
     }
     await this.save(all);
@@ -222,6 +207,12 @@ export class KeychainWithFileStore implements SessionStore {
   async write(session: StoredSession): Promise<void> {
     try {
       await this.keychain.write(session);
+      // Read it back: a keychain tool that cut a long entry short must not leave a session that cannot be read.
+      const back = await this.keychain.read(session.issuer);
+      if (back === null || JSON.stringify(back) !== JSON.stringify(session)) {
+        await this.keychain.remove(session.issuer).catch(() => undefined);
+        throw new Error('The keychain did not keep the session whole.');
+      }
     } catch (error) {
       this.warn(`${error instanceof Error ? error.message : String(error)} Keeping it in ${this.file.describe()} instead.`);
       await this.file.write(session);

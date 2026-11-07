@@ -40,14 +40,28 @@ export function appOfKey(key: string): string | null {
   return parts.length === 4 && parts[0] === 'bk' && parts[1] !== '' ? (parts[1] as string) : null;
 }
 
+/** What `withAppKey` reports with and listens to. Real ones by default; tests pass their own. */
+export interface AppKeyOptions {
+  readonly warn?: (message: string) => void;
+  /** Where SIGINT and SIGTERM arrive. */
+  readonly signals?: Pick<NodeJS.EventEmitter, 'on' | 'off'>;
+  readonly exit?: (code: number) => void;
+  /** How long a revoke may take when the command is stopped, in ms. */
+  readonly revokeTimeoutMs?: number;
+}
+
+const SIGNALS = { SIGINT: 130, SIGTERM: 143 } as const;
+
 /**
  * Runs `fn` with an app key of the app, for the routes version 2 offers
  * only to the app's own server.
  *
  * The key is `BRIDGE_APP_KEY` when it is set (it must be this app's).
  * Otherwise the CLI makes a key that lasts one day and holds only the
- * privileges this command needs, and revokes it once `fn` is done, so no
- * key is left behind. Making a key needs a recent sign-in.
+ * privileges this command needs, and revokes it once `fn` is done, when it
+ * fails, and when the command is stopped (Ctrl-C, SIGTERM). If it cannot be
+ * revoked, the CLI says which key to revoke (its id, never its secret).
+ * Making a key needs a recent sign-in.
  */
 export async function withAppKey<T>(
   c: BridgeClient,
@@ -55,8 +69,11 @@ export async function withAppKey<T>(
   privileges: string[],
   env: NodeJS.ProcessEnv,
   fn: (key: string) => Promise<T>,
-  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
+  options: AppKeyOptions = {},
 ): Promise<T> {
+  const warn = options.warn ?? ((message: string) => process.stderr.write(`${message}\n`));
+  const signals = options.signals ?? process;
+  const exit = options.exit ?? ((code: number) => process.exit(code));
   const given = env['BRIDGE_APP_KEY']?.trim();
   if (given) {
     const owner = appOfKey(given);
@@ -77,12 +94,35 @@ export async function withAppKey<T>(
     }
     throw error;
   }
+
+  let revoking: Promise<void> | undefined;
+  const revoke = (timeoutMs?: number): Promise<void> => {
+    revoking ??= (async () => {
+      const attempt = keys.revoke(c, appId, made.id);
+      const limited =
+        timeoutMs === undefined
+          ? attempt
+          : Promise.race([attempt, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`no answer within ${String(timeoutMs / 1000)} s`)), timeoutMs).unref?.())]);
+      try {
+        await limited;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        warn(`The temporary key ${made.id} could not be revoked (${reason}); it expires within a day. Revoke it with \`bridge key revoke ${made.id}\`.`);
+      }
+    })();
+    return revoking;
+  };
+  const handlers = Object.entries(SIGNALS).map(([signal, code]) => {
+    const handler = () => {
+      void revoke(options.revokeTimeoutMs ?? 5000).then(() => exit(code));
+    };
+    signals.on(signal, handler);
+    return () => signals.off(signal, handler);
+  });
   try {
     return await fn(made.key);
   } finally {
-    await keys.revoke(c, appId, made.id).catch((error: unknown) => {
-      const reason = error instanceof Error ? error.message : String(error);
-      warn(`The temporary key ${made.id} could not be revoked (${reason}); it expires within a day. Revoke it with \`bridge key revoke ${made.id}\`.`);
-    });
+    await revoke();
+    handlers.forEach((stop) => stop());
   }
 }

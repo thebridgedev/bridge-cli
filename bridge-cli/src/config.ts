@@ -1,13 +1,12 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CliError } from './core/errors.js';
+import { readPrivateFile, writePrivateFile } from './core/private-files.js';
 import { normalizeIssuer } from './core/urls.js';
 
 /**
- * The CLI's settings, in `<config dir>/config.json`:
+ * The CLI's settings, in `<config dir>/config.json`, readable only by its owner:
  *   - `issuer`: the Bridge App's issuer, the one address the CLI needs;
- *   - `signInPage`: Bridge's sign-in page, until the issuer lists it;
  *   - `apps`: the app chosen with `bridge app use`, per issuer.
  *
  * The config dir is `$BRIDGE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/bridge/v1`,
@@ -16,7 +15,6 @@ import { normalizeIssuer } from './core/urls.js';
  */
 export interface Settings {
   issuer?: string;
-  signInPage?: string;
   apps?: Record<string, string>;
 }
 
@@ -31,15 +29,13 @@ export function configDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = pr
 }
 
 export class Config {
-  private readonly file: string;
-
-  constructor(readonly dir: string) {
-    this.file = join(dir, 'config.json');
-  }
+  constructor(readonly dir: string) {}
 
   async read(): Promise<Settings> {
+    const raw = await readPrivateFile(this.dir, FILE);
+    if (raw === null) return {};
     try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as unknown;
+      const parsed = JSON.parse(raw) as unknown;
       return typeof parsed === 'object' && parsed !== null ? (parsed as Settings) : {};
     } catch {
       return {};
@@ -49,14 +45,12 @@ export class Config {
   async update(change: (settings: Settings) => void): Promise<Settings> {
     const settings = await this.read();
     change(settings);
-    await mkdir(this.dir, { recursive: true, mode: 0o700 });
-    const temp = `${this.file}.${String(process.pid)}.tmp`;
-    await writeFile(temp, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
-    if (process.platform !== 'win32') await chmod(temp, 0o600);
-    await rename(temp, this.file);
+    await writePrivateFile(this.dir, FILE, JSON.stringify(settings, null, 2) + '\n');
     return settings;
   }
 }
+
+const FILE = 'config.json';
 
 /** The issuer: `--issuer`, else `BRIDGE_ISSUER`, else the one saved at sign-in. */
 export function resolveIssuer(flag: string | undefined, env: NodeJS.ProcessEnv, settings: Settings): string {

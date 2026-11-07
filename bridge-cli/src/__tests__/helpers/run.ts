@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileStore } from '../../auth/store';
+import { FileStore, type SessionStore } from '../../auth/store';
 import type { Deps } from '../../commands/context';
 import type { Fetch } from '../../core/http';
 import { exitCodeOf } from '../../core/errors';
@@ -15,6 +15,7 @@ export interface Run {
   infos: string[];
   texts: string[];
   exitCode: number;
+  readonly output: string;
   /** The one result, for commands that give one. */
   readonly data: any;
   readonly error: Record<string, unknown> | undefined;
@@ -30,7 +31,7 @@ export interface RunOptions {
 }
 
 /** A CLI with its own config dir, a file token store and the fake Bridge. */
-export function createCli(fake: FakeBridge, base: { env?: Record<string, string> } = {}) {
+export function createCli(fake: FakeBridge, base: { env?: Record<string, string>; store?: (dir: string) => SessionStore } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bridge-cli-test-'));
   const env: Record<string, string> = { BRIDGE_CONFIG_DIR: dir, BRIDGE_TOKEN_STORE: 'file', BRIDGE_ISSUER: ISSUER, ...base.env };
 
@@ -62,7 +63,7 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
       env: { ...env, ...options.env },
       io,
       openBrowser: options.openBrowser ?? (async () => ({ ok: false })),
-      store: (configDir) => new FileStore(configDir),
+      store: base.store ?? ((configDir) => new FileStore(configDir)),
       now: fake.now,
       signInTimeoutMs: 5_000,
     });
@@ -86,6 +87,10 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
       infos,
       texts,
       exitCode,
+      /** Everything the command wrote: stdout and stderr. */
+      get output() {
+        return JSON.stringify([results, errors, infos, texts]);
+      },
       get data() {
         return results[results.length - 1] as any;
       },
