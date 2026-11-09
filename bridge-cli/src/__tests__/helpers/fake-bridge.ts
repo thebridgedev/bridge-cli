@@ -108,7 +108,7 @@ export function createFakeBridge() {
   const holders = new Map<string, number>();
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
-  /** Why Bridge refuses to send invites now, as Communication would: no email-links address, or too many. */
+  /** Why Bridge refuses to send invites now: no email-links address, or too many. */
   let inviteRefusal: 'no-email-links' | 'too-many' | null = null;
   let ids = 0;
   const id = (prefix: string) => `${prefix}-${String(++ids)}`;
