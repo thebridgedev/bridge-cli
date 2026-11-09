@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.0-alpha.1] - Unreleased
+
+### Added
+
+- **`bridge invite send` · `list` · `revoke`.** Invites by email into your own workspace on Bridge, with your sign-in. With `--workspace <id>`, into one of your app's workspaces, with an app key (`BRIDGE_APP_KEY`, or a short-lived key the CLI makes and revokes). Bridge emails the link; sending again sends a new link and stops the old one. When your app has no email-links address, the error says how to add one.
+
 ## [1.0.0-alpha.0] - 2026-11-07
 
 The first alpha of 1.0, for version 2 of Bridge's API. Install it with `npm install -g @nebulr-group/bridge-cli@alpha`; `latest` stays on 0.x.

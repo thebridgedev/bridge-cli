@@ -1,6 +1,6 @@
 {
   "about": "A pinned copy of the endpoints Bridge's public API promises, from Bridge's API contract: each one's method, path, callers, privilege, the body fields it accepts and what it requires. The contract test checks every route the CLI calls, and the fields it sends, against it. To update: copy the contract's endpoints at a newer commit and change `source`.",
-  "source": {"file": "tools/access/public-api.json", "commit": "21fdf0da9663008e745f79334ea66b00cdbcedb7"},
+  "source": {"file": "tools/access/public-api.json", "commit": "6725ef5d4e96ddff66b2588eb7b92692fdadc834"},
   "endpoints": [
     {"method": "GET", "path": "/v2/accounts/apps/{appId}/custom-fields", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
     {"method": "GET", "path": "/v2/accounts/apps/{appId}/revocations/{lane}", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
@@ -200,6 +200,7 @@
     {"method": "PATCH", "path": "/v2/flags/segments/{key}", "public": false, "callers": ["app_key"], "privilege": "flags.flags:write", "fields": ["conditions", "description", "key"], "requires": []},
     {"method": "GET", "path": "/v2/identity-access/apps/{appId}/.well-known/openid-configuration", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/introspect", "public": true, "callers": [], "privilege": null, "fields": ["token", "token_type_hint"], "requires": []},
+    {"method": "POST", "path": "/v2/identity-access/apps/{appId}/invites/preview", "public": true, "callers": [], "privilege": null, "fields": ["token"], "requires": []},
     {"method": "GET", "path": "/v2/identity-access/apps/{appId}/jwks.json", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
     {"method": "GET", "path": "/v2/identity-access/apps/{appId}/keys", "public": false, "callers": ["person"], "privilege": "apps.keys:manage", "fields": [], "requires": ["workspace"]},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/keys", "public": false, "callers": ["person"], "privilege": "apps.keys:manage", "fields": ["expiresInDays", "name", "privileges"], "requires": ["recent-sign-in", "workspace"]},
@@ -210,9 +211,10 @@
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/revoke", "public": true, "callers": [], "privilege": null, "fields": ["client_id", "token", "token_type_hint"], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-in", "public": true, "callers": [], "privilege": null, "fields": ["client_id", "code_challenge", "code_challenge_method", "email", "flow", "password", "workspace"], "requires": []},
     {"method": "GET", "path": "/v2/identity-access/apps/{appId}/sign-in-options", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
-    {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-up", "public": true, "callers": [], "privilege": null, "fields": ["code_challenge", "code_challenge_method", "email", "firstName", "lastName", "password", "workspace"], "requires": []},
+    {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-up", "public": true, "callers": [], "privilege": null, "fields": ["code_challenge", "code_challenge_method", "email", "firstName", "invite", "lastName", "password", "workspace"], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-up/verify", "public": true, "callers": [], "privilege": null, "fields": ["code_verifier", "token"], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/token", "public": true, "callers": [], "privilege": null, "fields": ["client_id", "client_secret", "code", "code_verifier", "grant_type", "key", "redirect_uri", "refresh_token", "scope", "workspace"], "requires": []},
+    {"method": "POST", "path": "/v2/identity-access/invites/accept", "public": false, "callers": ["person"], "privilege": null, "fields": ["token"], "requires": []},
     {"method": "GET", "path": "/v2/identity-access/keys", "public": false, "callers": ["person"], "privilege": null, "fields": [], "requires": ["workspace"]},
     {"method": "POST", "path": "/v2/identity-access/keys", "public": false, "callers": ["person"], "privilege": null, "fields": ["expiresInDays", "name", "privileges"], "requires": ["recent-sign-in", "workspace"]},
     {"method": "DELETE", "path": "/v2/identity-access/keys/{keyId}", "public": false, "callers": ["person"], "privilege": null, "fields": [], "requires": ["workspace"]},

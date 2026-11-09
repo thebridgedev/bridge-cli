@@ -19,5 +19,6 @@ export { apps } from './api/apps.js';
 export { keys, withAppKey } from './api/keys.js';
 export { plans, products, metrics, taxes, billingSettings, connection } from './api/billing.js';
 export { flags, parseCondition } from './api/flags.js';
-export { roles, privileges, workspaces, members } from './api/accounts.js';
+export { roles, privileges, workspaces, members, invites, appInvites } from './api/accounts.js';
+export type { Invite, InviteFields } from './api/accounts.js';
 export { buildProgram } from './program.js';
