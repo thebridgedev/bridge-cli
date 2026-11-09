@@ -106,6 +106,10 @@ export function createFakeBridge() {
   const workspaces = new Map<string, Json[]>();
   const members = new Map<string, Json[]>();
   const holders = new Map<string, number>();
+  /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
+  const invites = new Map<string, Json[]>();
+  /** Why Bridge refuses to send invites now, as Communication would: no email-links address, or too many. */
+  let inviteRefusal: 'no-email-links' | 'too-many' | null = null;
   let ids = 0;
   const id = (prefix: string) => `${prefix}-${String(++ids)}`;
 
@@ -257,6 +261,8 @@ export function createFakeBridge() {
         const p = who.session.person;
         return json(200, { id: p.id, email: p.email, firstName: p.firstName, lastName: p.lastName, workspaces: p.workspaces.map((each) => ({ ...each, role: 'OWNER' })) });
       }
+      const own = inviteRoutes(method, path, input, `bridge/${String(who.session.workspace)}`, who.session.person.id);
+      if (own !== null) return own;
       return operator(method, path, url, headers, input, who.session);
     }
     if (entry.requires.includes('workspace') && headers['bridge-workspace'] === undefined) return problem(400, 'workspace-missing', 'Name the workspace in Bridge-Workspace.');
@@ -264,6 +270,31 @@ export function createFakeBridge() {
       return problem(403, 'privilege-missing', `This needs the privilege ${entry.privilege}.`, { privilege: entry.privilege });
     }
     return asApp(method, path, headers, input, who.key.app);
+  }
+
+  /** Invites in one workspace: list the open ones, send (or send again, with a new link), revoke. */
+  function inviteRoutes(method: string, path: string, input: Json, where: string, invitedBy: string | null): Response | null {
+    if (!path.startsWith('/v2/accounts/invites')) return null;
+    const list = perApp(invites, where, () => [] as Json[]);
+    if (path === '/v2/accounts/invites' && method === 'GET') return json(200, list.filter((each) => each['state'] === 'open'));
+    if (path === '/v2/accounts/invites' && method === 'POST') {
+      if (inviteRefusal === 'no-email-links') return problem(409, 'conflict', 'The app has no email-links address, so its emails cannot carry a link.');
+      if (inviteRefusal === 'too-many') return problem(429, 'rate-limited', 'Too many invites from this workspace for now.', {}, { 'retry-after': '3600' });
+      if (input['role'] === 'OWNER') return problem(409, 'granting-owner', 'Invite people with another role; an Owner then offers them the Owner role.');
+      const email = String(input['email']).toLowerCase();
+      const fields = { role: input['role'] ?? 'MEMBER', state: 'open', expiresAt: new Date(clock + 30 * 86_400_000).toISOString(), invitedBy };
+      const existing = list.find((each) => each['email'] === email);
+      if (existing) return json(201, Object.assign(existing, fields));
+      const made = { id: id('inv'), email, createdAt: new Date(clock).toISOString(), ...fields };
+      list.push(made);
+      return json(201, made);
+    }
+    const found = list.find((each) => path === `/v2/accounts/invites/${String(each['id'])}` && each['state'] === 'open');
+    if (method === 'DELETE' && found) {
+      found['state'] = 'revoked';
+      return json(200, { revoked: true });
+    }
+    return notFound();
   }
 
   /** The developer's routes on their apps (`/apps/{appId}/…`), each only for the workspace that owns the app. */
@@ -466,6 +497,11 @@ export function createFakeBridge() {
     if (path.startsWith('/v2/accounts/roles')) return crud(listOf(roles), '/v2/accounts/roles', 'role');
     if (path.startsWith('/v2/accounts/privileges')) return crud(listOf(privileges), '/v2/accounts/privileges', 'privilege');
     if (path === '/v2/accounts/workspaces') return json(200, listOf(workspaces));
+    if (path.startsWith('/v2/accounts/invites')) {
+      const workspace = headers['bridge-workspace'] as string;
+      if (!listOf(workspaces).some((each) => each['id'] === workspace)) return notFound();
+      return inviteRoutes(method, path, input, `${appId}/${workspace}`, null) as Response;
+    }
     if (path.startsWith('/v2/accounts/members')) {
       const workspace = headers['bridge-workspace'] as string;
       if (!listOf(workspaces).some((each) => each['id'] === workspace)) return notFound();
@@ -533,6 +569,12 @@ export function createFakeBridge() {
       perApp(members, `${appId}/${String(workspace['id'])}`, () => [] as Json[]).push(...people);
     },
     roles: (appId: string) => perApp(roles, appId, () => [] as Json[]),
+    /** Every invite of a workspace, any state: `bridge/<workspace>` for the developer's own, `<app>/<workspace>` for an app's. */
+    invites: (where: string) => perApp(invites, where, () => [] as Json[]),
+    /** Bridge refuses to send invites: the app has no email-links address, or the workspace sent too many. */
+    refuseInvites(why: 'no-email-links' | 'too-many' | null) {
+      inviteRefusal = why;
+    },
     plans: (appId: string) => perApp(plans, appId, () => new Map<string, Json>()),
     flags: (appId: string) => perApp(flags, appId, () => new Map<string, Json>()),
     /** What Bridge's sign-in page does in hand-off mode: sign in with the program's challenge, never trade the code. */

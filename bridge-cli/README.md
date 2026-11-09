@@ -95,6 +95,7 @@ bridge flag create team-admin --when "privileges contains USER_WRITE"
 | `flag list` · `get` · `create` · `update` · `on` · `off` · `restore` · `delete` | Feature flags |
 | `flag rule show` · `add` · `set` · `clear` | A flag's rule: ordered branches of conditions, the first match wins |
 | `role` · `privilege` · `workspace list` · `member` | Roles, privileges, your customers' workspaces and their members |
+| `invite send` · `list` · `revoke` | Invites by email: into your own workspace, or with `--workspace` into one of your app's |
 | `check gates` | Lists every direct role, privilege or plan check in your project, with the flag to use instead |
 
 `bridge <command> --help` has every option.
@@ -106,6 +107,12 @@ Write prices the way you say them: `"19.99 EUR/month"`, `"190 EUR/year"`, or `"4
 ### Flag rules
 
 `--when "<attribute> <operator> <value>"` writes a one-branch rule; repeat `--when` to require every condition. The operators are `eq`, `neq`, `contains`, `not_contains`, `in`, `not_in`, `gt`, `lt`, `between`, `regex`, `exists` and `not_exists`. `flag rule add` adds a branch, `--rollout 25` gives it to a share of the people it matches, and `--rule`/`--rule-file` take a whole rule as JSON.
+
+### Invites
+
+`bridge invite send ann@example.com --role ADMIN` emails Ann an invite to your own workspace on Bridge, the one you signed in to. Sending again to the same address sends a new link, and the old one stops working; an invite lasts 30 days. `bridge invite list` shows the open ones and `bridge invite revoke <id>` stops a link working.
+
+Add `--workspace <id>` to invite into one of your app's workspaces instead (`bridge workspace list` shows them). That runs with an app key, as below. Bridge emails the link to your app's email-links address, so add one first: `bridge app address add https://app.example.com/auth --use email-links`.
 
 ### Roles, members and the pasted Stripe key
 

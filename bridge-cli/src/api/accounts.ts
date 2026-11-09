@@ -76,3 +76,40 @@ export const members = {
     c.withKey('membersUpdate', key, { workspace, params: { memberId }, body: fields }).then(body),
   remove: (c: BridgeClient, key: string, workspace: string, memberId: string) => c.withKey('membersRemove', key, { workspace, params: { memberId } }).then(body),
 };
+
+/** An open invite, as a workspace's list shows it. Accepted and revoked ones leave the list. */
+export interface Invite {
+  readonly id: string;
+  readonly email: string;
+  readonly role: string;
+  /** `open` while the link works, `expired` once its 30 days have passed. */
+  readonly state: string;
+  readonly expiresAt: string;
+  readonly invitedBy: string | null;
+  readonly createdAt: string | null;
+}
+
+export interface InviteFields {
+  readonly email: string;
+  /** The role the person joins with. Left out, the workspace's default role. */
+  readonly role?: string;
+}
+
+/**
+ * Invites into the developer's own workspace on Bridge: the one their
+ * session is for. Bridge emails the link; sending again to an address sends
+ * a new link, and the old one stops working.
+ */
+export const invites = {
+  list: (c: BridgeClient) => c.person<Invite[]>('invitesList').then(body),
+  send: (c: BridgeClient, fields: InviteFields) => c.person<Invite>('invitesSend', { body: fields }).then(body),
+  revoke: (c: BridgeClient, inviteId: string) => c.person<{ revoked: boolean }>('invitesRevoke', { params: { inviteId } }).then(body),
+};
+
+/** Invites into one of the app's workspaces, with an app key. */
+export const appInvites = {
+  list: (c: BridgeClient, key: string, workspace: string) => c.withKey<Invite[]>('appInvitesList', key, { workspace }).then(body),
+  send: (c: BridgeClient, key: string, workspace: string, fields: InviteFields) => c.withKey<Invite>('appInvitesSend', key, { workspace, body: fields }).then(body),
+  revoke: (c: BridgeClient, key: string, workspace: string, inviteId: string) =>
+    c.withKey<{ revoked: boolean }>('appInvitesRevoke', key, { workspace, params: { inviteId } }).then(body),
+};

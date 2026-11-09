@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
-import { members, privileges, roles, workspaces, type RoleFields } from '../api/accounts.js';
+import { appInvites, invites, members, privileges, roles, workspaces, type InviteFields, type RoleFields } from '../api/accounts.js';
 import { withAppKey } from '../api/keys.js';
-import { CliError } from '../core/errors.js';
+import { CliError, isCliError } from '../core/errors.js';
 import type { BridgeClient } from '../client.js';
 import { action, collect, type Context, type Deps } from './context.js';
 
@@ -16,6 +16,22 @@ async function asApp<T>(ctx: Context, needs: string[], fn: (c: BridgeClient, key
 }
 
 const KEY_NOTE = ' Runs with BRIDGE_APP_KEY, or a short-lived key the CLI makes (needs a recent sign-in).';
+
+/**
+ * An invite Bridge would not send because the app has no email-links
+ * address: say where to add one. For the developer's own workspace there is
+ * nothing to add here, and Bridge's message stands.
+ */
+function withEmailLinksHint(error: unknown, appWorkspace: boolean): never {
+  if (appWorkspace && isCliError(error) && error.kind === 'conflict' && /email-links/i.test(error.message)) {
+    throw new CliError('conflict', error.message, {
+      status: error.status,
+      details: error.details,
+      hint: "Add the page that opens your app's email links: `bridge app address add <url> --use email-links`.",
+    });
+  }
+  throw error;
+}
 
 function roleFields(opts: { name?: string; description?: string; privilege?: string[]; default?: boolean }): RoleFields {
   return {
@@ -143,4 +159,43 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
         ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => members.remove(c, key, opts.workspace, id)));
       }),
     );
+
+  const invite = program
+    .command('invite')
+    .description(
+      "Invites by email. Without --workspace, into your own workspace on Bridge (the one you signed in to), with your sign-in. " +
+        "With --workspace, into one of the app's workspaces, with BRIDGE_APP_KEY or a short-lived key the CLI makes (needs a recent sign-in).",
+    );
+  const inWorkspace = (cmd: Command) => cmd.option('--workspace <id>', "One of the app's workspaces (`bridge workspace list` shows them); leave out for your own");
+  inWorkspace(invite.command('list').description('The open invites')).action(
+    action(deps, async (ctx, opts: { workspace?: string }) => {
+      const ws = opts.workspace;
+      if (ws === undefined) ctx.io.result(await invites.list(await ctx.client()));
+      else ctx.io.result(await asApp(ctx, ['USER_READ'], (c, key) => appInvites.list(c, key, ws)));
+    }),
+  );
+  inWorkspace(
+    invite
+      .command('send <email>')
+      .description('Email an invite. Sending again to the same address sends a new link, and the old one stops working. An invite lasts 30 days')
+      .option('--role <role>', "The role they join with; left out, the workspace's default"),
+  ).action(
+    action(deps, async (ctx, email: string, opts: { workspace?: string; role?: string }) => {
+      const fields: InviteFields = { email, ...(opts.role === undefined ? {} : { role: opts.role }) };
+      const ws = opts.workspace;
+      try {
+        if (ws === undefined) ctx.io.result(await invites.send(await ctx.client(), fields));
+        else ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => appInvites.send(c, key, ws, fields)));
+      } catch (error) {
+        withEmailLinksHint(error, ws !== undefined);
+      }
+    }),
+  );
+  inWorkspace(invite.command('revoke <invite>').description('Revoke an invite by its id: its link stops working')).action(
+    action(deps, async (ctx, id: string, opts: { workspace?: string }) => {
+      const ws = opts.workspace;
+      if (ws === undefined) ctx.io.result(await invites.revoke(await ctx.client(), id));
+      else ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => appInvites.revoke(c, key, ws, id)));
+    }),
+  );
 }

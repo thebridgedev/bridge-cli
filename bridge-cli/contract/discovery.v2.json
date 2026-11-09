@@ -1,6 +1,6 @@
 {
   "about": "A pinned copy of the issuer's metadata document, as Bridge publishes it at <issuer>/.well-known/openid-configuration, with {base} for Bridge's address and {app} for the app's id. The tests' fake Bridge serves exactly this document, so the CLI is tested against the keys Bridge publishes.",
-  "source": {"file": "microservices/identity-access/src/controllers.ts", "commit": "21fdf0da9663008e745f79334ea66b00cdbcedb7"},
+  "source": {"file": "microservices/identity-access/src/controllers.ts", "commit": "6725ef5d4e96ddff66b2588eb7b92692fdadc834"},
   "document": {
     "issuer": "{base}/identity-access/apps/{app}",
     "authorization_challenge_endpoint": "{base}/v2/identity-access/apps/{app}/sign-in",
@@ -40,7 +40,9 @@
         "live": "{base}/v2/live",
         "live_visitor": "{base}/v2/live/apps/{app}",
         "live_connection": "{base}/v2/live/apps/{app}/connection",
-        "events_and_logs": "{base}/v2/events-and-logs"
+        "events_and_logs": "{base}/v2/events-and-logs",
+        "invites": "{base}/v2/identity-access/invites",
+        "invite_preview": "{base}/v2/identity-access/apps/{app}/invites/preview"
       }
     }
   }

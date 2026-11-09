@@ -11,8 +11,8 @@
  *   - `person`: the signed-in developer's token, from the Bridge App. The
  *     `/apps/{appId}/…` routes act on one of the developer's apps.
  *   - `app-key`: an app key of the app, in `x-api-key`. Used where version 2
- *     has no route for the developer: roles, privileges, members, and a
- *     pasted Stripe key.
+ *     has no route for the developer: roles, privileges, members, invites
+ *     into the app's workspaces, and a pasted Stripe key.
  *   - `none`: before sign-in (the issuer's own endpoints).
  */
 export const API_VERSION = 2;
@@ -104,6 +104,15 @@ export const ROUTES = {
   membersGet: r('GET', 'accounts', '/members/{memberId}', 'app-key', true),
   membersUpdate: r('PATCH', 'accounts', '/members/{memberId}', 'app-key', true),
   membersRemove: r('DELETE', 'accounts', '/members/{memberId}', 'app-key', true),
+
+  // Invites into the developer's own workspace on Bridge, the one their token is for.
+  invitesList: r('GET', 'accounts', '/invites', 'person'),
+  invitesSend: r('POST', 'accounts', '/invites', 'person'),
+  invitesRevoke: r('DELETE', 'accounts', '/invites/{inviteId}', 'person'),
+  // Invites into one of the app's workspaces (app-key routes).
+  appInvitesList: r('GET', 'accounts', '/invites', 'app-key', true),
+  appInvitesSend: r('POST', 'accounts', '/invites', 'app-key', true),
+  appInvitesRevoke: r('DELETE', 'accounts', '/invites/{inviteId}', 'app-key', true),
 } as const satisfies Record<string, Route>;
 
 export type RouteName = keyof typeof ROUTES;

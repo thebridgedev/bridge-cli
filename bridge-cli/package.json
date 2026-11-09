@@ -1,6 +1,6 @@
 {
   "name": "@nebulr-group/bridge-cli",
-  "version": "1.0.0-alpha.0",
+  "version": "1.0.0-alpha.1",
   "description": "The Bridge CLI: set up your app on Bridge from the terminal. Sign in, then create apps and their addresses, keys, plans with prices and trials, Stripe in test mode, and feature flags with their rules.",
   "author": "Nebulr Group",
   "license": "MIT",
