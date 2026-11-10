@@ -51,6 +51,8 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 
 5. **Existing billing system?** — look for `stripe`, `@stripe/*`, `paddle-*`, `lemon-squeezy`, `chargebee`. Flag any found.
 
+6. **Note the git state, before you edit anything.** Run `git status` in each project and record one of: clean; uncommitted changes already there (note which files); not a git repo, or no commits yet. The success message uses it to tell the developer how to see your changes. Never run `git init`, `git add`, `git stash` or `git commit`, and do not ask the developer about git. From your first edit on, keep a record of each change (its file, what it is, whether the file is new): the success message counts its footprint from that record.
+
 ## Step 1b — Audit existing billing wiring
 
 If Step 1 found billing already partially or fully set up, audit it before doing anything:
@@ -284,14 +286,19 @@ If anything fails, diagnose and fix before moving on.
   ──────────────────────────────────────────────
    Billing is live in [project-name].
 
-    ✅  Plans — [plan-names]
-    ✅  Subscription page — [subscription-route]
-    ✅  Paywall — [paywall-summary]
-    ✅  Lifecycle notices — auto-render on trial / payment failure / cancel
-    ✅  Quotas and entitlements — [quota-summary]
+    ✅  Plans: [plan-names]
+    ✅  Subscription page: [subscription-route]
+    ✅  Paywall: [paywall-summary]
+    ✅  Lifecycle notices: auto-render on trial / payment failure / cancel
+    ✅  Quotas and entitlements: [quota-summary]
   ──────────────────────────────────────────────
     Here is what I actually did:
     [what-i-actually-did]
+
+    Bridge's footprint in your code:
+    [footprint]
+
+    [see-every-change]
 
     And here is what I changed:
     [what-i-changed]
@@ -306,9 +313,10 @@ Fill every `[placeholder]` with real values from the integration:
 - `[project-name]` — folder name and/or `package.json` name
 - `[plan-names]` — the plan keys (e.g. `free`, `premium`)
 - `[subscription-route]` — where the subscription page is served (SvelteKit default `/subscription`)
-- `[paywall-summary]` — e.g. "new users sent to `/subscription/plan` to pick a plan" (or "off — `paymentsAutoRedirect false`")
+- `[paywall-summary]` — e.g. "new users sent to `/subscription/plan` to pick a plan" (or "off: `paymentsAutoRedirect false`")
 - `[quota-summary]` — metric keys, limits and kind, and the backend handlers that enforce them, or "none"
 - `[what-i-actually-did]` / `[what-i-changed]` — every file created or modified, every command run
+- Fill `[footprint]`, `[see-every-change]` and `[what-i-changed]` by the counting rules in the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `bridge guide integration-success`). Read it for those rules only; the banner to output is the one above. Count from your record of each edit, never estimate; give each line of `[what-i-changed]` its size in changes. Plans, prices and Stripe settings made through the CLI or MCP are app settings, not code
 
 ## Step 7 — Offer follow-on tracks
 
