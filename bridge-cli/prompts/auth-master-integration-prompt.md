@@ -44,7 +44,7 @@ Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it
    ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝
 
   ──────────────────────────────────────────────
-   Congratulations — [project-name] now has superpowers.
+   Congratulations! [project-name] now has superpowers.
    ...
     ✅  You know who's calling
         [token-description]
@@ -52,6 +52,11 @@ Run `bridge auth login` and wait for it to print "Logged in as <email>". Once it
   ──────────────────────────────────────────────
     Here is what I actually did:
     [what-i-actually-did]
+
+    Bridge's footprint in your code:
+    [footprint]
+
+    [see-every-change]
 
     And here is what I changed:
     [what-i-changed]
@@ -63,6 +68,8 @@ As you work through the steps below, track the following so you have it ready:
 - **`[token-description]`** — the identifiers the developer uses to access the authenticated user in their framework (e.g. stores for Svelte, hooks for React, decorators for NestJS)
 - **`[what-i-actually-did]`** — high-level outcomes: what works now that didn't before
 - **`[what-i-changed]`** — every package installed, file created or modified, and URL configured, with exact values
+- **`[footprint]`** — as you make each edit, note its file and its changes (one import, one wrapper, one guard, one env var…), whether the file is new, and whether you modified any of the developer's existing code. Count from this record, never estimate it afterwards
+- **`[see-every-change]`** — the git state of each project, recorded in Step 1 before your first edit
 
 ## Step 1 — Discover projects
 
@@ -95,6 +102,8 @@ Scan the current directory and its immediate subdirectories for `package.json` f
    - Framework + version
    - Package manager
    - Existing auth (if any)
+
+6. **Note the git state, before you edit anything.** Run `git status` in each project and record one of: clean; uncommitted changes already there (note which files); not a git repo, or no commits yet. The success message uses it to tell the developer how to see your changes. Never run `git init`, `git add`, `git stash` or `git commit`, and do not ask the developer about git.
 
 ## Step 1b — Check if Bridge is already integrated
 
@@ -238,7 +247,7 @@ Fetch the success message template (MCP: `get_integration_guide` topic `integrat
 
 **Personalisation rules:**
 
-- Fill in every `[placeholder]` using the substitution guide at the bottom of the template. For `[what-i-actually-did]` and `[what-i-changed]`, draw from what you actually observed and changed during Steps 1–6 — the examples in the guide are illustrative only. Strip the `AGENT SUBSTITUTION GUIDE` section before outputting — it must never be shown to the developer.
+- Fill in every `[placeholder]` using the substitution guide at the bottom of the template. For `[what-i-actually-did]`, `[footprint]` and `[what-i-changed]`, draw from what you actually observed and changed during Steps 1–6; the examples in the guide are illustrative only. Count the footprint from your record of each edit and pick `[see-every-change]` from the git state you noted in Step 1, as the guide's counting rules say. Strip the `AGENT SUBSTITUTION GUIDE` section before outputting — it must never be shown to the developer.
 - If both a frontend and a backend were integrated, group the bottom two sections by project rather than merging them into a flat list.
 - **DO NOT write any text before the banner.** The very first character of your response must be the first character of the ASCII art. No "Perfect!", no "Here's your success message:", no transition sentence, no acknowledgement — nothing. Start with the `█` character. If you find yourself typing an intro, stop and delete it.
 - **If the build is broken** or auth doesn't actually work end-to-end, prepend a single "Heads up:" line before the banner. Never bury bad news under it.

@@ -54,6 +54,11 @@ If the user is using flags **without Bridge Auth** (bring-your-own identity), th
     Here is what I actually did:
     [what-i-actually-did]
 
+    Bridge's footprint in your code:
+    [footprint]
+
+    [see-every-change]
+
     And here is what I changed:
     [what-i-changed]
   ──────────────────────────────────────────────
@@ -64,6 +69,8 @@ Track as you work:
 - **`[identity-source]`** — how `identity` flows in (Bridge Auth `user.id`, your own session, anonymous bucket ID, etc.)
 - **`[what-i-actually-did]`** — high-level outcomes
 - **`[what-i-changed]`** — every package installed, file modified, env var set
+- **`[footprint]`** — as you make each edit, note its file and its changes (one import, one hook call, one decorator, one env var…), whether the file is new, and whether you modified any of the developer's existing code
+- **`[see-every-change]`** — the git state of each project, recorded in Step 1 before your first edit
 
 ## Mental model (1-minute version)
 
@@ -104,6 +111,8 @@ Scan the current directory and its immediate subdirectories for `package.json` f
 4. **Existing flag system?** Look for `launchdarkly-*`, `@unleash/*`, `posthog-js`, `growthbook-*` — warn the user that Bridge flags will run in parallel unless they migrate.
 
 5. **Record** for each project: path, type (frontend/backend), framework, package manager, existing flag system (if any).
+
+6. **Note the git state, before you edit anything.** Run `git status` in each project and record one of: clean; uncommitted changes already there (note which files); not a git repo, or no commits yet. The success message uses it to tell the developer how to see your changes. Never run `git init`, `git add`, `git stash` or `git commit`, and do not ask the developer about git.
 
 ## Step 2 — Present findings and confirm
 
@@ -206,6 +215,7 @@ If anything fails, diagnose and fix before moving on.
 Output the success message at the top of this prompt, personalised for what you actually did. Same rules as the auth master:
 
 - Fill every `[placeholder]` with real values
+- Fill `[footprint]`, `[see-every-change]` and `[what-i-changed]` by the counting rules in the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `bridge guide integration-success`). Read it for those rules only; the banner to output is the one above. Count from your record of each edit, never estimate; give each line of `[what-i-changed]` its size in changes
 - Strip any agent-only notes
 - Group by project if both frontend and backend were integrated
 - **Do not** write any text before the banner — start with the `█` character
