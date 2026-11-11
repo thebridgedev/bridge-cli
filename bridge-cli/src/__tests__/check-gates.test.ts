@@ -104,6 +104,11 @@ describe('bridge check gates', () => {
 
   it('reports clean and dirty in words an agent acts on', () => {
     expect(formatGateReport(12, [])).toMatch(/12 files checked, no direct/);
+    // TBP-952: the passing line reminds the agent to finish with the success message, on the same line so `tail -1` keeps it.
+    const pass = formatGateReport(12, []);
+    expect(pass.trimEnd().split('\n')).toHaveLength(1);
+    expect(pass).toContain('guide integration-success');
+    expect(pass).toContain('get_integration_guide topic integration-success');
     write('src/a.ts', "if (user.role === 'ADMIN') x();");
     const { scanned, findings } = checkGates(root);
     const report = formatGateReport(scanned, findings);

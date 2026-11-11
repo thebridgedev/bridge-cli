@@ -237,7 +237,7 @@ If anything fails, including the gate check, diagnose and fix before moving on. 
 
 ## Step 6b — Tell the developer what they just got
 
-Fetch the success message template (MCP: `get_integration_guide` topic `integration-success`; CLI: `bridge guide integration-success`), then output it personalised for this project.
+Fetch the success message guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `npx @nebulr-group/bridge-cli guide integration-success`) and output its MESSAGE 1 (sign-in), personalised for this project. Do this even when the gate check's line is the last thing you read: it reminds you of this step.
 
 **Substitutions (always apply):**
 
@@ -247,7 +247,7 @@ Fetch the success message template (MCP: `get_integration_guide` topic `integrat
 
 **Personalisation rules:**
 
-- Fill in every `[placeholder]` using the substitution guide at the bottom of the template. For `[what-i-actually-did]`, `[footprint]` and `[what-i-changed]`, draw from what you actually observed and changed during Steps 1–6; the examples in the guide are illustrative only. Count the footprint from your record of each edit and pick `[see-every-change]` from the git state you noted in Step 1, as the guide's counting rules say. Strip the `AGENT SUBSTITUTION GUIDE` section before outputting — it must never be shown to the developer.
+- Fill in every `[placeholder]` using the substitution guide at the bottom of the template. For `[what-i-actually-did]`, `[footprint]` and `[what-i-changed]`, draw from what you actually observed and changed during Steps 1–6; the examples in the guide are illustrative only. Count the footprint from your record of each edit and pick `[see-every-change]` from the git state you noted in Step 1, as the guide's counting rules say. Output MESSAGE 1 only: never the `WHICH MESSAGE TO SHOW` part, the MESSAGE headings or the `AGENT SUBSTITUTION GUIDE`.
 - If both a frontend and a backend were integrated, group the bottom two sections by project rather than merging them into a flat list.
 - **DO NOT write any text before the banner.** The very first character of your response must be the first character of the ASCII art. No "Perfect!", no "Here's your success message:", no transition sentence, no acknowledgement — nothing. Start with the `█` character. If you find yourself typing an intro, stop and delete it.
 - **If the build is broken** or auth doesn't actually work end-to-end, prepend a single "Heads up:" line before the banner. Never bury bad news under it.

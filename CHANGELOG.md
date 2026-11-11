@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.7] - 2026-11-11
+
+### Changed
+
+- **The success message shows after every integration.** When `bridge check gates` passes, its line now reminds the agent to finish with Bridge's success message and names the command that prints it. Agents run that check last, so the reminder arrives as they finish. `bridge guide integration-success` now holds all three messages, for sign-in, for plans, billing and plan limits, and for feature flags, and says which one to show. An agent that went straight to a per-framework guide still finds its message.
+- **The success message shows Bridge's footprint in your code**: files touched, the number of changes, whether any existing logic changed, and styling kept apart from code, with the `git diff` that shows every change.
+
 ## [0.6.6] - 2026-10-14
 
 ### Changed

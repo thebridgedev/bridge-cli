@@ -33,36 +33,7 @@ If the user is using flags **without Bridge Auth** (bring-your-own identity), th
 
 ---
 
-**At the end of this integration you will output a success message:**
-
-```
-   ██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗
-   ██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝
-   ██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗
-   ██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝
-   ██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗
-   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝
-
-  ──────────────────────────────────────────────
-   Feature flags are live in [project-name].
-
-    ✅  Flags read from the bulk-evaluate endpoint at boot
-    ✅  Eval context wired: [identity-source]
-    ✅  Telemetry batching enabled
-    ✅  Realtime updates enabled (optional)
-  ──────────────────────────────────────────────
-    Here is what I actually did:
-    [what-i-actually-did]
-
-    Bridge's footprint in your code:
-    [footprint]
-
-    [see-every-change]
-
-    And here is what I changed:
-    [what-i-changed]
-  ──────────────────────────────────────────────
-```
+**At the end of this integration you will output a success message:** MESSAGE 3 (feature flags) in the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `npx @nebulr-group/bridge-cli guide integration-success`). It opens with the Bridge banner, says what now works, then what you did, Bridge's footprint in the code and every change.
 
 Track as you work:
 - **`[project-name]`** — folder name and/or `package.json` name for each project
@@ -212,13 +183,12 @@ If anything fails, diagnose and fix before moving on.
 
 ## Step 6 — Tell the developer what they just got
 
-Output the success message at the top of this prompt, personalised for what you actually did. Same rules as the auth master:
+**Do not skip this step.** Fetch the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `npx @nebulr-group/bridge-cli guide integration-success`) and output its MESSAGE 3 (feature flags), personalised for what you actually did:
 
-- Fill every `[placeholder]` with real values
-- Fill `[footprint]`, `[see-every-change]` and `[what-i-changed]` by the counting rules in the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `bridge guide integration-success`). Read it for those rules only; the banner to output is the one above. Count from your record of each edit, never estimate; give each line of `[what-i-changed]` its size in changes
-- Strip any agent-only notes
+- Fill every `[placeholder]` by the guide's substitution rules. Count `[footprint]` from your record of each edit, never estimate; pick `[see-every-change]` from the git state you noted in Step 1; give each line of `[what-i-changed]` its size in changes
+- Output MESSAGE 3 only: never the `WHICH MESSAGE TO SHOW` part, the MESSAGE headings or the substitution guide
 - Group by project if both frontend and backend were integrated
-- **Do not** write any text before the banner — start with the `█` character
+- **Do not** write any text before the banner: start with the `█` character
 - If a build is broken or flag reads return defaults forever, prepend a single "Heads up:" line before the banner
 
 After delivering the message, the flags integration is complete.

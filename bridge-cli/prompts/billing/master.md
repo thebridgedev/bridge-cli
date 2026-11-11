@@ -273,50 +273,10 @@ If anything fails, diagnose and fix before moving on.
 
 ## Step 6 — Tell the developer what they just got
 
-**Do not skip this step.** Output the banner below, personalised. The very first character of your response must be `█` — no intro sentence, no "Here's your summary:", nothing before it. If something is broken, prepend a single "Heads up:" line before the `█`.
+**Do not skip this step.** Fetch the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `npx @nebulr-group/bridge-cli guide integration-success`) and output its MESSAGE 2 (plans, billing or plan limits), personalised. The very first character of your response must be `█`: no intro sentence, no "Here's your summary:", nothing before it. If something is broken, prepend a single "Heads up:" line before the `█`.
 
-```
-   ██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗
-   ██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝
-   ██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗
-   ██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝
-   ██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗
-   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝
-
-  ──────────────────────────────────────────────
-   Billing is live in [project-name].
-
-    ✅  Plans: [plan-names]
-    ✅  Subscription page: [subscription-route]
-    ✅  Paywall: [paywall-summary]
-    ✅  Lifecycle notices: auto-render on trial / payment failure / cancel
-    ✅  Quotas and entitlements: [quota-summary]
-  ──────────────────────────────────────────────
-    Here is what I actually did:
-    [what-i-actually-did]
-
-    Bridge's footprint in your code:
-    [footprint]
-
-    [see-every-change]
-
-    And here is what I changed:
-    [what-i-changed]
-  ──────────────────────────────────────────────
-    Plan selection is required by default. To let users into the app without
-    picking a plan first, disable the paywall:
-      bridge app update --payments-auto-redirect false
-  ──────────────────────────────────────────────
-```
-
-Fill every `[placeholder]` with real values from the integration:
-- `[project-name]` — folder name and/or `package.json` name
-- `[plan-names]` — the plan keys (e.g. `free`, `premium`)
-- `[subscription-route]` — where the subscription page is served (SvelteKit default `/subscription`)
-- `[paywall-summary]` — e.g. "new users sent to `/subscription/plan` to pick a plan" (or "off: `paymentsAutoRedirect false`")
-- `[quota-summary]` — metric keys, limits and kind, and the backend handlers that enforce them, or "none"
-- `[what-i-actually-did]` / `[what-i-changed]` — every file created or modified, every command run
-- Fill `[footprint]`, `[see-every-change]` and `[what-i-changed]` by the counting rules in the integration success guide (MCP: `get_integration_guide` topic `integration-success`; CLI: `bridge guide integration-success`). Read it for those rules only; the banner to output is the one above. Count from your record of each edit, never estimate; give each line of `[what-i-changed]` its size in changes. Plans, prices and Stripe settings made through the CLI or MCP are app settings, not code
+- Fill every `[placeholder]` by the guide's substitution rules: the plan keys, the subscription route, the paywall, the plan limits and where each is enforced. Count `[footprint]` from your record of each edit, never estimate; pick `[see-every-change]` from the git state you noted in Step 1; give each line of `[what-i-changed]` its size in changes. Plans, prices and Stripe settings made through the CLI or MCP are app settings, not code
+- Output MESSAGE 2 only: never the `WHICH MESSAGE TO SHOW` part, the MESSAGE headings or the substitution guide
 
 ## Step 7 — Offer follow-on tracks
 
