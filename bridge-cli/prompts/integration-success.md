@@ -1,3 +1,21 @@
+WHICH MESSAGE TO SHOW (for you: never output this part)
+
+Show one message, picked by what this request added, then stop:
+  - Sign-in (Bridge auth)                            → MESSAGE 1
+  - Plans, billing or plan limits                    → MESSAGE 2
+  - Feature flags                                    → MESSAGE 3
+Several in one request: show the first that applies, in that order, and
+list the rest under what-i-actually-did.
+
+The very first character of your reply is the first `█` of the banner: no
+sentence before it. If the build is broken or the feature does not work end
+to end, put a single "Heads up:" line before the banner; never bury bad news
+under it. Fill every [placeholder] by the AGENT SUBSTITUTION GUIDE at the
+bottom. Output the chosen message only: not this part, not the MESSAGE
+headings, not the guide.
+
+===== MESSAGE 1: sign-in =====
+
    ██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗
    ██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝
    ██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗
@@ -51,6 +69,69 @@
     [what-i-changed]
   ──────────────────────────────────────────────
 
+===== MESSAGE 2: plans, billing or plan limits =====
+
+   ██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗
+   ██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝
+   ██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗
+   ██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝
+   ██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗
+   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝
+
+  ──────────────────────────────────────────────
+   Billing is live in [project-name].
+
+    ✅  Plans: [plan-names]
+    ✅  Subscription page: [subscription-route]
+    ✅  Paywall: [paywall-summary]
+    ✅  Lifecycle notices: auto-render on trial / payment failure / cancel
+    ✅  Quotas and entitlements: [quota-summary]
+  ──────────────────────────────────────────────
+    Here is what I actually did:
+    [what-i-actually-did]
+
+    Bridge's footprint in your code:
+    [footprint]
+
+    [see-every-change]
+
+    And here is what I changed:
+    [what-i-changed]
+  ──────────────────────────────────────────────
+    Plan selection is required by default. To let users into the app without
+    picking a plan first, disable the paywall:
+      bridge app update --payments-auto-redirect false
+  ──────────────────────────────────────────────
+
+===== MESSAGE 3: feature flags =====
+
+   ██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗
+   ██╔══██╗██╔══██╗██║██╔══██╗██╔════╝ ██╔════╝
+   ██████╔╝██████╔╝██║██║  ██║██║  ███╗█████╗
+   ██╔══██╗██╔══██╗██║██║  ██║██║   ██║██╔══╝
+   ██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗
+   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝
+
+  ──────────────────────────────────────────────
+   Feature flags are live in [project-name].
+
+    ✅  Flags read from the bulk-evaluate endpoint at boot
+    ✅  Eval context wired: [identity-source]
+    ✅  Telemetry batching enabled
+    ✅  Realtime updates enabled (optional)
+  ──────────────────────────────────────────────
+    Here is what I actually did:
+    [what-i-actually-did]
+
+    Bridge's footprint in your code:
+    [footprint]
+
+    [see-every-change]
+
+    And here is what I changed:
+    [what-i-changed]
+  ──────────────────────────────────────────────
+
 ---
 AGENT SUBSTITUTION GUIDE (strip this section before outputting)
 
@@ -95,6 +176,27 @@ PLACEHOLDER: what-i-actually-did
     Backend (my-saas-api):
     ✅  All endpoints require a verified JWT
     ✅  Signed-in user available on every request
+
+PLACEHOLDER: plan-names (MESSAGE 2)
+  The plan keys, e.g. `free`, `pro`.
+
+PLACEHOLDER: subscription-route (MESSAGE 2)
+  Where the subscription page is served (default `/subscription`).
+
+PLACEHOLDER: paywall-summary (MESSAGE 2)
+  e.g. "new users sent to `/subscription/plan` to pick a plan", or
+  "off: `paymentsAutoRedirect false`". When the paywall is off, drop the
+  closing "Plan selection is required by default" block.
+
+PLACEHOLDER: quota-summary (MESSAGE 2)
+  Metric keys, limits and kind (hard or billed per extra use), and where each
+  is enforced (the backend handler, or the frontend report), or "none".
+  Plans, prices and Stripe settings made through the CLI or MCP are app
+  settings, not code.
+
+PLACEHOLDER: identity-source (MESSAGE 3)
+  How `identity` reaches the flags: Bridge Auth `user.id`, the app's own
+  session, an anonymous bucket ID.
 
 HOW TO COUNT THE FOOTPRINT (used by footprint, see-every-change, what-i-changed)
   - Count only the changes YOU made in this session, from your own record of
