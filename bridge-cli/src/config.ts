@@ -52,15 +52,20 @@ export class Config {
 
 const FILE = 'config.json';
 
-/** The issuer: `--issuer`, else `BRIDGE_ISSUER`, else the one saved at sign-in. */
-export function resolveIssuer(flag: string | undefined, env: NodeJS.ProcessEnv, settings: Settings): string {
-  const given = flag ?? env['BRIDGE_ISSUER'] ?? settings.issuer;
-  if (given === undefined || given.trim() === '') {
-    throw new CliError('misconfigured', 'No issuer is set.', {
-      hint: 'Sign in with `bridge auth login --issuer <the Bridge App\'s issuer>`, or set BRIDGE_ISSUER.',
-    });
-  }
-  return normalizeIssuer(given);
+/**
+ * Where the issuer comes from: `--issuer`, else `--server`, else `BRIDGE_ISSUER`, else `BRIDGE_SERVER`, else the one
+ * saved at sign-in. A server is Bridge's address (`https://api.example.com`); its issuer is read from it.
+ */
+export function issuerSource(flags: { issuer?: string; server?: string }, env: NodeJS.ProcessEnv, settings: Settings): { issuer: string } | { server: string } {
+  const given = (value: string | undefined): value is string => value !== undefined && value.trim() !== '';
+  if (given(flags.issuer)) return { issuer: normalizeIssuer(flags.issuer) };
+  if (given(flags.server)) return { server: flags.server.trim() };
+  if (given(env['BRIDGE_ISSUER'])) return { issuer: normalizeIssuer(env['BRIDGE_ISSUER']) };
+  if (given(env['BRIDGE_SERVER'])) return { server: env['BRIDGE_SERVER'].trim() };
+  if (given(settings.issuer)) return { issuer: normalizeIssuer(settings.issuer) };
+  throw new CliError('misconfigured', 'No Bridge server is set.', {
+    hint: 'Sign in with `bridge auth login --server <Bridge\'s address>`, or set BRIDGE_SERVER.',
+  });
 }
 
 /** The app commands act on: `--app`, else `BRIDGE_APP`, else the one chosen with `bridge app use`. */

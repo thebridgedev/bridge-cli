@@ -88,9 +88,9 @@ describe('auth login --password', () => {
     expect(done.data.user.email).toBe('dev@example.com');
   });
 
-  it('needs an issuer', async () => {
+  it('needs a server or an issuer', async () => {
     const done = await cli.run(['auth', 'login', '--password'], { env: { BRIDGE_ISSUER: '' } });
-    expect(done.error).toMatchObject({ code: 'misconfigured', message: 'No issuer is set.' });
+    expect(done.error).toMatchObject({ code: 'misconfigured', message: 'No Bridge server is set.' });
     expect(done.exitCode).toBe(3);
   });
 

@@ -2,8 +2,8 @@ import type { Command } from 'commander';
 import { Sessions } from '../auth/session.js';
 import { chooseStore, type SessionStore } from '../auth/store.js';
 import { BridgeClient } from '../client.js';
-import { Config, configDir, resolveApp, resolveIssuer, type Settings } from '../config.js';
-import { discover, type Discovery } from '../core/discovery.js';
+import { Config, configDir, issuerSource, resolveApp, type Settings } from '../config.js';
+import { discover, issuerAtServer, type Discovery } from '../core/discovery.js';
 import type { Fetch } from '../core/http.js';
 import type { Io } from '../io.js';
 
@@ -22,6 +22,7 @@ export interface Deps {
 
 export interface GlobalOptions {
   readonly issuer?: string;
+  readonly server?: string;
   readonly app?: string;
 }
 
@@ -30,6 +31,7 @@ export class Context {
   readonly config: Config;
   private settingsRead?: Settings;
   private discovered?: Promise<Discovery>;
+  private issuerFound?: Promise<string>;
   private sessionsMade?: Sessions;
 
   constructor(
@@ -52,8 +54,13 @@ export class Context {
     return this.settingsRead;
   }
 
-  async issuer(): Promise<string> {
-    return resolveIssuer(this.options.issuer, this.env, await this.settings());
+  /** The Bridge App's issuer: given, saved, or read from the server given with `--server` / `BRIDGE_SERVER`. */
+  issuer(): Promise<string> {
+    this.issuerFound ??= this.settings().then((settings) => {
+      const source = issuerSource(this.options, this.env, settings);
+      return 'issuer' in source ? source.issuer : issuerAtServer(this.deps.fetch, source.server);
+    });
+    return this.issuerFound;
   }
 
   discovery(): Promise<Discovery> {

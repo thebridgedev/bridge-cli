@@ -20,13 +20,15 @@ It needs Node.js 20 or later.
 
 ## Sign in
 
-The CLI needs one address: your **issuer**, the address Bridge signs you in at. Every other endpoint is read from the issuer's published metadata. Give it once; it is saved for the commands that follow.
+The CLI needs one address: your **Bridge server**. It reads the sign-in issuer from the server, and every other endpoint from the issuer's published metadata. Give it once; it is saved for the commands that follow.
 
 ```bash
-bridge auth login --issuer https://<your Bridge>/identity-access/apps/<app id>
+bridge auth login --server https://<your Bridge>
 ```
 
-This opens Bridge's sign-in page in your browser: the page your issuer publishes, and the CLI says its address before it opens it. You sign in there, and the browser comes back to the CLI on `127.0.0.1`. The sign-in is bound to this process with PKCE, so a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
+(`--issuer https://<your Bridge>/identity-access/apps/<app id>` gives the issuer itself instead.)
+
+This opens Bridge's sign-in page in your browser: the page your issuer publishes, and the CLI says its address before it opens it. You sign in there by any method the page offers, or create your account, and the browser comes back to the CLI on `127.0.0.1`. The CLI first asks Bridge to hold a sign-in request for it, with its loopback address and a PKCE challenge, so the code goes only to that address and only this process can trade it: a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
 
 If no browser is at hand (a server, a container, CI), sign in in the terminal:
 
@@ -45,6 +47,16 @@ bridge auth logout              # ends the session at Bridge and removes it from
 ```
 
 **Where the session is kept.** In your operating system's keychain (the macOS keychain, or the Secret Service keyring on Linux) when there is one, else in `~/.config/bridge/v1/sessions.json`, readable only by you (mode 0600). Set `BRIDGE_TOKEN_STORE=file` to use the file. The CLI renews the session as it goes; each renewal replaces the refresh token, and the old one stops working.
+
+## Hook up your project
+
+In your project's folder, after `bridge app use <id>` (or `bridge app create`):
+
+```bash
+bridge app setup
+```
+
+This writes the app's issuer into `.env` as `PUBLIC_BRIDGE_ISSUER` (what `@nebulr-group/bridge-svelte` reads), on the Bridge you signed in to, and adds your development address, `http://localhost:5173`, as a browser origin and `http://localhost:5173/auth` as the page email links land on. `--url`, `--auth-path`, `--env-file` and `--var` change them. Running it again changes nothing.
 
 ## Set up an app
 
@@ -84,6 +96,7 @@ bridge flag create team-admin --when "privileges contains USER_WRITE"
 | Command | What it does |
 |---|---|
 | `auth login` · `logout` · `whoami` · `workspace` | Sign in and out, see who you are, switch workspace |
+| `app setup` | Hook up your project: the app's issuer into `.env`, your dev address as a browser origin and email-links page |
 | `app list` · `create` · `use` · `get` · `update` · `delete` | Your apps; `update` sets the name, logo, website, privacy policy and terms |
 | `app address list` · `add` · `remove` | Sign-in returns, email links, browser origins, sign-out and checkout returns |
 | `app default-return <url>` | The sign-in return used when a sign-in names none |
@@ -128,9 +141,9 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 
 | Variable | Flag | What it is |
 |---|---|---|
-| `BRIDGE_ISSUER` | `--issuer` | Your issuer. Saved at sign-in |
+| `BRIDGE_SERVER` | `--server` | Your Bridge server's address; the CLI reads the issuer from it. Saved at sign-in, as the issuer |
+| `BRIDGE_ISSUER` | `--issuer` | Your issuer, instead of the server. Wins over the server. Saved at sign-in |
 | `BRIDGE_APP` | `--app` | The app commands act on. Default: the one chosen with `bridge app use` |
-| `BRIDGE_SIGN_IN_PAGE` | `auth login --sign-in-page` | Bridge's sign-in page, only when the issuer publishes none, and only on the issuer's own address or on localhost. Never saved |
 | `BRIDGE_APP_KEY` | | An app key for the commands that need one |
 | `BRIDGE_TOKEN_STORE` | | `file` to keep the session in the 0600 file, `keychain` to require the keychain |
 | `BRIDGE_CONFIG_DIR` | | Where settings are kept. Default `~/.config/bridge/v1` |
@@ -139,9 +152,10 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 
 - The issuer and every endpoint must be `https`; plain `http` only on `localhost`, `127.0.0.1` and `[::1]`, for local development.
 - The CLI never follows a redirect, so your token goes only to the addresses your issuer lists.
-- Browser sign-in opens the sign-in page the issuer publishes. Another page is taken only on the issuer's own address, or on localhost for development, and is never saved.
+- The issuer read from a server must be on that server's own address.
+- Browser sign-in opens only the sign-in page the issuer publishes, with only a sign-in request's id in its address. Bridge holds the request: the CLI's loopback return, its PKCE challenge and its `state`. The code made on it goes only to that return, lives a minute, is used once, and is traded only with the CLI's verifier and the same return.
 - The browser is opened with no shell: the address is one argument to `open`, `xdg-open`, or `rundll32 url.dll,FileProtocolHandler` on Windows.
-- Browser sign-in listens on `127.0.0.1` only, checks the `state` it sent, requires the issuer to name itself on the callback (`iss`, RFC 9207), and uses PKCE (S256).
+- Browser sign-in listens on `127.0.0.1` only, on a port the system picks, checks the `state` it sent, requires the issuer to name itself on the callback (`iss`, RFC 9207), and uses PKCE (S256).
 - The session and settings files are written with no symlink followed: to a new 0600 file in a 0700 directory you own, then renamed into place.
 - A temporary app key is revoked when the command ends, fails or is stopped with Ctrl-C; if it cannot be, the CLI prints the key's id to revoke.
 - Passwords and Stripe keys are read without echo or from stdin, never from arguments, and never kept.
