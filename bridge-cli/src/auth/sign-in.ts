@@ -1,7 +1,6 @@
 import type { Discovery } from '../core/discovery.js';
 import { CliError } from '../core/errors.js';
 import { call, type Fetch } from '../core/http.js';
-import { isLocalHost, secureUrl } from '../core/urls.js';
 import { LoopbackError, startLoopback, type StartedLoopback } from './loopback.js';
 import { codeChallengeFor, generateCodeVerifier, generateState } from './pkce.js';
 import type { Sessions } from './session.js';
@@ -70,8 +69,6 @@ export async function signInWithPassword(fetchFn: Fetch, sessions: Sessions, d: 
 }
 
 export interface BrowserSignIn {
-  /** Bridge's sign-in page in hand-off mode. */
-  readonly signInPage: string;
   readonly openBrowser: (url: string) => Promise<{ ok: boolean; reason?: string }>;
   /** Told the address when the browser cannot be opened, or always, so it can be opened by hand. */
   readonly show: (message: string) => void;
@@ -80,60 +77,47 @@ export interface BrowserSignIn {
   readonly onListening?: (loopback: StartedLoopback, url: string) => void;
 }
 
-/**
- * The address of the sign-in page for this sign-in: the page signs in with
- * the PKCE challenge and sends the browser back to the loopback address
- * with the code and the state (hand-off mode). Only this process holds the
- * verifier, so only it can trade the code.
- */
-export function signInPageUrl(page: string, d: Discovery, request: { codeChallenge: string; redirectUri: string; state: string }): string {
+/** The address to open: Bridge's sign-in page with the request's id, and nothing else of the sign-in in it. */
+export function signInPageUrl(page: string, request: string): string {
   const url = new URL(page);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('client_id', d.appId);
-  url.searchParams.set('code_challenge', request.codeChallenge);
-  url.searchParams.set('code_challenge_method', 'S256');
-  url.searchParams.set('redirect_uri', request.redirectUri);
-  url.searchParams.set('state', request.state);
+  url.search = new URLSearchParams({ request }).toString();
   return url.toString();
 }
 
 /**
- * The sign-in page to open. The page the issuer publishes always wins. An
- * override (`--sign-in-page`, `BRIDGE_SIGN_IN_PAGE`) is used only when the
- * issuer publishes none, and only on the issuer's own origin, or on this
- * machine for development: a page anywhere else could take the password
- * and relay it. An override is never saved.
+ * Starts the sign-in request (in the spirit of RFC 9126): Bridge holds the CLI's PKCE challenge, its `state` and its
+ * loopback return, checks the return against the Bridge App's registered ones (a loopback IP on any port, RFC 8252
+ * 7.3), and answers with an opaque id. The code made on it goes only to that return, and only the verifier trades it.
  */
-export function chooseSignInPage(d: Discovery, override: string | undefined): { page: string; ignored?: string } {
-  if (d.signInPage !== null) {
-    return override === undefined || override === d.signInPage ? { page: d.signInPage } : { page: d.signInPage, ignored: override };
-  }
-  if (override === undefined || override === '') {
-    throw new CliError('not-offered', 'This Bridge does not offer a sign-in page for the CLI yet.', {
-      hint: 'Sign in in the terminal instead: `bridge auth login --password`.',
-    });
-  }
-  const url = secureUrl(override);
-  if (url === null) throw new CliError('misconfigured', `The sign-in page must be an https address (http only on localhost): ${override}`);
-  if (url.origin !== new URL(d.issuer).origin && !isLocalHost(url.hostname)) {
-    throw new CliError('misconfigured', `A sign-in page is taken only on the issuer's own address (${new URL(d.issuer).origin}) or on localhost, not ${url.origin}.`, {
-      hint: 'Sign in in the terminal instead: `bridge auth login --password`.',
-    });
-  }
-  return { page: url.toString() };
+async function startRequest(fetchFn: Fetch, d: Discovery, request: { codeChallenge: string; redirectUri: string; state: string }): Promise<string> {
+  const { body } = await call<{ request?: unknown }>(fetchFn, {
+    method: 'POST',
+    url: d.signInRequests as string,
+    body: { redirect_uri: request.redirectUri, code_challenge: request.codeChallenge, code_challenge_method: 'S256', state: request.state, client_id: d.appId },
+  });
+  if (typeof body?.request !== 'string' || body.request === '') throw new CliError('misconfigured', 'Bridge did not start the sign-in request.');
+  return body.request;
 }
 
-/** Browser sign-in through Bridge's own sign-in page, with a loopback on 127.0.0.1 and PKCE (RFC 8252, RFC 7636). */
-export async function signInWithBrowser(sessions: Sessions, d: Discovery, input: BrowserSignIn): Promise<StoredSession> {
-  if (secureUrl(input.signInPage) === null) {
-    throw new CliError('misconfigured', `The sign-in page must be an https address (http only on localhost): ${input.signInPage}`);
+/**
+ * Browser sign-in through Bridge's own sign-in page (RFC 8252): a loopback listener on 127.0.0.1, a sign-in request
+ * that binds the code to it, PKCE (RFC 7636), the `state`, and the issuer the page names (RFC 9207). The page signs the
+ * person in on the request by any method it offers and sends the browser to the loopback with the code; the token
+ * endpoint trades it only with this process's verifier and the same `redirect_uri`, once.
+ */
+export async function signInWithBrowser(fetchFn: Fetch, sessions: Sessions, d: Discovery, input: BrowserSignIn): Promise<StoredSession> {
+  if (d.signInPage === null || d.signInRequests === null) {
+    throw new CliError('not-offered', 'This Bridge does not offer browser sign-in for the CLI.', {
+      hint: 'Sign in in the terminal instead: `bridge auth login --password`.',
+    });
   }
   const verifier = generateCodeVerifier();
   const state = generateState();
   const loopback = await startLoopback({ expectedState: state, expectedIssuer: d.issuer, timeoutMs: input.timeoutMs });
-  const url = signInPageUrl(input.signInPage, d, { codeChallenge: codeChallengeFor(verifier), redirectUri: loopback.redirectUri, state });
-  input.onListening?.(loopback, url);
   try {
+    const request = await startRequest(fetchFn, d, { codeChallenge: codeChallengeFor(verifier), redirectUri: loopback.redirectUri, state });
+    const url = signInPageUrl(d.signInPage, request);
+    input.onListening?.(loopback, url);
     const opened = await input.openBrowser(url);
     input.show(
       opened.ok
@@ -141,7 +125,7 @@ export async function signInWithBrowser(sessions: Sessions, d: Discovery, input:
         : `Open this address in your browser to sign in:\n  ${url}`,
     );
     const { code } = await loopback.result;
-    return await sessions.exchangeCode(d, code, verifier);
+    return await sessions.exchangeCode(d, code, verifier, loopback.redirectUri);
   } catch (error) {
     if (error instanceof LoopbackError) {
       throw new CliError(error.kind === 'access_denied' ? 'cancelled' : 'invalid', error.message);

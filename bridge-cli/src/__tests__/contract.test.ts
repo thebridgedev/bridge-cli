@@ -48,6 +48,7 @@ describe('discovery against the pinned metadata document', () => {
       revoke: `${BASE}/v2/identity-access/apps/${BRIDGE_APP}/revoke`,
       signOut: `${BASE}/v2/identity-access/sign-out`,
       signInPage: null,
+      signInRequests: null,
       bases: {
         'app-registry': `${BASE}/v2/app-registry`,
         'identity-access': `${BASE}/v2/identity-access`,
@@ -72,10 +73,21 @@ describe('discovery against the pinned metadata document', () => {
     expect(() => readMetadata(ISSUER, doc)).toThrow(/no "token" endpoint/);
   });
 
-  it('reads the sign-in page when the issuer lists one', () => {
+  it('reads the sign-in page with its sign-in requests, both or neither', () => {
     const doc = document();
-    doc['bridge_endpoints']['2']['sign_in_page'] = 'https://signin.bridge.test/cli';
-    expect(readMetadata(ISSUER, doc).signInPage).toBe('https://signin.bridge.test/cli');
+    doc['bridge_endpoints']['2']['sign_in_page'] = `${BASE}/sign-in/${BRIDGE_APP}/`;
+    expect(readMetadata(ISSUER, doc)).toMatchObject({ signInPage: null, signInRequests: null });
+    doc['bridge_endpoints']['2']['sign_in_requests'] = `${BASE}/v2/identity-access/apps/${BRIDGE_APP}/sign-in-requests`;
+    expect(readMetadata(ISSUER, doc)).toMatchObject({ signInPage: `${BASE}/sign-in/${BRIDGE_APP}/`, signInRequests: `${BASE}/v2/identity-access/apps/${BRIDGE_APP}/sign-in-requests` });
+    // An assistant's authorization page is never taken for the sign-in page.
+    const assistants = document();
+    assistants['authorization_endpoint'] = `${BASE}/v2/identity-access/apps/${BRIDGE_APP}/authorize`;
+    expect(readMetadata(ISSUER, assistants).signInPage).toBeNull();
+    for (const page of ['http://bridge.test/sign-in/x/', `${BASE}/sign-in/x/?next=elsewhere`]) {
+      const bad = document();
+      Object.assign(bad['bridge_endpoints']['2'], { sign_in_page: page, sign_in_requests: `${BASE}/v2/identity-access/apps/${BRIDGE_APP}/sign-in-requests` });
+      expect(() => readMetadata(ISSUER, bad)).toThrow(/sign_in_page/);
+    }
   });
 
   it('refuses an issuer that is not at version 2, another issuer, or an address that is not https', () => {

@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { chooseSignInPage, signInWithBrowser, signInWithPassword, type WorkspaceChoice } from '../auth/sign-in.js';
+import { signInWithBrowser, signInWithPassword, type WorkspaceChoice } from '../auth/sign-in.js';
 import type { StoredSession } from '../auth/store.js';
 import { CliError } from '../core/errors.js';
 import { action, type Context, type Deps } from './context.js';
@@ -60,7 +60,6 @@ interface LoginOptions {
   email?: string;
   passwordStdin?: boolean;
   workspace?: string;
-  signInPage?: string;
   browser?: boolean;
 }
 
@@ -74,7 +73,6 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
     .option('--email <email>', 'Your email, with --password')
     .option('--password-stdin', 'Read the password from stdin, with --password (for scripts and CI)')
     .option('--workspace <id>', 'The workspace to sign in to, when you belong to several')
-    .option('--sign-in-page <url>', 'Bridge\'s sign-in page, when the issuer publishes none: only on the issuer\'s own address, or on localhost (env: BRIDGE_SIGN_IN_PAGE)')
     .option('--no-browser', 'Print the sign-in address instead of opening the browser')
     .action(
       action(deps, async (ctx, opts: LoginOptions) => {
@@ -96,11 +94,8 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
             chooseWorkspace: workspaceChooser(ctx),
           });
         } else {
-          const { page, ignored } = chooseSignInPage(d, opts.signInPage ?? ctx.env['BRIDGE_SIGN_IN_PAGE']);
-          if (ignored !== undefined) ctx.io.info(`Using the sign-in page ${issuerHost} publishes, not ${ignored}.`);
-          ctx.io.info(`Signing in at ${new URL(page).host} for ${issuerHost}.`);
-          session = await signInWithBrowser(sessions, d, {
-            signInPage: page,
+          if (d.signInPage !== null) ctx.io.info(`Signing in at ${new URL(d.signInPage).host} for ${issuerHost}.`);
+          session = await signInWithBrowser(deps.fetch, sessions, d, {
             openBrowser: opts.browser === false ? async () => ({ ok: false }) : deps.openBrowser,
             show: (message) => ctx.io.info(message),
             ...(deps.signInTimeoutMs === undefined ? {} : { timeoutMs: deps.signInTimeoutMs }),

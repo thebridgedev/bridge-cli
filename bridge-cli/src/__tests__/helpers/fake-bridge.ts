@@ -69,6 +69,16 @@ interface Session {
 
 type Json = Record<string, unknown>;
 
+interface SignInRequest {
+  readonly redirectUri: string;
+  readonly challenge: string;
+  readonly state: string;
+  used: boolean;
+}
+
+/** The Bridge App's registered loopback returns, `http://127.0.0.1/callback` and `http://[::1]/callback`, on any port. */
+const LOOPBACK_RETURN = /^http:\/\/(127\.0\.0\.1|\[::1\]):[1-9][0-9]{0,4}\/callback$/;
+
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
@@ -84,8 +94,10 @@ export function createFakeBridge() {
   const requests: Recorded[] = [];
   const violations: string[] = [];
   const people = new Map<string, Person>();
-  const codes = new Map<string, { session: Omit<Session, 'ended'>; challenge: string }>();
-  const flows = new Map<string, { person: Person; challenge: string }>();
+  const codes = new Map<string, { session: Omit<Session, 'ended'>; challenge: string; redirectUri: string | null }>();
+  const flows = new Map<string, { person: Person; challenge: string; request: SignInRequest | null }>();
+  /** Sign-in requests by id: the CLI's challenge, state and loopback return, held by Bridge. */
+  const signInRequests = new Map<string, SignInRequest>();
   const sessions = new Map<string, Session>();
   const accessTokens = new Map<string, { session: string; exp: number }>();
   const refreshTokens = new Map<string, { session: string; used: boolean }>();
@@ -119,12 +131,14 @@ export function createFakeBridge() {
   };
 
   let signInPage: string | null = null;
+  /** What the server's protected resource metadata names as its issuer, when a test changes it. */
+  let protectedResourceIssuer: string | null = null;
 
   function metadata(): Json {
     const text = JSON.stringify(DISCOVERY.document).replaceAll('{base}', BASE).replaceAll('{app}', BRIDGE_APP);
     const document = JSON.parse(text) as Json;
-    // Not published yet: the key the CLI reads once the issuer lists its sign-in page.
-    if (signInPage !== null) ((document['bridge_endpoints'] as Json)['2'] as Json)['sign_in_page'] = signInPage;
+    // Listed only for an app whose page signs in for programs: the page and where its sign-in requests start.
+    if (signInPage !== null) Object.assign((document['bridge_endpoints'] as Json)['2'] as Json, { sign_in_page: signInPage, sign_in_requests: `${V2}/identity-access/apps/${BRIDGE_APP}/sign-in-requests` });
     return document;
   }
 
@@ -137,13 +151,27 @@ export function createFakeBridge() {
     return { access_token: access, token_type: 'Bearer', expires_in: 300, refresh_token: refresh, id_token: 'unused', ...(session.workspace === null ? {} : { workspace: session.workspace }) };
   }
 
-  function codeFor(person: Person, workspace: string | null, challenge: string): Response {
+  function codeFor(person: Person, workspace: string | null, challenge: string, request: SignInRequest | null = null): Response {
     const code = `code-${secret()}`;
-    codes.set(code, { session: { person, workspace, authTime: clock }, challenge });
-    return json(200, { code });
+    codes.set(code, { session: { person, workspace, authTime: clock }, challenge: request?.challenge ?? challenge, redirectUri: request?.redirectUri ?? null });
+    return json(200, request === null ? { code } : { code, redirect_uri: request.redirectUri, state: request.state });
   }
 
-  /** The challenge endpoint: what the CLI's password sign-in and Bridge's sign-in page (hand-off mode) both call. */
+  /** A sign-in request, as Bridge makes one for the Bridge App: only for one of its loopback returns, on any port. */
+  function startRequest(body: Json): Response {
+    if (body['client_id'] !== undefined && body['client_id'] !== BRIDGE_APP) return json(400, { error: 'invalid_client' });
+    if (body['code_challenge_method'] !== 'S256' || typeof body['code_challenge'] !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body['code_challenge'])) return json(400, { error: 'invalid_request' });
+    if (typeof body['state'] !== 'string' || !/^[\x21-\x7e]{8,512}$/.test(body['state'])) return json(400, { error: 'invalid_request' });
+    const redirectUri = body['redirect_uri'];
+    if (typeof redirectUri !== 'string' || !LOOPBACK_RETURN.test(redirectUri) || new URL(redirectUri).href !== redirectUri) {
+      return json(400, { error: 'invalid_request', error_description: "redirect_uri is not one of the app's registered sign-in returns." });
+    }
+    const handle = `request-${secret()}`;
+    signInRequests.set(handle, { redirectUri, challenge: body['code_challenge'], state: body['state'], used: false });
+    return json(201, { request: handle, expires_in: 600 });
+  }
+
+  /** The challenge endpoint: what the CLI's password sign-in and Bridge's sign-in page (on a sign-in request) both call. */
   function signIn(body: Json): Response {
     if (typeof body['flow'] === 'string') {
       const flow = flows.get(body['flow']);
@@ -151,20 +179,27 @@ export function createFakeBridge() {
       flows.delete(body['flow']);
       const workspace = String(body['workspace']);
       if (!flow.person.workspaces.some((each) => each.id === workspace)) return json(403, { error: 'access_denied', reason: 'not_a_member' });
-      return codeFor(flow.person, workspace, flow.challenge);
+      return codeFor(flow.person, workspace, flow.challenge, flow.request);
     }
-    if (body['code_challenge_method'] !== 'S256' || typeof body['code_challenge'] !== 'string') return json(400, { error: 'invalid_request' });
+    // On a sign-in request, the request's challenge and return; the page names neither.
+    let request: SignInRequest | null = null;
+    if (body['request'] !== undefined) {
+      request = signInRequests.get(String(body['request'])) ?? null;
+      if (request === null || request.used || body['code_challenge'] !== undefined || body['redirect_uri'] !== undefined) return json(400, { error: 'invalid_request_uri' });
+    } else if (body['code_challenge_method'] !== 'S256' || typeof body['code_challenge'] !== 'string') return json(400, { error: 'invalid_request' });
+    const challenge = request?.challenge ?? String(body['code_challenge']);
     const person = people.get(String(body['email']));
     if (!person || person.password !== body['password']) return json(400, { error: 'wrong_credentials' });
     const requested = typeof body['workspace'] === 'string' ? body['workspace'] : null;
+    if (request !== null) request.used = true;
     if (requested === null && person.workspaces.length > 1) {
       const handle = `flow-${secret()}`;
-      flows.set(handle, { person, challenge: body['code_challenge'] });
+      flows.set(handle, { person, challenge, request });
       return json(200, { next: 'workspace', flow: handle, workspaces: person.workspaces.map((each) => ({ ...each, logo: null })) });
     }
     const workspace = requested ?? person.workspaces[0]?.id ?? null;
     if (workspace !== null && !person.workspaces.some((each) => each.id === workspace)) return json(403, { error: 'access_denied', reason: 'not_a_member' });
-    return codeFor(person, workspace, body['code_challenge']);
+    return codeFor(person, workspace, challenge, request);
   }
 
   function token(body: Json): Response {
@@ -173,6 +208,8 @@ export function createFakeBridge() {
       const found = codes.get(String(body['code']));
       codes.delete(String(body['code']));
       if (!found || s256(String(body['code_verifier'])) !== found.challenge) return json(400, { error: 'invalid_grant', error_description: 'The code is not valid.' });
+      // A code made for a return is traded only with that same redirect_uri (RFC 6749, 4.1.3).
+      if (found.redirectUri !== null && body['redirect_uri'] !== found.redirectUri) return json(400, { error: 'invalid_grant', error_description: 'The code is not valid.' });
       const sessionId = id('session');
       sessions.set(sessionId, { ...found.session, ended: false });
       return json(200, issue(sessionId), { 'cache-control': 'no-store' });
@@ -218,6 +255,8 @@ export function createFakeBridge() {
   async function handle(method: string, url: URL, headers: Record<string, string>, body: Json | undefined): Promise<Response> {
     const path = url.pathname;
     if (method === 'GET' && path === `/identity-access/apps/${BRIDGE_APP}/.well-known/openid-configuration`) return json(200, metadata());
+    // The server's protected resource metadata (RFC 9728), naming the Bridge App's issuer: what `--server` reads.
+    if (method === 'GET' && path === '/.well-known/oauth-protected-resource') return json(200, { resource: `${BASE}/mcp`, authorization_servers: [protectedResourceIssuer ?? ISSUER] });
 
     const entry = contractEntry(method, path);
     if (!entry) {
@@ -232,6 +271,7 @@ export function createFakeBridge() {
     const input = body ?? {};
     const ia = `/v2/identity-access/apps/${BRIDGE_APP}`;
     if (method === 'POST' && path === `${ia}/sign-in`) return signIn(input);
+    if (method === 'POST' && path === `${ia}/sign-in-requests`) return startRequest(input);
     if (method === 'POST' && path === `${ia}/token`) return token(input);
     if (method === 'POST' && path === `${ia}/revoke`) {
       const found = refreshTokens.get(String(input['token']));
@@ -544,10 +584,16 @@ export function createFakeBridge() {
     advance(ms: number) {
       clock += ms;
     },
-    /** The issuer publishes its sign-in page in its metadata. */
+    /** The issuer publishes its sign-in page, and its sign-in requests, in its metadata. */
     setSignInPage(url: string | null) {
       signInPage = url;
     },
+    /** The server's protected resource metadata names this issuer instead of the Bridge App's. */
+    setProtectedResourceIssuer(issuer: string | null) {
+      protectedResourceIssuer = issuer;
+    },
+    /** Every sign-in request Bridge holds, by id. */
+    signInRequests,
     /** Every token the fake gave, to check none leaks. */
     tokens: () => [...accessTokens.keys(), ...refreshTokens.keys()],
     /** Bridge stops taking every access token it gave (a key rotation), while the sessions go on. */
@@ -577,12 +623,12 @@ export function createFakeBridge() {
     },
     plans: (appId: string) => perApp(plans, appId, () => new Map<string, Json>()),
     flags: (appId: string) => perApp(flags, appId, () => new Map<string, Json>()),
-    /** What Bridge's sign-in page does in hand-off mode: sign in with the program's challenge, never trade the code. */
-    async handoff(params: URLSearchParams, person: { email: string; password: string; workspace?: string }): Promise<string> {
-      const answer = signIn({ email: person.email, password: person.password, code_challenge: params.get('code_challenge'), code_challenge_method: params.get('code_challenge_method'), ...(person.workspace ? { workspace: person.workspace } : {}) });
-      const body = (await answer.json()) as { code?: string };
-      if (!body.code) throw new Error('The fake sign-in page could not sign in.');
-      return body.code;
+    /** What Bridge's sign-in page does with a sign-in request: signs in on it, never trades the code, and answers where the code goes. */
+    async signInOn(request: string, person: { email: string; password: string; workspace?: string }): Promise<{ code: string; redirectUri: string; state: string }> {
+      const answer = signIn({ email: person.email, password: person.password, request, ...(person.workspace ? { workspace: person.workspace } : {}) });
+      const body = (await answer.json()) as { code?: string; redirect_uri?: string; state?: string };
+      if (!body.code || !body.redirect_uri || !body.state) throw new Error(`The fake sign-in page could not sign in: ${JSON.stringify(body)}`);
+      return { code: body.code, redirectUri: body.redirect_uri, state: body.state };
     },
   };
 }
