@@ -148,10 +148,11 @@ export function registerAppCommands(program: Command, deps: Deps): void {
     .description('Hook up your project to the app: its issuer into your .env file, and your dev address as a browser origin and email-links page')
     .option('--url <url>', 'Your app\'s address while developing', 'http://localhost:5173')
     .option('--auth-path <path>', 'Where your app shows Bridge\'s sign-in pages; email links land there', '/auth')
-    .option('--env-file <file>', 'The .env file to write the issuer into', '.env')
+    // Not --env-file: some Node.js versions read that flag anywhere on the command line as their own.
+    .option('--dotenv <file>', 'The .env file to write the issuer into', '.env')
     .option('--var <name>', 'The variable the SDK reads the issuer from', 'PUBLIC_BRIDGE_ISSUER')
     .action(
-      action(deps, async (ctx, opts: { url: string; authPath: string; envFile: string; var: string }) => {
+      action(deps, async (ctx, opts: { url: string; authPath: string; dotenv: string; var: string }) => {
         const devUrl = secureUrl(opts.url);
         if (devUrl === null || devUrl.pathname !== '/' || devUrl.search !== '' || devUrl.hash !== '') {
           throw new CliError('invalid', `--url is your app's origin, https (http only on localhost), with no path: ${opts.url}`);
@@ -181,7 +182,7 @@ export function registerAppCommands(program: Command, deps: Deps): void {
           latest = await apps.addAddress(c, appId, url, [use]);
           added.push({ url, use });
         }
-        const file = resolve(opts.envFile);
+        const file = resolve(opts.dotenv);
         const changed = await setEnvValue(file, opts.var, issuer);
         ctx.io.info(`${changed ? 'Wrote' : 'Kept'} ${opts.var}=${issuer} in ${file}.`);
         for (const each of added) ctx.io.info(`Added ${each.url} as a ${each.use} address of ${found.name}.`);

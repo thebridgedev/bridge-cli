@@ -56,7 +56,7 @@ In your project's folder, after `bridge app use <id>` (or `bridge app create`):
 bridge app setup
 ```
 
-This writes the app's issuer into `.env` as `PUBLIC_BRIDGE_ISSUER` (what `@nebulr-group/bridge-svelte` reads), on the Bridge you signed in to, and adds your development address, `http://localhost:5173`, as a browser origin and `http://localhost:5173/auth` as the page email links land on. `--url`, `--auth-path`, `--env-file` and `--var` change them. Running it again changes nothing.
+This writes the app's issuer into `.env` as `PUBLIC_BRIDGE_ISSUER` (what `@nebulr-group/bridge-svelte` reads), on the Bridge you signed in to, and adds your development address, `http://localhost:5173`, as a browser origin and `http://localhost:5173/auth` as the page email links land on. `--url`, `--auth-path`, `--dotenv` and `--var` change them. Running it again changes nothing.
 
 ## Set up an app
 

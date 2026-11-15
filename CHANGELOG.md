@@ -5,7 +5,7 @@
 ### Added
 
 - **`--server <address>`** (`BRIDGE_SERVER`). Give Bridge's address, such as `https://api.example.com`, instead of the issuer: the CLI reads the sign-in issuer from the server's published resource metadata, and only takes one on the server's own address. It is saved at sign-in, as the issuer.
-- **`bridge app setup`.** Hooks up your project to the chosen app: writes its issuer into `.env` as `PUBLIC_BRIDGE_ISSUER`, on the Bridge you signed in to, and adds your development address as a browser origin and its `/auth` page as the email-links address. `--url`, `--auth-path`, `--env-file` and `--var` change them.
+- **`bridge app setup`.** Hooks up your project to the chosen app: writes its issuer into `.env` as `PUBLIC_BRIDGE_ISSUER`, on the Bridge you signed in to, and adds your development address as a browser origin and its `/auth` page as the email-links address. `--url`, `--auth-path`, `--dotenv` and `--var` change them.
 
 ### Changed
 

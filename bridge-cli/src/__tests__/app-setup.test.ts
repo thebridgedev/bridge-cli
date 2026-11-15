@@ -33,7 +33,7 @@ describe('app setup', () => {
   it('writes the app\'s issuer into .env and adds the dev address as a browser origin and email-links page', async () => {
     const envFile = join(project, '.env');
     writeFileSync(envFile, 'OTHER=kept\nPUBLIC_BRIDGE_ISSUER=https://old.example/identity-access/apps/x\n# a comment\n');
-    const done = await cli.run(['app', 'setup', '--env-file', envFile]);
+    const done = await cli.run(['app', 'setup', '--dotenv', envFile]);
     expect(done.errors).toEqual([]);
     expect(readFileSync(envFile, 'utf8')).toBe(`OTHER=kept\nPUBLIC_BRIDGE_ISSUER=${issuerOf(appId)}\n# a comment\n`);
     expect(done.data).toEqual({
@@ -51,14 +51,14 @@ describe('app setup', () => {
       { url: 'http://localhost:5173/auth', uses: ['email-links'] },
     ]);
     // A second run changes nothing.
-    const again = await cli.run(['app', 'setup', '--env-file', envFile]);
+    const again = await cli.run(['app', 'setup', '--dotenv', envFile]);
     expect(again.data.added).toEqual([]);
     expect(again.infos[0]).toMatch(/^Kept PUBLIC_BRIDGE_ISSUER=/);
   });
 
   it('makes the .env file when there is none, with another address, page and variable', async () => {
     const envFile = join(project, '.env.local');
-    const done = await cli.run(['app', 'setup', '--env-file', envFile, '--url', 'https://app.example.com', '--auth-path', '/login/', '--var', 'VITE_BRIDGE_ISSUER']);
+    const done = await cli.run(['app', 'setup', '--dotenv', envFile, '--url', 'https://app.example.com', '--auth-path', '/login/', '--var', 'VITE_BRIDGE_ISSUER']);
     expect(done.errors).toEqual([]);
     expect(readFileSync(envFile, 'utf8')).toBe(`VITE_BRIDGE_ISSUER=${issuerOf(appId)}\n`);
     expect(done.data.added).toEqual([
@@ -70,7 +70,7 @@ describe('app setup', () => {
   it('refuses an app whose issuer is on another Bridge than the one signed in to, and writes nothing', async () => {
     (fake.apps.get(appId) as Record<string, unknown>)['trust'] = { issuer: issuerOf(appId, 'https://other-bridge.example'), audience: BASE };
     const envFile = join(project, '.env');
-    const done = await cli.run(['app', 'setup', '--env-file', envFile]);
+    const done = await cli.run(['app', 'setup', '--dotenv', envFile]);
     expect(done.error).toMatchObject({ code: 'misconfigured' });
     expect(() => readFileSync(envFile, 'utf8')).toThrow();
     expect((fake.apps.get(appId) as { addresses: unknown[] }).addresses).toEqual([]);
@@ -78,10 +78,10 @@ describe('app setup', () => {
 
   it('refuses a dev address that is not an origin, and an app with no issuer', async () => {
     for (const url of ['http://example.com', 'https://app.example.com/path', 'ftp://app.example.com']) {
-      expect((await cli.run(['app', 'setup', '--env-file', join(project, '.env'), '--url', url])).error).toMatchObject({ code: 'invalid' });
+      expect((await cli.run(['app', 'setup', '--dotenv', join(project, '.env'), '--url', url])).error).toMatchObject({ code: 'invalid' });
     }
     (fake.apps.get(appId) as Record<string, unknown>)['trust'] = null;
-    expect((await cli.run(['app', 'setup', '--env-file', join(project, '.env')])).error).toMatchObject({ code: 'misconfigured' });
+    expect((await cli.run(['app', 'setup', '--dotenv', join(project, '.env')])).error).toMatchObject({ code: 'misconfigured' });
   });
 });
 
