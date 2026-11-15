@@ -1,6 +1,21 @@
 # Changelog
 
-## [1.0.0-alpha.1] - Unreleased
+## [1.0.0-alpha.2] - Unreleased
+
+### Added
+
+- **`--server <address>`** (`BRIDGE_SERVER`). Give Bridge's address, such as `https://api.example.com`, instead of the issuer: the CLI reads the sign-in issuer from the server's published resource metadata, and only takes one on the server's own address. It is saved at sign-in, as the issuer.
+- **`bridge app setup`.** Hooks up your project to the chosen app: writes its issuer into `.env` as `PUBLIC_BRIDGE_ISSUER`, on the Bridge you signed in to, and adds your development address as a browser origin and its `/auth` page as the email-links address. `--url`, `--auth-path`, `--dotenv` and `--var` change them.
+
+### Changed
+
+- **Browser sign-in starts a sign-in request.** `bridge auth login` asks Bridge to hold its loopback address, its PKCE challenge and its `state`, then opens Bridge's sign-in page with only the request's id. The code goes only to the CLI's loopback, and the CLI presents the same address when it trades the code, so Bridge binds the code to it. The page can now sign you in by any method it offers, and you can create your account there. Bridge versions that do not offer sign-in requests get "not offered"; sign in with `--password` there.
+
+### Removed
+
+- **`--sign-in-page` and `BRIDGE_SIGN_IN_PAGE`.** The CLI opens only the page the issuer publishes.
+
+## [1.0.0-alpha.1] - 2026-11-09
 
 ### Added
 

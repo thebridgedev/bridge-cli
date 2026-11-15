@@ -1,7 +1,7 @@
 import { CliError } from './errors.js';
 import { call, type Fetch } from './http.js';
 import { API_VERSION, type Service } from './routes.js';
-import { secureUrl } from './urls.js';
+import { normalizeIssuer, secureUrl } from './urls.js';
 
 /**
  * Discovery: the issuer is the only address the CLI is given. Everything else
@@ -17,8 +17,12 @@ export interface Discovery {
   readonly token: string;
   readonly revoke: string;
   readonly signOut: string | null;
-  /** Bridge's own sign-in page for programs on this machine, when the issuer lists one. */
+  /**
+   * Bridge's own sign-in page, and where a sign-in request for it starts, when the issuer lists them: the browser
+   * sign-in starts a request there with the CLI's loopback return, then opens the page with `?request=<id>`.
+   */
   readonly signInPage: string | null;
+  readonly signInRequests: string | null;
   /** Each microservice's base address at version 2. */
   readonly bases: Readonly<Record<Service, string>>;
 }
@@ -52,6 +56,20 @@ function required(value: string | null, name: string): string {
 function baseFrom(address: string | null, suffix: string): string | null {
   if (address === null || !address.endsWith(suffix)) return null;
   return address.slice(0, -suffix.length);
+}
+
+/**
+ * The sign-in page and its sign-in requests, both or neither. The page keeps its trailing slash: it is a page, not an
+ * API base, and the CLI adds only `?request=<id>` to it.
+ */
+function pageAndRequests(v2: Record<string, unknown> | null): { signInPage: string | null; signInRequests: string | null } {
+  const requests = listed(v2?.['sign_in_requests'], 'sign_in_requests');
+  const pageValue = v2?.['sign_in_page'];
+  if (requests === null || pageValue === undefined || pageValue === null) return { signInPage: null, signInRequests: null };
+  const page = secureUrl(pageValue);
+  if (page === null) throw misconfigured(`The issuer's metadata lists "sign_in_page" at an address that is not https: ${String(pageValue)}`);
+  if (page.search !== '' || page.hash !== '') throw misconfigured(`The issuer's metadata lists "sign_in_page" with a query or fragment: ${String(pageValue)}`);
+  return { signInPage: page.toString(), signInRequests: requests };
 }
 
 export function metadataUrl(issuer: string): string {
@@ -96,7 +114,8 @@ export function readMetadata(issuer: string, document: unknown): Discovery {
     token: endpoint('token'),
     revoke: endpoint('revoke'),
     signOut,
-    signInPage: listed(v2?.['sign_in_page'], 'sign_in_page') ?? listed(meta['authorization_endpoint'], 'authorization_endpoint'),
+    // Listed together, for an app whose page signs in for programs (the Bridge App): a page without its requests is not offered.
+    ...pageAndRequests(v2),
     bases: {
       'app-registry': required(appRegistry, 'app_registry'),
       'identity-access': required(identityAccess, 'identity_access'),
@@ -119,4 +138,31 @@ export async function discover(fetchFn: Fetch, issuer: string): Promise<Discover
     throw error;
   }
   return readMetadata(issuer, body);
+}
+
+/**
+ * The Bridge App's issuer at a Bridge server: the authorization server its protected resource metadata names (RFC 9728,
+ * at the server's `/.well-known/oauth-protected-resource`), on the server's own origin. So `--server` is the only
+ * address a developer types; an issuer elsewhere is refused.
+ */
+export async function issuerAtServer(fetchFn: Fetch, server: string): Promise<string> {
+  const url = secureUrl(server);
+  if (url === null || url.search !== '' || url.hash !== '') {
+    throw new CliError('misconfigured', `The server must be an https address (http only on localhost), with no query: ${server}`, {
+      hint: 'Pass Bridge\'s address, for example `--server https://api.example.com`.',
+    });
+  }
+  let body: unknown;
+  try {
+    ({ body } = await call(fetchFn, { method: 'GET', url: `${url.origin}/.well-known/oauth-protected-resource` }));
+  } catch (error) {
+    if (error instanceof CliError && (error.kind === 'not-found' || error.kind === 'invalid')) throw misconfigured(`No Bridge server answers at ${url.origin}.`);
+    throw error;
+  }
+  const named = (body as { authorization_servers?: unknown } | null)?.authorization_servers;
+  const first = Array.isArray(named) ? named[0] : undefined;
+  const issuer = secureUrl(first);
+  if (issuer === null) throw misconfigured(`${url.origin} names no sign-in issuer.`);
+  if (issuer.origin !== url.origin) throw misconfigured(`${url.origin} names a sign-in issuer on another address (${issuer.origin}), which the CLI does not use.`);
+  return normalizeIssuer(issuer.toString());
 }

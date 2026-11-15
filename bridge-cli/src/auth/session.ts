@@ -47,12 +47,15 @@ export class Sessions {
     return this.deps.store.describe();
   }
 
-  /** Trades a sign-in code for tokens (PKCE: only the holder of the verifier can) and keeps them. */
-  async exchangeCode(d: Discovery, code: string, verifier: string): Promise<StoredSession> {
+  /**
+   * Trades a sign-in code for tokens (PKCE: only the holder of the verifier can) and keeps them. A code made for a
+   * return is traded with that same `redirect_uri` (RFC 6749, 4.1.3): Bridge refuses it without.
+   */
+  async exchangeCode(d: Discovery, code: string, verifier: string, redirectUri?: string): Promise<StoredSession> {
     const { body } = await call(this.deps.fetch, {
       method: 'POST',
       url: d.token,
-      body: { grant_type: 'authorization_code', code, code_verifier: verifier, client_id: d.appId },
+      body: { grant_type: 'authorization_code', code, code_verifier: verifier, client_id: d.appId, ...(redirectUri === undefined ? {} : { redirect_uri: redirectUri }) },
     });
     const session = this.fromAnswer(d, tokenAnswer(body), null, this.now());
     await this.deps.store.write(session);

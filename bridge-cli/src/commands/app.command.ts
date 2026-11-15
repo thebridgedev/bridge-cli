@@ -1,6 +1,9 @@
 import type { Command } from 'commander';
-import { ADDRESS_USES, apps, checkUses, type AppFields } from '../api/apps.js';
+import { resolve } from 'node:path';
+import { ADDRESS_USES, apps, checkUses, type AddressUse, type AppFields } from '../api/apps.js';
 import { CliError } from '../core/errors.js';
+import { normalizeIssuer, secureUrl } from '../core/urls.js';
+import { setEnvValue } from '../setup/env-file.js';
 import { action, collect, type Deps } from './context.js';
 
 interface ProfileOptions {
@@ -137,6 +140,53 @@ export function registerAppCommands(program: Command, deps: Deps): void {
       action(deps, async (ctx, url: string) => {
         const { c, appId } = await ctx.forApp();
         ctx.io.result(await apps.update(c, appId, { defaultReturn: url === 'none' ? null : url }));
+      }),
+    );
+
+  app
+    .command('setup')
+    .description('Hook up your project to the app: its issuer into your .env file, and your dev address as a browser origin and email-links page')
+    .option('--url <url>', 'Your app\'s address while developing', 'http://localhost:5173')
+    .option('--auth-path <path>', 'Where your app shows Bridge\'s sign-in pages; email links land there', '/auth')
+    // Not --env-file: some Node.js versions read that flag anywhere on the command line as their own.
+    .option('--dotenv <file>', 'The .env file to write the issuer into', '.env')
+    .option('--var <name>', 'The variable the SDK reads the issuer from', 'PUBLIC_BRIDGE_ISSUER')
+    .action(
+      action(deps, async (ctx, opts: { url: string; authPath: string; dotenv: string; var: string }) => {
+        const devUrl = secureUrl(opts.url);
+        if (devUrl === null || devUrl.pathname !== '/' || devUrl.search !== '' || devUrl.hash !== '') {
+          throw new CliError('invalid', `--url is your app's origin, https (http only on localhost), with no path: ${opts.url}`);
+        }
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(opts.var)) throw new CliError('invalid', `--var is a variable name, such as PUBLIC_BRIDGE_ISSUER: ${opts.var}`);
+        if (!opts.authPath.startsWith('/') || opts.authPath.includes('?') || opts.authPath.includes('#')) {
+          throw new CliError('invalid', `--auth-path is a path on your app, such as /auth: ${opts.authPath}`);
+        }
+        const { c, appId } = await ctx.forApp();
+        const found = await apps.get(c, appId);
+        const given = found.trust?.issuer;
+        // The app's issuer is on the Bridge this CLI signed in to: the project is pointed at the same server. Written as a URL
+        // parser writes it, so nothing but the address reaches the file.
+        const signedInTo = new URL(await ctx.issuer()).origin;
+        if (typeof given !== 'string' || secureUrl(given) === null || /\s/.test(given)) throw new CliError('misconfigured', `${found.name} (${found.id}) has no issuer yet.`);
+        const issuer = normalizeIssuer(given);
+        if (new URL(issuer).origin !== signedInTo) {
+          throw new CliError('misconfigured', `${found.name}'s issuer is on ${new URL(issuer).origin}, not on ${signedInTo}, which you signed in to.`);
+        }
+        const origin = devUrl.origin;
+        const emailLinks = `${origin}${opts.authPath.replace(/\/+$/, '')}`;
+        const wanted: [string, AddressUse][] = [[origin, 'browser-origin'], [emailLinks, 'email-links']];
+        const added: { url: string; use: AddressUse }[] = [];
+        let latest = found;
+        for (const [url, use] of wanted) {
+          if ((latest.addresses ?? []).some((each) => each.url === url && each.uses.includes(use))) continue;
+          latest = await apps.addAddress(c, appId, url, [use]);
+          added.push({ url, use });
+        }
+        const file = resolve(opts.dotenv);
+        const changed = await setEnvValue(file, opts.var, issuer);
+        ctx.io.info(`${changed ? 'Wrote' : 'Kept'} ${opts.var}=${issuer} in ${file}.`);
+        for (const each of added) ctx.io.info(`Added ${each.url} as a ${each.use} address of ${found.name}.`);
+        ctx.io.result({ app: { id: found.id, name: found.name }, issuer, envFile: file, variable: opts.var, added });
       }),
     );
 
