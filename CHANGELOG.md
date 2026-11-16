@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.0.0-alpha.2] - Unreleased
+## [1.0.0-alpha.3] - Unreleased
+
+### Changed
+
+- **Browser sign-in through the dashboard.** The sign-in page your issuer publishes for the CLI may be on another address than the issuer: on The Bridge it is the dashboard. When you are already signed in there in that browser, you only approve the CLI; otherwise you sign in first, then approve. The CLI says so when it opens the page. Nothing else changes: the CLI still starts a sign-in request for its loopback with PKCE, and the code still goes only to `127.0.0.1`.
+
+## [1.0.0-alpha.2] - 2026-11-15
 
 ### Added
 

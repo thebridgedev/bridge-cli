@@ -28,7 +28,7 @@ bridge auth login --server https://<your Bridge>
 
 (`--issuer https://<your Bridge>/identity-access/apps/<app id>` gives the issuer itself instead.)
 
-This opens Bridge's sign-in page in your browser: the page your issuer publishes, and the CLI says its address before it opens it. You sign in there by any method the page offers, or create your account, and the browser comes back to the CLI on `127.0.0.1`. The CLI first asks Bridge to hold a sign-in request for it, with its loopback address and a PKCE challenge, so the code goes only to that address and only this process can trade it: a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
+This opens your Bridge's sign-in page for the CLI in your browser: the page your issuer publishes (on The Bridge, the dashboard), and the CLI says its address before it opens it. If you are already signed in there in that browser, you only approve the CLI; otherwise you sign in by any method the page offers, or create your account, then approve. The browser comes back to the CLI on `127.0.0.1`. The CLI first asks Bridge to hold a sign-in request for it, with its loopback address and a PKCE challenge, so the code goes only to that address and only this process can trade it: a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
 
 If no browser is at hand (a server, a container, CI), sign in in the terminal:
 
