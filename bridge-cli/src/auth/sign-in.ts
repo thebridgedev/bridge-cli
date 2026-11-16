@@ -121,8 +121,8 @@ export async function signInWithBrowser(fetchFn: Fetch, sessions: Sessions, d: D
     const opened = await input.openBrowser(url);
     input.show(
       opened.ok
-        ? `Opened your browser to sign in. If it did not open, go to:\n  ${url}`
-        : `Open this address in your browser to sign in:\n  ${url}`,
+        ? `Opened your browser to sign in: approve the sign-in there (sign in first if you are not). If it did not open, go to:\n  ${url}`
+        : `Open this address in your browser to sign in, and approve the sign-in there:\n  ${url}`,
     );
     const { code } = await loopback.result;
     return await sessions.exchangeCode(d, code, verifier, loopback.redirectUri);

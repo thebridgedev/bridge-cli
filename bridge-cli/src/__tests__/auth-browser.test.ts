@@ -71,6 +71,19 @@ describe('auth login (browser)', () => {
     ]);
   });
 
+  it('opens a sign-in page on another address than the issuer, such as the dashboard, and says where it signs in', async () => {
+    const dashboard = 'https://app.bridge.test/connect/';
+    fake.setSignInPage(dashboard);
+    const seen: URL[] = [];
+    const done = await cli.run(['auth', 'login'], { openBrowser: signInPage({ seen }) });
+    expect(done.errors).toEqual([]);
+    expect(done.infos).toContain('Signing in at app.bridge.test for bridge.test.');
+    expect(done.infos.join('\n')).toContain('approve the sign-in there');
+    expect((seen[0] as URL).origin + (seen[0] as URL).pathname).toBe(dashboard);
+    expect([...(seen[0] as URL).searchParams.keys()]).toEqual(['request']);
+    expect(done.data).toMatchObject({ issuer: ISSUER, user: { email: 'dev@example.com' } });
+  });
+
   it('prints the address when the browser cannot be opened', async () => {
     const open = signInPage();
     const done = await cli.run(['auth', 'login'], {
@@ -80,7 +93,7 @@ describe('auth login (browser)', () => {
       },
     });
     expect(done.errors).toEqual([]);
-    expect(done.infos.join('\n')).toContain(`Open this address in your browser to sign in:\n  ${PAGE}?request=`);
+    expect(done.infos.join('\n')).toContain(`Open this address in your browser to sign in, and approve the sign-in there:\n  ${PAGE}?request=`);
   });
 
   it('refuses a callback whose state is not its own', async () => {
