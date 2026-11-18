@@ -61,6 +61,7 @@ interface LoginOptions {
   passwordStdin?: boolean;
   workspace?: string;
   browser?: boolean;
+  allowDelete?: boolean;
 }
 
 export function registerAuthCommands(program: Command, deps: Deps): void {
@@ -72,10 +73,14 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
     .option('--password', 'Sign in with your email and password in the terminal (no browser needed)')
     .option('--email <email>', 'Your email, with --password')
     .option('--password-stdin', 'Read the password from stdin, with --password (for scripts and CI)')
+    .option('--allow-delete', 'With --password: the session may delete, up to what you hold. Off by default; in the browser you tick it on the approval page')
     .option('--workspace <id>', 'The workspace to sign in to, when you belong to several')
     .option('--no-browser', 'Print the sign-in address instead of opening the browser')
     .action(
       action(deps, async (ctx, opts: LoginOptions) => {
+        if (opts.allowDelete === true && !opts.password && !opts.passwordStdin) {
+          throw new CliError('invalid', '--allow-delete goes with --password.', { hint: 'In the browser, tick delete on the approval page instead.' });
+        }
         const issuer = await ctx.issuer();
         const d = await ctx.discovery();
         const sessions = ctx.sessions();
@@ -92,6 +97,7 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
             password,
             ...(opts.workspace === undefined ? {} : { workspace: opts.workspace }),
             chooseWorkspace: workspaceChooser(ctx),
+            allowDelete: opts.allowDelete === true,
           });
         } else {
           if (d.signInPage !== null) ctx.io.info(`Signing in at ${new URL(d.signInPage).host} for ${issuerHost}.`);

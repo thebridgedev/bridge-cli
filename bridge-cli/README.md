@@ -39,6 +39,8 @@ echo "$PASSWORD" | bridge auth login --password --email you@example.com --passwo
 
 If you belong to several workspaces, the CLI asks which one, or takes `--workspace <id>`.
 
+A terminal sign-in holds no delete rights unless you ask: the session can create and change things, but a delete (`bridge role delete`, `bridge flag delete`, and the like) is refused with a 403. Add `--allow-delete` to allow deletes, still only up to what you hold yourself. This is the same default as the browser sign-in, where you tick delete on the approval page.
+
 ```bash
 bridge auth whoami              # who you are, which workspace, which app commands act on
 bridge auth workspace           # your workspaces

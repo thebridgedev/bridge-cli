@@ -76,6 +76,51 @@ describe('auth login --password', () => {
     expect(fake.requests.filter((r) => r.path.endsWith('/sign-in'))).toHaveLength(1);
   });
 
+  it('sends delete: false by default, so the session holds no delete privilege, and delete: true with --allow-delete', async () => {
+    const sentOf = () => fake.requests.filter((r) => r.path.endsWith('/sign-in')).map((r) => (r.body as Record<string, unknown>)['delete']);
+    await cli.signIn('dev@example.com', 'correct horse', []);
+    expect(sentOf()).toEqual([false]);
+
+    await cli.signIn('dev@example.com', 'correct horse', ['--allow-delete']);
+    expect(sentOf()).toEqual([false, true]);
+  });
+
+  it('carries the choice through the workspace step: the flow step names no delete, the server keeps the first answer', async () => {
+    const done = await cli.run(['auth', 'login', '--password', '--email', 'two@example.com', '--password-stdin', '--allow-delete'], {
+      stdin: 'pw-two-workspaces\n',
+      interactive: true,
+      answers: ['1'],
+    });
+    expect(done.errors).toEqual([]);
+    const steps = fake.requests.filter((r) => r.path.endsWith('/sign-in'));
+    expect((steps[0]?.body as Record<string, unknown>)['delete']).toBe(true);
+    expect(Object.keys(steps[1]?.body as object)).not.toContain('delete');
+  });
+
+  it('--allow-delete is for --password: the browser approval page decides there', async () => {
+    const done = await cli.run(['auth', 'login', '--allow-delete']);
+    expect(done.error).toMatchObject({ code: 'invalid' });
+    expect(String(done.error?.['hint'])).toContain('approval page');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('a delete after the default password sign-in shows the 403, and the same delete works after --allow-delete', async () => {
+    const appId = fake.addApp({ name: 'Demo', owner: 'ws-1' });
+    await cli.signIn('dev@example.com', 'correct horse', []);
+    await cli.run(['app', 'use', appId]);
+    expect((await cli.run(['role', 'create', 'editor', '--name', 'Editor'])).errors).toEqual([]);
+
+    const refused = await cli.run(['role', 'delete', 'editor']);
+    expect(refused.exitCode).not.toBe(0);
+    expect(refused.error).toMatchObject({ code: 'forbidden', status: 403 });
+    expect(String(refused.error?.['message'])).toContain('privilege');
+    expect(fake.roles(appId)).toHaveLength(1);
+
+    await cli.signIn('dev@example.com', 'correct horse', ['--allow-delete']);
+    expect((await cli.run(['role', 'delete', 'editor'])).errors).toEqual([]);
+    expect(fake.roles(appId)).toEqual([]);
+  });
+
   it('says so on a wrong password, and keeps nothing', async () => {
     const done = await cli.run(['auth', 'login', '--password', '--email', 'dev@example.com', '--password-stdin'], { stdin: 'nope' });
     expect(done.error).toMatchObject({ code: 'wrong-credentials', status: 400 });

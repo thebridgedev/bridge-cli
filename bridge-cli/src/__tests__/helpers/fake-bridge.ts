@@ -65,6 +65,8 @@ interface Session {
   workspace: string | null;
   authTime: number;
   ended: boolean;
+  /** False when the sign-in said `delete: false`: the person's session then holds no delete privilege. */
+  canDelete?: boolean;
 }
 
 type Json = Record<string, unknown>;
@@ -95,7 +97,7 @@ export function createFakeBridge() {
   const violations: string[] = [];
   const people = new Map<string, Person>();
   const codes = new Map<string, { session: Omit<Session, 'ended'>; challenge: string; redirectUri: string | null }>();
-  const flows = new Map<string, { person: Person; challenge: string; request: SignInRequest | null }>();
+  const flows = new Map<string, { person: Person; challenge: string; request: SignInRequest | null; canDelete?: boolean }>();
   /** Sign-in requests by id: the CLI's challenge, state and loopback return, held by Bridge. */
   const signInRequests = new Map<string, SignInRequest>();
   const sessions = new Map<string, Session>();
@@ -151,9 +153,9 @@ export function createFakeBridge() {
     return { access_token: access, token_type: 'Bearer', expires_in: 300, refresh_token: refresh, id_token: 'unused', ...(session.workspace === null ? {} : { workspace: session.workspace }) };
   }
 
-  function codeFor(person: Person, workspace: string | null, challenge: string, request: SignInRequest | null = null): Response {
+  function codeFor(person: Person, workspace: string | null, challenge: string, request: SignInRequest | null = null, canDelete?: boolean): Response {
     const code = `code-${secret()}`;
-    codes.set(code, { session: { person, workspace, authTime: clock }, challenge: request?.challenge ?? challenge, redirectUri: request?.redirectUri ?? null });
+    codes.set(code, { session: { person, workspace, authTime: clock, ...(canDelete === undefined ? {} : { canDelete }) }, challenge: request?.challenge ?? challenge, redirectUri: request?.redirectUri ?? null });
     return json(200, request === null ? { code } : { code, redirect_uri: request.redirectUri, state: request.state });
   }
 
@@ -179,8 +181,11 @@ export function createFakeBridge() {
       flows.delete(body['flow']);
       const workspace = String(body['workspace']);
       if (!flow.person.workspaces.some((each) => each.id === workspace)) return json(403, { error: 'access_denied', reason: 'not_a_member' });
-      return codeFor(flow.person, workspace, flow.challenge, flow.request);
+      return codeFor(flow.person, workspace, flow.challenge, flow.request, flow.canDelete);
     }
+    // `delete` is for a password sign-in only: a boolean, never on a sign-in request (the approval decides there).
+    if (body['delete'] !== undefined && (typeof body['delete'] !== 'boolean' || body['request'] !== undefined)) return json(400, { error: 'invalid_request' });
+    const canDelete = typeof body['delete'] === 'boolean' ? body['delete'] : undefined;
     // On a sign-in request, the request's challenge and return; the page names neither.
     let request: SignInRequest | null = null;
     if (body['request'] !== undefined) {
@@ -194,12 +199,12 @@ export function createFakeBridge() {
     if (request !== null) request.used = true;
     if (requested === null && person.workspaces.length > 1) {
       const handle = `flow-${secret()}`;
-      flows.set(handle, { person, challenge, request });
+      flows.set(handle, { person, challenge, request, ...(canDelete === undefined ? {} : { canDelete }) });
       return json(200, { next: 'workspace', flow: handle, workspaces: person.workspaces.map((each) => ({ ...each, logo: null })) });
     }
     const workspace = requested ?? person.workspaces[0]?.id ?? null;
     if (workspace !== null && !person.workspaces.some((each) => each.id === workspace)) return json(403, { error: 'access_denied', reason: 'not_a_member' });
-    return codeFor(person, workspace, challenge, request);
+    return codeFor(person, workspace, challenge, request, canDelete);
   }
 
   function token(body: Json): Response {
@@ -300,6 +305,10 @@ export function createFakeBridge() {
       if (method === 'GET' && path === '/v2/accounts/me') {
         const p = who.session.person;
         return json(200, { id: p.id, email: p.email, firstName: p.firstName, lastName: p.lastName, workspaces: p.workspaces.map((each) => ({ ...each, role: 'OWNER' })) });
+      }
+      // A session made with `delete: false` holds no delete privilege: a DELETE is refused, whatever the person holds.
+      if (method === 'DELETE' && who.session.canDelete === false) {
+        return problem(403, 'privilege-missing', `This needs the privilege ${entry.privilege ?? 'to delete'}, which this sign-in does not hold.`, { privilege: entry.privilege });
       }
       const stale = clock - who.session.authTime > 300_000;
       const own = inviteRoutes(method, path, input, `bridge/${String(who.session.workspace)}`, who.session.person.id, stale);
