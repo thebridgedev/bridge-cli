@@ -123,13 +123,13 @@ Write prices the way you say them: `"19.99 EUR/month"`, `"190 EUR/year"`, or `"4
 
 ### Invites
 
-`bridge invite send ann@example.com --role ADMIN` emails Ann an invite to your own workspace on Bridge, the one you signed in to. Sending again to the same address sends a new link, and the old one stops working; an invite lasts 30 days. `bridge invite list` shows the open ones and `bridge invite revoke <id>` stops a link working.
+`bridge invite send ann@example.com --role ADMIN` emails Ann an invite to your own workspace on Bridge, the one you signed in to. Sending again to the same address sends a new link, and the old one stops working; an invite lasts 30 days. `bridge invite list` shows the open ones and `bridge invite revoke <id>` stops a link working. `--first-name` and `--last-name` go on the invite and are used when the person accepts and has no name yet. `--role OWNER` needs a recent sign-in; Bridge says so when yours is older.
 
-Add `--workspace <id>` to invite into one of your app's workspaces instead (`bridge workspace list` shows them). That runs with an app key, as below. Bridge emails the link to your app's email-links address, so add one first: `bridge app address add https://app.example.com/auth --use email-links`.
+Add `--workspace <id>` to invite into one of your app's workspaces instead (`bridge workspace list` shows them). That runs with your sign-in, like the commands below. Bridge emails the link to your app's email-links address, so add one first: `bridge app address add https://app.example.com/auth --use email-links`.
 
 ### Roles, members and the pasted Stripe key
 
-Bridge offers roles, privileges, workspaces, members and a pasted Stripe key to your app's own server, so these commands call Bridge with an app key. Set `BRIDGE_APP_KEY` to one of your app's keys, or leave it unset: the CLI then makes a key that lasts one day and holds only what the command needs, and revokes it as soon as the command is done. Making a key needs a recent sign-in; if yours is older, the CLI says so.
+These commands run with your sign-in, on the same routes the dashboard uses, so Bridge checks what you may do. Inviting a person emails them, and they join when they accept. Pasting a Stripe key needs a recent sign-in; if yours is older, the CLI says so. The CLI never makes an app key for a command. In CI, set `BRIDGE_APP_KEY` to one of your app's keys and these commands run as your app's own server with that key, with no sign-in.
 
 ## Output
 
@@ -144,7 +144,7 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 | `BRIDGE_SERVER` | `--server` | Your Bridge server's address; the CLI reads the issuer from it. Saved at sign-in, as the issuer |
 | `BRIDGE_ISSUER` | `--issuer` | Your issuer, instead of the server. Wins over the server. Saved at sign-in |
 | `BRIDGE_APP` | `--app` | The app commands act on. Default: the one chosen with `bridge app use` |
-| `BRIDGE_APP_KEY` | | An app key for the commands that need one |
+| `BRIDGE_APP_KEY` | | An app key of your app: roles, privileges, workspaces, members, invites and the Stripe key then run as your app's server with it, instead of with your sign-in |
 | `BRIDGE_TOKEN_STORE` | | `file` to keep the session in the 0600 file, `keychain` to require the keychain |
 | `BRIDGE_CONFIG_DIR` | | Where settings are kept. Default `~/.config/bridge/v1` |
 
@@ -157,7 +157,7 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 - The browser is opened with no shell: the address is one argument to `open`, `xdg-open`, or `rundll32 url.dll,FileProtocolHandler` on Windows.
 - Browser sign-in listens on `127.0.0.1` only, on a port the system picks, checks the `state` it sent, requires the issuer to name itself on the callback (`iss`, RFC 9207), and uses PKCE (S256).
 - The session and settings files are written with no symlink followed: to a new 0600 file in a 0700 directory you own, then renamed into place.
-- A temporary app key is revoked when the command ends, fails or is stopped with Ctrl-C; if it cannot be, the CLI prints the key's id to revoke.
+- The CLI never makes an app key behind your back: `bridge key create` is the only command that makes one, and it shows the secret once.
 - Passwords and Stripe keys are read without echo or from stdin, never from arguments, and never kept.
 
 ## Use it from code

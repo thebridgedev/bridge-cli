@@ -16,7 +16,7 @@ export { chooseStore, FileStore } from './auth/store.js';
 export type { SessionStore, StoredSession } from './auth/store.js';
 export { signInWithBrowser, signInWithPassword } from './auth/sign-in.js';
 export { apps } from './api/apps.js';
-export { keys, withAppKey } from './api/keys.js';
+export { keys } from './api/keys.js';
 export { plans, products, metrics, taxes, billingSettings, connection } from './api/billing.js';
 export { flags, parseCondition } from './api/flags.js';
 export { roles, privileges, workspaces, members, invites, appInvites } from './api/accounts.js';

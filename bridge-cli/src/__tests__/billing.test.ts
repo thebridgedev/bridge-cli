@@ -60,32 +60,33 @@ describe('metric, tax, billing settings, product', () => {
 });
 
 describe('stripe', () => {
-  it('connect: the pasted test key goes through the app-key route with a temporary key, which is revoked after', async () => {
+  it('connect: the pasted test key goes through the operator route with your sign-in, and no key is made', async () => {
     const done = await cli.run(['stripe', 'connect', '--secret-key-stdin', '--publishable-key', 'pk_test_abc123'], { stdin: 'sk_test_abc123\n' });
     expect(done.errors).toEqual([]);
     expect(done.data).toMatchObject({ connector: 'stripe', status: 'active' });
 
-    const made = last('POST', `/v2/identity-access/apps/${appId}/keys`);
-    expect(made?.body).toEqual({ name: 'bridge-cli (temporary)', privileges: [], expiresInDays: 1 });
-    const connect = last('POST', '/v2/billing/connection');
-    expect(connect?.headers['x-api-key']).toMatch(new RegExp(`^bk\\.${appId}\\.`));
-    expect(connect?.headers['authorization']).toBeUndefined();
+    expect(fake.keyMints()).toEqual([]);
+    const connect = last('POST', `/v2/billing/apps/${appId}/connection`);
+    expect(connect?.headers['authorization']).toMatch(/^Bearer /);
+    expect(connect?.headers['x-api-key']).toBeUndefined();
     expect(connect?.body).toEqual({ connector: 'stripe', secretKey: 'sk_test_abc123', publishableKey: 'pk_test_abc123' });
     expect(fake.pastedKeys).toEqual(['sk_test_abc123']);
-    // The temporary key is gone, and the secret key is in no output.
-    expect([...fake.keys.values()].every((k) => k.revoked)).toBe(true);
+    expect(fake.requests.some((r) => r.path === '/v2/billing/connection')).toBe(false);
+    // The secret key is in no output.
     expect(JSON.stringify([done.results, done.infos])).not.toContain('sk_test_abc123');
 
     expect((await cli.run(['stripe', 'status'])).data).toMatchObject({ connector: 'stripe', status: 'active' });
   });
 
-  it('connect uses BRIDGE_APP_KEY when it is set, and makes no key', async () => {
-    const made = await cli.run(['key', 'create', '--name', 'server']);
-    const before = fake.keys.size;
-    const done = await cli.run(['stripe', 'connect', '--secret-key-stdin'], { stdin: 'sk_test_xyz', env: { BRIDGE_APP_KEY: made.data.key } });
+  it('connect with BRIDGE_APP_KEY set uses the key route as the app\'s server, and makes no key', async () => {
+    const key = fake.addKey(appId, []);
+    const done = await cli.run(['stripe', 'connect', '--secret-key-stdin'], { stdin: 'sk_test_xyz', env: { BRIDGE_APP_KEY: key } });
     expect(done.errors).toEqual([]);
-    expect(fake.keys.size).toBe(before);
-    expect(last('POST', '/v2/billing/connection')?.headers['x-api-key']).toBe(made.data.key);
+    expect(fake.keyMints()).toEqual([]);
+    const connect = last('POST', '/v2/billing/connection');
+    expect(connect?.headers['x-api-key']).toBe(key);
+    expect(connect?.headers['authorization']).toBeUndefined();
+    expect(last('POST', `/v2/billing/apps/${appId}/connection`)).toBeUndefined();
   });
 
   it('connect refuses a key of another app in BRIDGE_APP_KEY', async () => {
@@ -102,11 +103,13 @@ describe('stripe', () => {
     expect((await cli.run(['stripe', 'connect'])).error).toMatchObject({ code: 'invalid', message: 'No terminal to ask for the key in.' });
   });
 
-  it('connect long after sign-in: the temporary key needs a recent sign-in, and says so', async () => {
+  it('connect long after sign-in: needs a recent sign-in, and says so', async () => {
     fake.advance(10 * 60_000);
     const done = await cli.run(['stripe', 'connect', '--secret-key-stdin'], { stdin: 'sk_test_abc' });
     expect(done.error).toMatchObject({ code: 'reauthenticate' });
-    expect(String(done.error?.['hint'])).toContain('BRIDGE_APP_KEY');
+    expect(String(done.error?.['hint'])).toContain('recent sign-in');
+    expect(fake.pastedKeys).toEqual([]);
+    expect(fake.keyMints()).toEqual([]);
   });
 
   it('disconnect', async () => {

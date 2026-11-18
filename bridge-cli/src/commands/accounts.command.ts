@@ -1,21 +1,9 @@
 import type { Command } from 'commander';
 import { appInvites, invites, members, privileges, roles, workspaces, type InviteFields, type RoleFields } from '../api/accounts.js';
-import { withAppKey } from '../api/keys.js';
 import { CliError, isCliError } from '../core/errors.js';
-import type { BridgeClient } from '../client.js';
-import { action, collect, type Context, type Deps } from './context.js';
+import { action, collect, type Deps } from './context.js';
 
-/**
- * Roles, privileges, workspaces and members: version 2 offers these routes
- * to the app's own server only, so each command runs with an app key:
- * `BRIDGE_APP_KEY`, or a one-day key the CLI makes and revokes at once.
- */
-async function asApp<T>(ctx: Context, needs: string[], fn: (c: BridgeClient, key: string) => Promise<T>): Promise<T> {
-  const { c, appId } = await ctx.forApp();
-  return withAppKey(c, appId, needs, ctx.env, (key) => fn(c, key), { warn: (message) => ctx.io.info(message) });
-}
-
-const KEY_NOTE = ' Runs with BRIDGE_APP_KEY, or a short-lived key the CLI makes (needs a recent sign-in).';
+const KEY_NOTE = " Acts with your sign-in; with BRIDGE_APP_KEY set, as the app's server with that key.";
 
 /**
  * An invite Bridge would not send because the app has no email-links
@@ -46,7 +34,7 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
   const role = program.command('role').description(`The app's roles and the privileges each holds.${KEY_NOTE}`);
   role.command('list').action(
     action(deps, async (ctx) => {
-      ctx.io.result(await asApp(ctx, [], (c, key) => roles.list(c, key)));
+      ctx.io.result(await roles.list(await ctx.door()));
     }),
   );
   role
@@ -57,7 +45,7 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     .option('--default', 'New members get this role')
     .action(
       action(deps, async (ctx, key: string, opts: { name: string; description?: string; privilege?: string[]; default?: boolean }) => {
-        ctx.io.result(await asApp(ctx, [], (c, appKey) => roles.create(c, appKey, { ...roleFields(opts), key, name: opts.name })));
+        ctx.io.result(await roles.create(await ctx.door(), { ...roleFields(opts), key, name: opts.name }));
       }),
     );
   role
@@ -71,19 +59,19 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
       action(deps, async (ctx, which: string, opts: { name?: string; description?: string; privilege?: string[]; default?: boolean }) => {
         const fields = roleFields(opts);
         if (Object.keys(fields).length === 0) throw new CliError('invalid', 'Nothing to change.');
-        ctx.io.result(await asApp(ctx, [], (c, key) => roles.update(c, key, which, fields)));
+        ctx.io.result(await roles.update(await ctx.door(), which, fields));
       }),
     );
   role.command('delete <role>').action(
     action(deps, async (ctx, which: string) => {
-      ctx.io.result(await asApp(ctx, ['ROLE_DELETE'], (c, key) => roles.remove(c, key, which)));
+      ctx.io.result(await roles.remove(await ctx.door(), which));
     }),
   );
 
   const privilege = program.command('privilege').description(`The app's privileges, which roles hold.${KEY_NOTE}`);
   privilege.command('list').action(
     action(deps, async (ctx) => {
-      ctx.io.result(await asApp(ctx, [], (c, key) => privileges.list(c, key)));
+      ctx.io.result(await privileges.list(await ctx.door()));
     }),
   );
   privilege
@@ -91,7 +79,7 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     .option('--description <text>', 'What it allows')
     .action(
       action(deps, async (ctx, key: string, opts: { description?: string }) => {
-        ctx.io.result(await asApp(ctx, [], (c, appKey) => privileges.create(c, appKey, { key, ...(opts.description === undefined ? {} : { description: opts.description }) })));
+        ctx.io.result(await privileges.create(await ctx.door(), { key, ...(opts.description === undefined ? {} : { description: opts.description }) }));
       }),
     );
   privilege
@@ -102,12 +90,12 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
       action(deps, async (ctx, which: string, opts: { newKey?: string; description?: string }) => {
         const fields = { ...(opts.newKey === undefined ? {} : { key: opts.newKey }), ...(opts.description === undefined ? {} : { description: opts.description }) };
         if (Object.keys(fields).length === 0) throw new CliError('invalid', 'Nothing to change.');
-        ctx.io.result(await asApp(ctx, [], (c, key) => privileges.update(c, key, which, fields)));
+        ctx.io.result(await privileges.update(await ctx.door(), which, fields));
       }),
     );
   privilege.command('delete <privilege>').action(
     action(deps, async (ctx, which: string) => {
-      ctx.io.result(await asApp(ctx, ['ROLE_DELETE'], (c, key) => privileges.remove(c, key, which)));
+      ctx.io.result(await privileges.remove(await ctx.door(), which));
     }),
   );
 
@@ -119,7 +107,7 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     .option('--after <cursor>', 'The page after this cursor')
     .action(
       action(deps, async (ctx, opts: { search?: string; limit?: string; after?: string }) => {
-        ctx.io.result(await asApp(ctx, [], (c, key) => workspaces.list(c, key, opts)));
+        ctx.io.result(await workspaces.list(await ctx.door(), opts));
       }),
     );
 
@@ -132,12 +120,12 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     .action(
       action(deps, async (ctx, opts: { workspace: string; search?: string; limit?: string; after?: string }) => {
         const { workspace: ws, ...query } = opts;
-        ctx.io.result(await asApp(ctx, ['USER_READ'], (c, key) => members.list(c, key, ws, query)));
+        ctx.io.result(await members.list(await ctx.door(), ws, query));
       }),
     );
   withWorkspace(member.command('get <member>')).action(
     action(deps, async (ctx, id: string, opts: { workspace: string }) => {
-      ctx.io.result(await asApp(ctx, ['USER_READ'], (c, key) => members.get(c, key, opts.workspace, id)));
+      ctx.io.result(await members.get(await ctx.door(), opts.workspace, id));
     }),
   );
   withWorkspace(member.command('update <member>'))
@@ -149,14 +137,14 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
         if (opts.disable && opts.enable) throw new CliError('invalid', '--disable or --enable, not both.');
         const fields = { ...(opts.role === undefined ? {} : { role: opts.role }), ...(opts.disable ? { enabled: false } : opts.enable ? { enabled: true } : {}) };
         if (Object.keys(fields).length === 0) throw new CliError('invalid', 'Nothing to change: give --role, --disable or --enable.');
-        ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => members.update(c, key, opts.workspace, id, fields)));
+        ctx.io.result(await members.update(await ctx.door(), opts.workspace, id, fields));
       }),
     );
   withWorkspace(member.command('remove <member>'))
     .requiredOption('--yes', 'Confirm')
     .action(
       action(deps, async (ctx, id: string, opts: { workspace: string }) => {
-        ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => members.remove(c, key, opts.workspace, id)));
+        ctx.io.result(await members.remove(await ctx.door(), opts.workspace, id));
       }),
     );
 
@@ -164,28 +152,35 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     .command('invite')
     .description(
       "Invites by email. Without --workspace, into your own workspace on Bridge (the one you signed in to), with your sign-in. " +
-        "With --workspace, into one of the app's workspaces, with BRIDGE_APP_KEY or a short-lived key the CLI makes (needs a recent sign-in).",
+        "With --workspace, into one of the app's workspaces, with your sign-in (or as the app's server when BRIDGE_APP_KEY is set). The person gets an email and joins when they accept it.",
     );
   const inWorkspace = (cmd: Command) => cmd.option('--workspace <id>', "One of the app's workspaces (`bridge workspace list` shows them); leave out for your own");
   inWorkspace(invite.command('list').description('The open invites')).action(
     action(deps, async (ctx, opts: { workspace?: string }) => {
       const ws = opts.workspace;
       if (ws === undefined) ctx.io.result(await invites.list(await ctx.client()));
-      else ctx.io.result(await asApp(ctx, ['USER_READ'], (c, key) => appInvites.list(c, key, ws)));
+      else ctx.io.result(await appInvites.list(await ctx.door(), ws));
     }),
   );
   inWorkspace(
     invite
       .command('send <email>')
       .description('Email an invite. Sending again to the same address sends a new link, and the old one stops working. An invite lasts 30 days')
-      .option('--role <role>', "The role they join with; left out, the workspace's default"),
+      .option('--role <role>', "The role they join with; left out, the workspace's default. OWNER needs a recent sign-in")
+      .option('--first-name <name>', "The person's first name, used when they accept and have none yet")
+      .option('--last-name <name>', "The person's last name, used when they accept and have none yet"),
   ).action(
-    action(deps, async (ctx, email: string, opts: { workspace?: string; role?: string }) => {
-      const fields: InviteFields = { email, ...(opts.role === undefined ? {} : { role: opts.role }) };
+    action(deps, async (ctx, email: string, opts: { workspace?: string; role?: string; firstName?: string; lastName?: string }) => {
+      const fields: InviteFields = {
+        email,
+        ...(opts.role === undefined ? {} : { role: opts.role }),
+        ...(opts.firstName === undefined ? {} : { firstName: opts.firstName }),
+        ...(opts.lastName === undefined ? {} : { lastName: opts.lastName }),
+      };
       const ws = opts.workspace;
       try {
         if (ws === undefined) ctx.io.result(await invites.send(await ctx.client(), fields));
-        else ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => appInvites.send(c, key, ws, fields)));
+        else ctx.io.result(await appInvites.send(await ctx.door(), ws, fields));
       } catch (error) {
         withEmailLinksHint(error, ws !== undefined);
       }
@@ -195,7 +190,7 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     action(deps, async (ctx, id: string, opts: { workspace?: string }) => {
       const ws = opts.workspace;
       if (ws === undefined) ctx.io.result(await invites.revoke(await ctx.client(), id));
-      else ctx.io.result(await asApp(ctx, ['USER_WRITE'], (c, key) => appInvites.revoke(c, key, ws, id)));
+      else ctx.io.result(await appInvites.revoke(await ctx.door(), ws, id));
     }),
   );
 }

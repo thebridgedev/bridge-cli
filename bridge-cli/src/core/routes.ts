@@ -9,10 +9,12 @@
  *
  * `auth` says which credential the route takes:
  *   - `person`: the signed-in developer's token, from the Bridge App. The
- *     `/apps/{appId}/…` routes act on one of the developer's apps.
- *   - `app-key`: an app key of the app, in `x-api-key`. Used where version 2
- *     has no route for the developer: roles, privileges, members, invites
- *     into the app's workspaces, and a pasted Stripe key.
+ *     `/apps/{appId}/…` routes act on one of the developer's apps; they are
+ *     how every command works, roles, privileges, workspaces, members,
+ *     invites and the Stripe connection included.
+ *   - `app-key`: an app key of the app, in `x-api-key`: the routes the app's
+ *     own server calls. The CLI uses them only when `BRIDGE_APP_KEY` is set
+ *     (CI), acting as the app's server with that key. It never makes keys.
  *   - `none`: before sign-in (the issuer's own endpoints).
  */
 export const API_VERSION = 2;
@@ -78,7 +80,8 @@ export const ROUTES = {
   billingSettingsUpdate: r('PATCH', 'billing', '/apps/{appId}/settings', 'person'),
   connectionGet: r('GET', 'billing', '/apps/{appId}/connection', 'person'),
   connectionDelete: r('DELETE', 'billing', '/apps/{appId}/connection', 'person'),
-  connectionPasteKey: r('POST', 'billing', '/connection', 'app-key'),
+  connectionPasteKey: r('POST', 'billing', '/apps/{appId}/connection', 'person'),
+  keyConnectionPasteKey: r('POST', 'billing', '/connection', 'app-key'),
 
   // Flags and their rules.
   flagsList: r('GET', 'flags', '/apps/{appId}/flags', 'person'),
@@ -90,29 +93,46 @@ export const ROUTES = {
   flagsRestore: r('POST', 'flags', '/apps/{appId}/flags/{key}/restore', 'person'),
   segmentsList: r('GET', 'flags', '/apps/{appId}/segments', 'person'),
 
-  // Roles and privileges, members and workspaces of the app (app-key routes).
-  rolesList: r('GET', 'accounts', '/roles', 'app-key'),
-  rolesCreate: r('POST', 'accounts', '/roles', 'app-key'),
-  rolesUpdate: r('PATCH', 'accounts', '/roles/{roleId}', 'app-key'),
-  rolesDelete: r('DELETE', 'accounts', '/roles/{roleId}', 'app-key'),
-  privilegesList: r('GET', 'accounts', '/privileges', 'app-key'),
-  privilegesCreate: r('POST', 'accounts', '/privileges', 'app-key'),
-  privilegesUpdate: r('PATCH', 'accounts', '/privileges/{privilegeId}', 'app-key'),
-  privilegesDelete: r('DELETE', 'accounts', '/privileges/{privilegeId}', 'app-key'),
-  workspacesList: r('GET', 'accounts', '/workspaces', 'app-key'),
-  membersList: r('GET', 'accounts', '/members', 'app-key', true),
-  membersGet: r('GET', 'accounts', '/members/{memberId}', 'app-key', true),
-  membersUpdate: r('PATCH', 'accounts', '/members/{memberId}', 'app-key', true),
-  membersRemove: r('DELETE', 'accounts', '/members/{memberId}', 'app-key', true),
+  // Roles and privileges, workspaces, members and invites of the app, with the developer's token.
+  rolesList: r('GET', 'accounts', '/apps/{appId}/roles', 'person'),
+  rolesCreate: r('POST', 'accounts', '/apps/{appId}/roles', 'person'),
+  rolesUpdate: r('PATCH', 'accounts', '/apps/{appId}/roles/{roleId}', 'person'),
+  rolesDelete: r('DELETE', 'accounts', '/apps/{appId}/roles/{roleId}', 'person'),
+  privilegesList: r('GET', 'accounts', '/apps/{appId}/privileges', 'person'),
+  privilegesCreate: r('POST', 'accounts', '/apps/{appId}/privileges', 'person'),
+  privilegesUpdate: r('PATCH', 'accounts', '/apps/{appId}/privileges/{privilegeId}', 'person'),
+  privilegesDelete: r('DELETE', 'accounts', '/apps/{appId}/privileges/{privilegeId}', 'person'),
+  workspacesList: r('GET', 'accounts', '/apps/{appId}/workspaces', 'person'),
+  membersList: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members', 'person'),
+  membersGet: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members/{memberId}', 'person'),
+  membersUpdate: r('PATCH', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members/{memberId}', 'person'),
+  membersRemove: r('DELETE', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members/{memberId}', 'person'),
+  appInvitesList: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/invites', 'person'),
+  appInvitesSend: r('POST', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/invites', 'person'),
+  appInvitesRevoke: r('DELETE', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/invites/{inviteId}', 'person'),
+
+  // The same, as the app's own server: an app key, used only when BRIDGE_APP_KEY is set.
+  keyRolesList: r('GET', 'accounts', '/roles', 'app-key'),
+  keyRolesCreate: r('POST', 'accounts', '/roles', 'app-key'),
+  keyRolesUpdate: r('PATCH', 'accounts', '/roles/{roleId}', 'app-key'),
+  keyRolesDelete: r('DELETE', 'accounts', '/roles/{roleId}', 'app-key'),
+  keyPrivilegesList: r('GET', 'accounts', '/privileges', 'app-key'),
+  keyPrivilegesCreate: r('POST', 'accounts', '/privileges', 'app-key'),
+  keyPrivilegesUpdate: r('PATCH', 'accounts', '/privileges/{privilegeId}', 'app-key'),
+  keyPrivilegesDelete: r('DELETE', 'accounts', '/privileges/{privilegeId}', 'app-key'),
+  keyWorkspacesList: r('GET', 'accounts', '/workspaces', 'app-key'),
+  keyMembersList: r('GET', 'accounts', '/members', 'app-key', true),
+  keyMembersGet: r('GET', 'accounts', '/members/{memberId}', 'app-key', true),
+  keyMembersUpdate: r('PATCH', 'accounts', '/members/{memberId}', 'app-key', true),
+  keyMembersRemove: r('DELETE', 'accounts', '/members/{memberId}', 'app-key', true),
+  keyInvitesList: r('GET', 'accounts', '/invites', 'app-key', true),
+  keyInvitesSend: r('POST', 'accounts', '/invites', 'app-key', true),
+  keyInvitesRevoke: r('DELETE', 'accounts', '/invites/{inviteId}', 'app-key', true),
 
   // Invites into the developer's own workspace on Bridge, the one their token is for.
   invitesList: r('GET', 'accounts', '/invites', 'person'),
   invitesSend: r('POST', 'accounts', '/invites', 'person'),
   invitesRevoke: r('DELETE', 'accounts', '/invites/{inviteId}', 'person'),
-  // Invites into one of the app's workspaces (app-key routes).
-  appInvitesList: r('GET', 'accounts', '/invites', 'app-key', true),
-  appInvitesSend: r('POST', 'accounts', '/invites', 'app-key', true),
-  appInvitesRevoke: r('DELETE', 'accounts', '/invites/{inviteId}', 'app-key', true),
 } as const satisfies Record<string, Route>;
 
 export type RouteName = keyof typeof ROUTES;

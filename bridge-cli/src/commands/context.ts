@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { chooseDoor, type Door } from '../api/door.js';
 import { Sessions } from '../auth/session.js';
 import { chooseStore, type SessionStore } from '../auth/store.js';
 import { BridgeClient } from '../client.js';
@@ -91,6 +92,16 @@ export class Context {
   async forApp(): Promise<{ c: BridgeClient; appId: string }> {
     const [c, appId] = await Promise.all([this.client(), this.appId()]);
     return { c, appId };
+  }
+
+  /**
+   * How to reach the app's roles, workspaces, members and Stripe connection:
+   * with the person's sign-in, or, when `BRIDGE_APP_KEY` is set, as the app's
+   * server with that key. The CLI never makes a key for a command.
+   */
+  async door(): Promise<Door> {
+    const { c, appId } = await this.forApp();
+    return chooseDoor(c, appId, this.env);
   }
 }
 

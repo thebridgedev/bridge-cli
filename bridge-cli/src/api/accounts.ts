@@ -1,10 +1,11 @@
 import type { BridgeClient } from '../client.js';
 import { CliError } from '../core/errors.js';
+import { viaDoor, type Door } from './door.js';
 
 /**
- * Roles, privileges, workspaces and members of an app. Version 2 offers
- * these to the app's own server only, so each call takes an app key
- * (see `withAppKey`).
+ * Roles, privileges, workspaces and members of an app. Each call goes
+ * through a {@link Door}: the developer's sign-in on the operator routes, or
+ * `BRIDGE_APP_KEY` on the key routes.
  */
 export interface Role {
   readonly id: string;
@@ -39,42 +40,41 @@ function byKeyOrId<T extends { id: string; key: string }>(items: readonly T[], w
 }
 
 export const roles = {
-  list: (c: BridgeClient, key: string) => c.withKey<Role[]>('rolesList', key).then(body),
-  create: (c: BridgeClient, key: string, fields: RoleFields & { key: string; name: string }) => c.withKey<Role>('rolesCreate', key, { body: fields }).then(body),
-  async update(c: BridgeClient, key: string, role: string, fields: RoleFields): Promise<Role> {
-    const found = byKeyOrId(await roles.list(c, key), role, 'role');
-    return c.withKey<Role>('rolesUpdate', key, { params: { roleId: found.id }, body: fields }).then(body);
+  list: (d: Door) => viaDoor<Role[]>(d, 'rolesList'),
+  create: (d: Door, fields: RoleFields & { key: string; name: string }) => viaDoor<Role>(d, 'rolesCreate', { body: fields }),
+  async update(d: Door, role: string, fields: RoleFields): Promise<Role> {
+    const found = byKeyOrId(await roles.list(d), role, 'role');
+    return viaDoor<Role>(d, 'rolesUpdate', { params: { roleId: found.id }, body: fields });
   },
-  async remove(c: BridgeClient, key: string, role: string): Promise<unknown> {
-    const found = byKeyOrId(await roles.list(c, key), role, 'role');
-    return c.withKey('rolesDelete', key, { params: { roleId: found.id } }).then(body);
+  async remove(d: Door, role: string): Promise<unknown> {
+    const found = byKeyOrId(await roles.list(d), role, 'role');
+    return viaDoor(d, 'rolesDelete', { params: { roleId: found.id } });
   },
 };
 
 export const privileges = {
-  list: (c: BridgeClient, key: string) => c.withKey<Privilege[]>('privilegesList', key).then(body),
-  create: (c: BridgeClient, key: string, fields: { key: string; description?: string }) => c.withKey<Privilege>('privilegesCreate', key, { body: fields }).then(body),
-  async update(c: BridgeClient, key: string, privilege: string, fields: { key?: string; description?: string }): Promise<Privilege> {
-    const found = byKeyOrId(await privileges.list(c, key), privilege, 'privilege');
-    return c.withKey<Privilege>('privilegesUpdate', key, { params: { privilegeId: found.id }, body: fields }).then(body);
+  list: (d: Door) => viaDoor<Privilege[]>(d, 'privilegesList'),
+  create: (d: Door, fields: { key: string; description?: string }) => viaDoor<Privilege>(d, 'privilegesCreate', { body: fields }),
+  async update(d: Door, privilege: string, fields: { key?: string; description?: string }): Promise<Privilege> {
+    const found = byKeyOrId(await privileges.list(d), privilege, 'privilege');
+    return viaDoor<Privilege>(d, 'privilegesUpdate', { params: { privilegeId: found.id }, body: fields });
   },
-  async remove(c: BridgeClient, key: string, privilege: string): Promise<unknown> {
-    const found = byKeyOrId(await privileges.list(c, key), privilege, 'privilege');
-    return c.withKey('privilegesDelete', key, { params: { privilegeId: found.id } }).then(body);
+  async remove(d: Door, privilege: string): Promise<unknown> {
+    const found = byKeyOrId(await privileges.list(d), privilege, 'privilege');
+    return viaDoor(d, 'privilegesDelete', { params: { privilegeId: found.id } });
   },
 };
 
 export const workspaces = {
-  list: (c: BridgeClient, key: string, query: { limit?: string; after?: string; search?: string } = {}) => c.withKey('workspacesList', key, { query }).then(body),
+  list: (d: Door, query: { limit?: string; after?: string; search?: string } = {}) => viaDoor(d, 'workspacesList', { query }),
 };
 
 export const members = {
-  list: (c: BridgeClient, key: string, workspace: string, query: { limit?: string; after?: string; search?: string } = {}) =>
-    c.withKey('membersList', key, { workspace, query }).then(body),
-  get: (c: BridgeClient, key: string, workspace: string, memberId: string) => c.withKey('membersGet', key, { workspace, params: { memberId } }).then(body),
-  update: (c: BridgeClient, key: string, workspace: string, memberId: string, fields: { role?: string; enabled?: boolean }) =>
-    c.withKey('membersUpdate', key, { workspace, params: { memberId }, body: fields }).then(body),
-  remove: (c: BridgeClient, key: string, workspace: string, memberId: string) => c.withKey('membersRemove', key, { workspace, params: { memberId } }).then(body),
+  list: (d: Door, workspace: string, query: { limit?: string; after?: string; search?: string } = {}) => viaDoor(d, 'membersList', { workspace, query }),
+  get: (d: Door, workspace: string, memberId: string) => viaDoor(d, 'membersGet', { workspace, params: { memberId } }),
+  update: (d: Door, workspace: string, memberId: string, fields: { role?: string; enabled?: boolean }) =>
+    viaDoor(d, 'membersUpdate', { workspace, params: { memberId }, body: fields }),
+  remove: (d: Door, workspace: string, memberId: string) => viaDoor(d, 'membersRemove', { workspace, params: { memberId } }),
 };
 
 /** An open invite, as a workspace's list shows it. Accepted and revoked ones leave the list. */
@@ -93,6 +93,9 @@ export interface InviteFields {
   readonly email: string;
   /** The role the person joins with. Left out, the workspace's default role. */
   readonly role?: string;
+  /** The person's name, used when they accept and have none yet. */
+  readonly firstName?: string;
+  readonly lastName?: string;
 }
 
 /**
@@ -106,10 +109,13 @@ export const invites = {
   revoke: (c: BridgeClient, inviteId: string) => c.person<{ revoked: boolean }>('invitesRevoke', { params: { inviteId } }).then(body),
 };
 
-/** Invites into one of the app's workspaces, with an app key. */
+/**
+ * Invites into one of the app's workspaces. Bridge emails the person a link
+ * and they join when they accept it. On the key routes (`BRIDGE_APP_KEY`)
+ * it is the same invite.
+ */
 export const appInvites = {
-  list: (c: BridgeClient, key: string, workspace: string) => c.withKey<Invite[]>('appInvitesList', key, { workspace }).then(body),
-  send: (c: BridgeClient, key: string, workspace: string, fields: InviteFields) => c.withKey<Invite>('appInvitesSend', key, { workspace, body: fields }).then(body),
-  revoke: (c: BridgeClient, key: string, workspace: string, inviteId: string) =>
-    c.withKey<{ revoked: boolean }>('appInvitesRevoke', key, { workspace, params: { inviteId } }).then(body),
+  list: (d: Door, workspace: string) => viaDoor<Invite[]>(d, 'appInvitesList', { workspace }),
+  send: (d: Door, workspace: string, fields: InviteFields) => viaDoor<Invite>(d, 'appInvitesSend', { workspace, body: fields }),
+  revoke: (d: Door, workspace: string, inviteId: string) => viaDoor<{ revoked: boolean }>(d, 'appInvitesRevoke', { workspace, params: { inviteId } }),
 };

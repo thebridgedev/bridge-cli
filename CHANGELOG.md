@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Roles, privileges, workspaces, members, invites and the pasted Stripe key run with your sign-in.** They call the same routes the dashboard uses (`/apps/{appId}/…`), so Bridge checks what you may do, as it does for the dashboard. The CLI no longer makes a one-day app key for them. `bridge invite send --workspace` emails the person an invite they accept, as the dashboard does; `--first-name` and `--last-name` go on the invite, and `--role OWNER` is allowed with a recent sign-in. With `BRIDGE_APP_KEY` set (CI), these commands run as your app's own server with that key, as before, and the CLI makes no key.
 - **Browser sign-in through the dashboard.** The sign-in page your issuer publishes for the CLI may be on another address than the issuer: on The Bridge it is the dashboard. When you are already signed in there in that browser, you only approve the CLI; otherwise you sign in first, then approve. The CLI says so when it opens the page. Nothing else changes: the CLI still starts a sign-in request for its loopback with PKCE, and the code still goes only to `127.0.0.1`.
 
 ## [1.0.0-alpha.2] - 2026-11-15

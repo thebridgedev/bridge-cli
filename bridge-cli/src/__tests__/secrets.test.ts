@@ -1,6 +1,5 @@
 /**
- * No secret leaks: the password, the tokens, the temporary key's secret and
- * a pasted Stripe key appear in no output (stdout or stderr) and in no
+ * No secret leaks: the password, the tokens and a pasted Stripe key appear in no output (stdout or stderr) and in no
  * argument of the keychain tool, on the error paths too.
  */
 import { MacKeychainStore, type Runner } from '../auth/store';
@@ -64,13 +63,11 @@ it('signing in, renewing and signing out: the password and the tokens are in no 
   expectNoneOf([PASSWORD, ...fake.tokens()], ...runs.map((r) => r.output), keychain.argv.join('\n'));
 });
 
-it('Stripe refusing the key: the pasted key and the temporary key\'s secret are in no output', async () => {
+it('Stripe refusing the key: the pasted key is in no output, and no key is made', async () => {
   await cli.signIn('dev@example.com', PASSWORD);
   const appId = fake.addApp({ name: 'Demo', owner: 'ws-1' });
   const done = await cli.run(['stripe', 'connect', '--secret-key-stdin', '--app', appId], { stdin: 'sk_test_refused' });
   expect(done.error).toMatchObject({ code: 'invalid', status: 400 });
-  const temporary = [...fake.keys.values()];
-  expect(temporary).toHaveLength(1);
-  expect(temporary[0]?.revoked).toBe(true);
-  expectNoneOf(['sk_test_refused', temporary[0]?.secret as string, ...fake.tokens()], done.output, keychain.argv.join('\n'));
+  expect(fake.keyMints()).toEqual([]);
+  expectNoneOf(['sk_test_refused', ...fake.tokens()], done.output, keychain.argv.join('\n'));
 });
