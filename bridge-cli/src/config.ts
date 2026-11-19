@@ -16,6 +16,8 @@ import { normalizeIssuer } from './core/urls.js';
 export interface Settings {
   issuer?: string;
   apps?: Record<string, string>;
+  /** The names of apps seen, by app id, so the line printed before each command can name the app it acts on. */
+  appNames?: Record<string, string>;
 }
 
 export function configDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string {
@@ -53,28 +55,43 @@ export class Config {
 const FILE = 'config.json';
 
 /**
- * Where the issuer comes from: `--issuer`, else `--server`, else `BRIDGE_ISSUER`, else `BRIDGE_SERVER`, else the one
- * saved at sign-in. A server is Bridge's address (`https://api.example.com`); its issuer is read from it.
+ * Bridge's production server: where the CLI goes when nothing says otherwise, as 0.x did. Every command prints the
+ * server it reaches (`bridge: <address> · server from …`), and a password is sent only to the issuer this server names on
+ * its own address, so the default is never silent.
  */
-export function issuerSource(flags: { issuer?: string; server?: string }, env: NodeJS.ProcessEnv, settings: Settings): { issuer: string } | { server: string } {
+export const DEFAULT_SERVER = 'https://api.thebridge.dev';
+
+/**
+ * Where the issuer comes from: `--issuer`, else `--server`, else `BRIDGE_ISSUER`, else `BRIDGE_SERVER`, else the one
+ * saved at sign-in, else Bridge's production server. A server is Bridge's address (`https://api.example.com`); its issuer is read from it.
+ */
+export function issuerSource(
+  flags: { issuer?: string; server?: string },
+  env: NodeJS.ProcessEnv,
+  settings: Settings,
+): ({ issuer: string } | { server: string }) & { from: string } {
   const given = (value: string | undefined): value is string => value !== undefined && value.trim() !== '';
-  if (given(flags.issuer)) return { issuer: normalizeIssuer(flags.issuer) };
-  if (given(flags.server)) return { server: flags.server.trim() };
-  if (given(env['BRIDGE_ISSUER'])) return { issuer: normalizeIssuer(env['BRIDGE_ISSUER']) };
-  if (given(env['BRIDGE_SERVER'])) return { server: env['BRIDGE_SERVER'].trim() };
-  if (given(settings.issuer)) return { issuer: normalizeIssuer(settings.issuer) };
-  throw new CliError('misconfigured', 'No Bridge server is set.', {
-    hint: 'Sign in with `bridge auth login --server <Bridge\'s address>`, or set BRIDGE_SERVER.',
-  });
+  if (given(flags.issuer)) return { issuer: normalizeIssuer(flags.issuer), from: '--issuer' };
+  if (given(flags.server)) return { server: flags.server.trim(), from: '--server' };
+  if (given(env['BRIDGE_ISSUER'])) return { issuer: normalizeIssuer(env['BRIDGE_ISSUER']), from: 'BRIDGE_ISSUER' };
+  if (given(env['BRIDGE_SERVER'])) return { server: env['BRIDGE_SERVER'].trim(), from: 'BRIDGE_SERVER' };
+  if (given(settings.issuer)) return { issuer: normalizeIssuer(settings.issuer), from: 'the sign-in saved on this machine' };
+  return { server: DEFAULT_SERVER, from: 'the default, Bridge\'s production server' };
 }
 
 /** The app commands act on: `--app`, else `BRIDGE_APP`, else the one chosen with `bridge app use`. */
 export function resolveApp(flag: string | undefined, env: NodeJS.ProcessEnv, settings: Settings, issuer: string): string {
+  return resolveAppWithSource(flag, env, settings, issuer).id;
+}
+
+/** The app commands act on, and what chose it: `--app`, `BRIDGE_APP` or `bridge app use`. */
+export function resolveAppWithSource(flag: string | undefined, env: NodeJS.ProcessEnv, settings: Settings, issuer: string): { id: string; from: string } {
+  const from = flag !== undefined ? '--app' : env['BRIDGE_APP'] !== undefined ? 'BRIDGE_APP' : 'the app chosen with `bridge app use`';
   const given = flag ?? env['BRIDGE_APP'] ?? settings.apps?.[issuer];
   if (given === undefined || given.trim() === '') {
     throw new CliError('misconfigured', 'No app is chosen.', {
       hint: 'Choose one with `bridge app use <id>`, pass `--app <id>`, or create one with `bridge app create --name <name>`.',
     });
   }
-  return given.trim();
+  return { id: given.trim(), from };
 }

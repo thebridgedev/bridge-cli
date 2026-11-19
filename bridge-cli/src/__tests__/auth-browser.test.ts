@@ -179,9 +179,11 @@ describe('the server address', () => {
     expect(fake.requests.some((r) => r.path.endsWith('/sign-in-requests'))).toBe(false);
   });
 
-  it('with no server, issuer or saved sign-in, says to pass --server', async () => {
-    const done = await cli.run(['auth', 'login'], { env: NO_ISSUER });
-    expect(done.error).toMatchObject({ code: 'misconfigured' });
-    expect(String(done.error?.['hint'])).toContain('--server');
+  it('with no server, issuer or saved sign-in, goes to Bridge\'s production server, and says which it tried', async () => {
+    const urls: string[] = [];
+    const done = await cli.run(['auth', 'login'], { env: NO_ISSUER, fetch: async (url, init) => { urls.push(String(url)); return fake.fetch(url, init); } });
+    expect(urls).toEqual(['https://api.thebridge.dev/.well-known/oauth-protected-resource']);
+    expect(done.error).toMatchObject({ code: 'network' });
+    expect(String(done.error?.['message'])).toContain('api.thebridge.dev');
   });
 });

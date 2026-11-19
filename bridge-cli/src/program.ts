@@ -19,7 +19,7 @@ export function buildProgram(deps: Deps, version = '0.0.0'): Command {
     .name('bridge')
     .description('Set up your app on Bridge from the terminal: sign-in, apps and their addresses, keys, plans, Stripe and flags.')
     .version(version)
-    .option('--server <url>', 'Bridge\'s address, such as https://api.example.com: the CLI reads its sign-in issuer from it (env: BRIDGE_SERVER; saved at sign-in)')
+    .option('--server <url>', 'Bridge\'s address, such as https://api.example.com: the CLI reads its sign-in issuer from it (env: BRIDGE_SERVER; saved at sign-in; default: https://api.thebridge.dev)')
     .option('--issuer <url>', 'The Bridge App\'s issuer, instead of --server (env: BRIDGE_ISSUER; saved at sign-in)')
     .option('--app <id>', 'The app to act on (env: BRIDGE_APP; default: the one chosen with `bridge app use`)')
     .showHelpAfterError();

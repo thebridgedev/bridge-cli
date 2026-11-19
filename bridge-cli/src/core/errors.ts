@@ -19,12 +19,15 @@ export type CliErrorKind =
   | 'unavailable'
   | 'network'
   | 'not-offered'
-  | 'misconfigured';
+  | 'misconfigured'
+  | 'decision-needed';
 
 export interface CliErrorOptions {
   readonly status?: number;
   readonly hint?: string;
   readonly details?: unknown;
+  /** For `decision-needed`: what the developer has to decide. */
+  readonly fields?: readonly DecisionField[];
 }
 
 export class CliError extends Error {
@@ -32,6 +35,7 @@ export class CliError extends Error {
   readonly status: number | undefined;
   readonly hint: string | undefined;
   readonly details: unknown;
+  readonly fields: readonly DecisionField[] | undefined;
 
   constructor(kind: CliErrorKind, message: string, options: CliErrorOptions = {}) {
     super(message);
@@ -40,7 +44,37 @@ export class CliError extends Error {
     this.status = options.status;
     this.hint = options.hint;
     this.details = options.details;
+    this.fields = options.fields;
   }
+}
+
+/** One decision a command will not make for the developer. */
+export interface DecisionField {
+  readonly name: string;
+  readonly question: string;
+  readonly type: 'string' | 'number' | 'boolean' | 'enum';
+  readonly options?: readonly string[];
+  /** The option that answers it on this command. */
+  readonly flag?: string;
+}
+
+/**
+ * Stops a command before it writes anything, because the developer has not made a product decision (a price, a trial,
+ * the role an invitee gets): says each question and the option that answers it. Exit code 1, code `DECISION_NEEDED`.
+ */
+export function decisionNeeded(command: string, fields: readonly DecisionField[], context?: string, guide?: string): CliError {
+  const names = fields.map((each) => each.name).join(', ');
+  const flags = fields.map((each) => each.flag ?? each.name).join(' ');
+  return new CliError(
+    'decision-needed',
+    `${command} needs ${fields.length === 1 ? 'a product decision' : `${String(fields.length)} product decisions`} the developer has not made: ${names}.${context === undefined ? '' : ` ${context}`} Nothing was changed.`,
+    {
+      hint:
+        `Ask the developer each question in fields and wait for the answers; do not choose values for them. Then run ${command} again with ${flags}.` +
+        (guide === undefined ? '' : ` \`bridge guide decision ${guide}\` says what each choice means.`),
+      fields,
+    },
+  );
 }
 
 export function isCliError(value: unknown): value is CliError {
