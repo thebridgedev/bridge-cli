@@ -133,10 +133,20 @@ describe('auth login --password', () => {
     expect(done.data.user.email).toBe('dev@example.com');
   });
 
-  it('needs a server or an issuer', async () => {
-    const done = await cli.run(['auth', 'login', '--password'], { env: { BRIDGE_ISSUER: '' } });
-    expect(done.error).toMatchObject({ code: 'misconfigured', message: 'No Bridge server is set.' });
-    expect(done.exitCode).toBe(3);
+  it('goes to Bridge\'s production server when nothing names one, and says so; a password goes only to the issuer that server names on its own address', async () => {
+    const urls: string[] = [];
+    const done = await cli.run(['auth', 'login', '--password', '--email', 'dev@example.com', '--password-stdin'], {
+      env: { BRIDGE_ISSUER: '' },
+      stdin: 'correct horse',
+      fetch: async (url, init) => {
+        urls.push(String(url));
+        return fake.fetch(url, init);
+      },
+    });
+    expect(urls).toEqual(['https://api.thebridge.dev/.well-known/oauth-protected-resource']);
+    // The fake Bridge is not there: the command stops before any password is sent, and says where it tried.
+    expect(done.error).toMatchObject({ code: 'network' });
+    expect(String(done.error?.['message'])).toContain('api.thebridge.dev');
   });
 
   it('refuses an http issuer that is not on this machine', async () => {

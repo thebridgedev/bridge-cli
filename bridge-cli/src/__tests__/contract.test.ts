@@ -55,6 +55,8 @@ describe('discovery against the pinned metadata document', () => {
         billing: `${BASE}/v2/billing`,
         flags: `${BASE}/v2/flags`,
         accounts: `${BASE}/v2/accounts`,
+        'events-and-logs': `${BASE}/v2/events-and-logs`,
+        communication: `${BASE}/v2/communication`,
       },
     });
   });

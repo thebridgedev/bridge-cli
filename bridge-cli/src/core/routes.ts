@@ -19,7 +19,7 @@
  */
 export const API_VERSION = 2;
 
-export type Service = 'app-registry' | 'identity-access' | 'billing' | 'flags' | 'accounts';
+export type Service = 'app-registry' | 'identity-access' | 'billing' | 'flags' | 'accounts' | 'events-and-logs' | 'communication';
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export type Auth = 'person' | 'app-key' | 'none';
 
@@ -43,6 +43,15 @@ export const ROUTES = {
   signOut: r('POST', 'identity-access', '/sign-out', 'person'),
   me: r('GET', 'accounts', '/me', 'person'),
 
+  // The app's hosted sign-in look, its sign-in settings, its event log and its email sender.
+  brandingGet: r('GET', 'app-registry', '/apps/{appId}/branding', 'person'),
+  brandingUpdate: r('PATCH', 'app-registry', '/apps/{appId}/branding', 'person'),
+  signInSettingsGet: r('GET', 'identity-access', '/apps/{appId}/sign-in-settings', 'person'),
+  signInSettingsUpdate: r('PATCH', 'identity-access', '/apps/{appId}/sign-in-settings', 'person'),
+  eventsList: r('GET', 'events-and-logs', '/apps/{appId}/events', 'person'),
+  senderGet: r('GET', 'communication', '/apps/{appId}/sender', 'person'),
+  senderSet: r('PUT', 'communication', '/apps/{appId}/sender', 'person'),
+
   // Apps and their addresses.
   appsList: r('GET', 'app-registry', '/apps', 'person'),
   appsCreate: r('POST', 'app-registry', '/apps', 'person'),
@@ -64,6 +73,7 @@ export const ROUTES = {
   plansDelete: r('DELETE', 'billing', '/apps/{appId}/plans/{key}', 'person'),
   plansArchive: r('POST', 'billing', '/apps/{appId}/plans/{key}/archive', 'person'),
   plansDeletionPreview: r('GET', 'billing', '/apps/{appId}/plans/{key}/deletion-preview', 'person'),
+  payerSubscriptionSet: r('PUT', 'billing', '/apps/{appId}/workspaces/{workspaceId}/payer/subscription', 'person'),
   productsList: r('GET', 'billing', '/apps/{appId}/products', 'person'),
   productsCreate: r('POST', 'billing', '/apps/{appId}/products', 'person'),
   productsGet: r('GET', 'billing', '/apps/{appId}/products/{key}', 'person'),
@@ -79,6 +89,7 @@ export const ROUTES = {
   billingSettingsGet: r('GET', 'billing', '/apps/{appId}/settings', 'person'),
   billingSettingsUpdate: r('PATCH', 'billing', '/apps/{appId}/settings', 'person'),
   connectionGet: r('GET', 'billing', '/apps/{appId}/connection', 'person'),
+  connectionHealth: r('GET', 'billing', '/apps/{appId}/connection/health', 'person'),
   connectionDelete: r('DELETE', 'billing', '/apps/{appId}/connection', 'person'),
   connectionPasteKey: r('POST', 'billing', '/apps/{appId}/connection', 'person'),
   keyConnectionPasteKey: r('POST', 'billing', '/connection', 'app-key'),
@@ -91,6 +102,12 @@ export const ROUTES = {
   flagsDelete: r('DELETE', 'flags', '/apps/{appId}/flags/{key}', 'person'),
   flagsKill: r('POST', 'flags', '/apps/{appId}/flags/{key}/kill', 'person'),
   flagsRestore: r('POST', 'flags', '/apps/{appId}/flags/{key}/restore', 'person'),
+  flagsDeletionPreview: r('GET', 'flags', '/apps/{appId}/flags/{key}/deletion-preview', 'person'),
+  flagsExport: r('GET', 'flags', '/apps/{appId}/export', 'person'),
+  flagsImport: r('POST', 'flags', '/apps/{appId}/import', 'person'),
+  schedulesList: r('GET', 'flags', '/apps/{appId}/schedules', 'person'),
+  schedulesCreate: r('POST', 'flags', '/apps/{appId}/flags/{key}/schedules', 'person'),
+  schedulesDelete: r('DELETE', 'flags', '/apps/{appId}/schedules/{scheduleId}', 'person'),
   segmentsList: r('GET', 'flags', '/apps/{appId}/segments', 'person'),
 
   // Roles and privileges, workspaces, members and invites of the app, with the developer's token.
@@ -102,7 +119,12 @@ export const ROUTES = {
   privilegesCreate: r('POST', 'accounts', '/apps/{appId}/privileges', 'person'),
   privilegesUpdate: r('PATCH', 'accounts', '/apps/{appId}/privileges/{privilegeId}', 'person'),
   privilegesDelete: r('DELETE', 'accounts', '/apps/{appId}/privileges/{privilegeId}', 'person'),
+  usersList: r('GET', 'accounts', '/apps/{appId}/users', 'person'),
   workspacesList: r('GET', 'accounts', '/apps/{appId}/workspaces', 'person'),
+  workspacesGet: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}', 'person'),
+  workspacesCreate: r('POST', 'accounts', '/apps/{appId}/workspaces', 'person'),
+  workspacesUpdate: r('PATCH', 'accounts', '/apps/{appId}/workspaces/{workspaceId}', 'person'),
+  workspacesDelete: r('DELETE', 'accounts', '/apps/{appId}/workspaces/{workspaceId}', 'person'),
   membersList: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members', 'person'),
   membersGet: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members/{memberId}', 'person'),
   membersUpdate: r('PATCH', 'accounts', '/apps/{appId}/workspaces/{workspaceId}/members/{memberId}', 'person'),

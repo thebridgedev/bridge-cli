@@ -40,9 +40,9 @@ const commands: { args: string[]; stdin?: string }[] = [
   { args: ['member', 'get', 'mem-1', '--workspace', 'cust-1'] },
   { args: ['member', 'update', 'mem-1', '--workspace', 'cust-1', '--role', 'ADMIN'] },
   { args: ['member', 'remove', 'mem-1', '--workspace', 'cust-1', '--yes'] },
-  { args: ['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1'] },
+  { args: ['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1', '--role', 'MEMBER'] },
   { args: ['invite', 'list', '--workspace', 'cust-1'] },
-  { args: ['invite', 'send', 'bob@example.com'] },
+  { args: ['invite', 'send', 'bob@example.com', '--role', 'MEMBER'] },
   { args: ['invite', 'list'] },
   { args: ['stripe', 'connect', '--secret-key-stdin'], stdin: 'sk_test_abc' },
   { args: ['stripe', 'status'] },
@@ -67,7 +67,7 @@ it('signed in: no command makes a key, and each reaches Bridge with the sign-in'
 it('`role delete` and `invite send` call the operator routes and no key route', async () => {
   fake.roles(appId).push({ id: 'role-1', key: 'editor', name: 'Editor', privileges: [] });
   await cli.run(['role', 'delete', 'editor']);
-  await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1']);
+  await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1', '--role', 'MEMBER']);
   expect(fake.requests.filter((r) => r.method === 'POST' && /\/apps\/[^/]+\/keys$/.test(r.path))).toEqual([]);
   expect(fake.requests.filter((r) => r.method === 'DELETE' && r.path === `/v2/accounts/apps/${appId}/roles/role-1`)).toHaveLength(1);
   expect(fake.requests.filter((r) => r.method === 'POST' && r.path === `/v2/accounts/apps/${appId}/workspaces/cust-1/invites`)).toHaveLength(1);
@@ -75,7 +75,7 @@ it('`role delete` and `invite send` call the operator routes and no key route', 
 });
 
 it('with BRIDGE_APP_KEY set: no key is made, the key routes are used and the sign-in is not', async () => {
-  const env = { BRIDGE_APP_KEY: fake.addKey(appId, ['USER_READ', 'USER_WRITE', 'ROLE_DELETE']) };
+  const env = { BRIDGE_APP_KEY: fake.addKey(appId, ['USER_READ', 'USER_WRITE', 'ROLE_DELETE', 'apps.settings:manage', 'billing.connection:manage']) };
   const before = fake.requests.length;
   for (const { args, stdin } of commands.filter((c) => ['role', 'privilege', 'workspace', 'member', 'stripe'].includes(c.args[0] as string) && c.args[1] !== 'status' && c.args[1] !== 'disconnect')) {
     const done = await cli.run(args, { env, ...(stdin === undefined ? {} : { stdin }) });

@@ -75,7 +75,48 @@ export const flags = {
   kill: (c: BridgeClient, appId: string, key: string) => c.person<Flag>('flagsKill', { params: { appId, key } }).then(body),
   restore: (c: BridgeClient, appId: string, key: string) => c.person<Flag>('flagsRestore', { params: { appId, key } }).then(body),
   segments: (c: BridgeClient, appId: string) => c.person('segmentsList', { params: { appId } }).then(body),
+
+  /** What deleting the flag would do, and nothing deleted. */
+  deletionPreview: (c: BridgeClient, appId: string, key: string) => c.person<Record<string, unknown>>('flagsDeletionPreview', { params: { appId, key } }).then(body),
+
+  /** Every flag as a portable "flags as code" bundle, `{ version, flags }`, sorted by key. */
+  export: (c: BridgeClient, appId: string) => c.person<FlagBundle>('flagsExport', { params: { appId } }).then(body),
+  /** Applies a bundle: creates the flags that are not there and updates the ones that are, matched by key. `dryRun` writes nothing. */
+  import: (c: BridgeClient, appId: string, bundle: { flags: unknown[]; dryRun?: boolean }) => c.person<ImportReport>('flagsImport', { params: { appId }, body: bundle }).then(body),
+
+  /** The flag's pending state changes, or every flag's. */
+  async schedules(c: BridgeClient, appId: string, key?: string): Promise<Schedule[]> {
+    const all = await c.person<Schedule[]>('schedulesList', { params: { appId } }).then(body);
+    return key === undefined ? all : all.filter((each) => each.flag === key);
+  },
+  /** Schedules a state change on the flag as it is now (its revision goes in `If-Match`). */
+  async schedule(c: BridgeClient, appId: string, key: string, at: string, state: FlagState): Promise<Schedule> {
+    const current = await flags.get(c, appId, key);
+    return c.person<Schedule>('schedulesCreate', { params: { appId, key }, body: { at, patch: { state } }, headers: revisionOf(current) }).then(body);
+  },
+  unschedule: (c: BridgeClient, appId: string, scheduleId: string) => c.person('schedulesDelete', { params: { appId, scheduleId } }).then(body),
 };
+
+export interface FlagBundle {
+  readonly version: number;
+  readonly flags: Record<string, unknown>[];
+  readonly [field: string]: unknown;
+}
+
+export interface ImportReport {
+  readonly created: string[];
+  readonly updated: { key: string; fields: string[] }[];
+  readonly unchanged: string[];
+  readonly extraneous: string[];
+}
+
+export interface Schedule {
+  readonly id: string;
+  readonly flag?: string;
+  readonly at: string;
+  readonly patch?: { state?: FlagState };
+  readonly state?: string;
+}
 
 /** A value written in a condition: true, false, null and numbers as themselves, anything else as text. */
 function conditionValue(raw: string): ConditionValue {

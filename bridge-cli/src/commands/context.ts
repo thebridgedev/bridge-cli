@@ -3,7 +3,7 @@ import { chooseDoor, type Door } from '../api/door.js';
 import { Sessions } from '../auth/session.js';
 import { chooseStore, type SessionStore } from '../auth/store.js';
 import { BridgeClient } from '../client.js';
-import { Config, configDir, issuerSource, resolveApp, type Settings } from '../config.js';
+import { Config, configDir, issuerSource, resolveAppWithSource, type Settings } from '../config.js';
 import { discover, issuerAtServer, type Discovery } from '../core/discovery.js';
 import type { Fetch } from '../core/http.js';
 import type { Io } from '../io.js';
@@ -33,6 +33,8 @@ export class Context {
   private settingsRead?: Settings;
   private discovered?: Promise<Discovery>;
   private issuerFound?: Promise<string>;
+  private issuerFrom = '';
+  private announced = false;
   private sessionsMade?: Sessions;
 
   constructor(
@@ -59,6 +61,7 @@ export class Context {
   issuer(): Promise<string> {
     this.issuerFound ??= this.settings().then((settings) => {
       const source = issuerSource(this.options, this.env, settings);
+      this.issuerFrom = source.from;
       return 'issuer' in source ? source.issuer : issuerAtServer(this.deps.fetch, source.server);
     });
     return this.issuerFound;
@@ -79,19 +82,48 @@ export class Context {
     return this.sessionsMade;
   }
 
-  async client(): Promise<BridgeClient> {
+  /**
+   * One line on stderr, before a command reaches Bridge, naming where it goes and, when it acts on one, the app: so a
+   * command never lands on another server or app unannounced. stdout stays the result alone. Said once per command;
+   * `BRIDGE_NO_BANNER=true` silences it.
+   */
+  private async announce(app?: { id: string; from: string }): Promise<void> {
+    if (this.announced) return;
+    this.announced = true;
+    if (this.env['BRIDGE_NO_BANNER'] === 'true') return;
+    const origin = new URL(await this.issuer()).origin;
+    if (app === undefined) {
+      this.io.info(`bridge: ${origin} · server from ${this.issuerFrom}`);
+      return;
+    }
+    const name = (await this.settings()).appNames?.[app.id];
+    this.io.info(`bridge: acting on app ${name === undefined ? app.id : `${name} (${app.id})`} · ${origin} · app from ${app.from}, server from ${this.issuerFrom}`);
+  }
+
+  private async makeClient(): Promise<BridgeClient> {
     return new BridgeClient(await this.discovery(), this.deps.fetch, this.sessions());
+  }
+
+  async client(): Promise<BridgeClient> {
+    const c = await this.makeClient();
+    await this.announce();
+    return c;
   }
 
   /** The app commands act on. */
   async appId(): Promise<string> {
-    return resolveApp(this.options.app, this.env, await this.settings(), await this.issuer());
+    return (await this.chosenApp()).id;
+  }
+
+  private async chosenApp(): Promise<{ id: string; from: string }> {
+    return resolveAppWithSource(this.options.app, this.env, await this.settings(), await this.issuer());
   }
 
   /** The app and a client, for the commands that act on one app. */
   async forApp(): Promise<{ c: BridgeClient; appId: string }> {
-    const [c, appId] = await Promise.all([this.client(), this.appId()]);
-    return { c, appId };
+    const [c, app] = await Promise.all([this.makeClient(), this.chosenApp()]);
+    await this.announce(app);
+    return { c, appId: app.id };
   }
 
   /**

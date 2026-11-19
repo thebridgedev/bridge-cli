@@ -23,11 +23,12 @@ export interface Io {
 export function errorBody(error: unknown): Record<string, unknown> {
   if (isCliError(error)) {
     return {
-      code: error.kind,
+      code: error.kind === 'decision-needed' ? 'DECISION_NEEDED' : error.kind,
       message: error.message,
       ...(error.status === undefined ? {} : { status: error.status }),
       ...(error.hint === undefined ? {} : { hint: error.hint }),
       ...(error.details === undefined ? {} : { details: error.details }),
+      ...(error.fields === undefined ? {} : { fields: error.fields }),
     };
   }
   return { code: 'error', message: error instanceof Error ? error.message : String(error) };

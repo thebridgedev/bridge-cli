@@ -123,7 +123,7 @@ describe('flag commands', () => {
 
   it('delete needs --yes and names the revision', async () => {
     await cli.run(['flag', 'create', 'gone']);
-    expect((await cli.run(['flag', 'delete', 'gone'])).error).toMatchObject({ code: 'usage' });
+    expect((await cli.run(['flag', 'delete', 'gone'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('--yes') });
     await cli.run(['flag', 'delete', 'gone', '--yes']);
     expect(last('DELETE')?.headers['if-match']).toBe('"1"');
     expect((await cli.run(['flag', 'list'])).data).toEqual([]);

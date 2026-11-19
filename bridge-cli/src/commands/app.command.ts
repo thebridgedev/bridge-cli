@@ -43,7 +43,11 @@ export function registerAppCommands(program: Command, deps: Deps): void {
       action(deps, async (ctx) => {
         const c = await ctx.client();
         const current = (await ctx.settings()).apps?.[await ctx.issuer()];
-        ctx.io.result((await apps.list(c)).map((each) => ({ ...each, current: each.id === current })));
+        const listed = await apps.list(c);
+        await ctx.config.update((settings) => {
+          settings.appNames = { ...settings.appNames, ...Object.fromEntries(listed.map((each) => [each.id, each.name])) };
+        });
+        ctx.io.result(listed.map((each) => ({ ...each, current: each.id === current })));
       }),
     );
 
@@ -75,6 +79,7 @@ export function registerAppCommands(program: Command, deps: Deps): void {
         const issuer = await ctx.issuer();
         await ctx.config.update((settings) => {
           settings.apps = { ...settings.apps, [issuer]: made.id };
+          settings.appNames = { ...settings.appNames, [made.id]: made.name };
         });
         ctx.io.info(`Created ${made.name} (${made.id}); commands now act on it.`);
       }
@@ -92,6 +97,7 @@ export function registerAppCommands(program: Command, deps: Deps): void {
         const issuer = await ctx.issuer();
         await ctx.config.update((settings) => {
           settings.apps = { ...settings.apps, [issuer]: found.id };
+          settings.appNames = { ...settings.appNames, [found.id]: found.name };
         });
         ctx.io.info(`Commands now act on ${found.name} (${found.id}).`);
         ctx.io.result({ id: found.id, name: found.name });

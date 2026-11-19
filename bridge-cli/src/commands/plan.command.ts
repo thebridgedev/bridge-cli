@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { InvalidArgumentError, type Command } from 'commander';
 import { plans, type Plan, type PlanFields, type Price } from '../api/billing.js';
 import type { BridgeClient } from '../client.js';
-import { CliError } from '../core/errors.js';
+import { CliError, decisionNeeded, type DecisionField } from '../core/errors.js';
 import { attachUsage, parseCurrencyInterval, parseFeature, parseLimit, parsePrice, parseUsagePrice } from '../money.js';
 import { action, collect, type Deps } from './context.js';
 
@@ -40,6 +40,29 @@ function planFields(opts: DocumentOptions): PlanFields {
   else if (opts.trialDays !== undefined) fields.trial = { days: opts.trialDays, cardRequired: opts.cardRequired ?? false };
   else if (opts.cardRequired !== undefined) throw new CliError('invalid', '--card-required goes with --trial-days.');
   return fields;
+}
+
+const PRICE_FLAG = '--price "<amount> <CURRENCY>/<interval>"';
+
+/**
+ * What the developer has not decided for a new plan: its price (amount, interval, currency) and whether it has a free
+ * trial. A free plan (every price 0) needs no trial decision. Nothing is guessed.
+ */
+function missingDecisions(opts: DocumentOptions): DecisionField[] {
+  const missing: DecisionField[] = [];
+  const amounts = (opts.price ?? []).map((text) => parsePrice(text).amount);
+  const paidOrUnknown = amounts.length === 0 || amounts.some((amount) => amount > 0);
+  if (amounts.length === 0) {
+    missing.push(
+      { name: 'amount', question: 'What does this plan cost per billing period? (0 for a free or contact-sales plan)', type: 'number', flag: PRICE_FLAG },
+      { name: 'interval', question: 'Is it billed monthly, yearly, weekly or daily?', type: 'enum', options: ['day', 'week', 'month', 'year'], flag: PRICE_FLAG },
+      { name: 'currency', question: 'In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)', type: 'string', flag: PRICE_FLAG },
+    );
+  }
+  const trialDecided = opts.trial !== undefined || opts.trialDays !== undefined;
+  if (paidOrUnknown && !trialDecided) missing.push({ name: 'trial', question: 'Is there a free trial on this plan?', type: 'boolean', flag: '--trial --trial-days <n> | --no-trial' });
+  if (opts.trial === true && opts.trialDays === undefined) missing.push({ name: 'trialDays', question: 'How many days does the free trial last?', type: 'number', flag: '--trial-days <n>' });
+  return missing;
 }
 
 const withDocumentOptions = (cmd: Command) =>
@@ -84,9 +107,20 @@ export function registerPlanCommands(program: Command, deps: Deps): void {
       }),
     );
 
-  withDocumentOptions(plan.command('create <key>').description('Create a plan').requiredOption('--name <name>', 'The plan\'s name')).action(
+  withDocumentOptions(
+    plan
+      .command('create <key>')
+      .description('Create a plan. The price and whether it has a trial are yours to decide: without them the command stops and asks (DECISION_NEEDED)')
+      .requiredOption('--name <name>', 'The plan\'s name')
+      .option('--trial', 'The plan has a free trial (with --trial-days)')
+      .option('--no-trial', 'The plan has no free trial. One of --trial / --no-trial is needed when a price is above 0'),
+  ).action(
     action(deps, async (ctx, key: string, opts: DocumentOptions) => {
       const fields = planFields(opts);
+      const missing = missingDecisions(opts);
+      if (missing.length > 0) {
+        throw decisionNeeded('bridge plan create', missing, opts.price === undefined ? 'The currency and the trial are not needed if the price is 0.' : undefined);
+      }
       const { c, appId } = await ctx.forApp();
       ctx.io.result(await plans.create(c, appId, { ...fields, key, name: opts.name as string }));
     }),

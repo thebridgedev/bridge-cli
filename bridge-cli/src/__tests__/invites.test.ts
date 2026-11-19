@@ -42,12 +42,12 @@ describe('invites into your own workspace on Bridge', () => {
     expect(request.headers['x-api-key']).toBeUndefined();
     expect(request.headers['bridge-workspace']).toBeUndefined();
 
-    await cli.run(['invite', 'send', 'bob@example.com']);
-    expect(last('POST', '/v2/accounts/invites')?.body).toEqual({ email: 'bob@example.com' });
+    await cli.run(['invite', 'send', 'bob@example.com', '--role', 'MEMBER']);
+    expect(last('POST', '/v2/accounts/invites')?.body).toEqual({ email: 'bob@example.com', role: 'MEMBER' });
     expect((await cli.run(['invite', 'list'])).data.map((each: { email: string }) => each.email)).toEqual(['ann@example.com', 'bob@example.com']);
 
     // Sending again is the same invite with a new link; the list does not grow.
-    const again = await cli.run(['invite', 'send', 'ann@example.com']);
+    const again = await cli.run(['invite', 'send', 'ann@example.com', '--role', 'MEMBER']);
     expect(again.data.id).toBe(sent.data.id);
     expect((await cli.run(['invite', 'list'])).data).toHaveLength(2);
 
@@ -59,23 +59,43 @@ describe('invites into your own workspace on Bridge', () => {
 
   it('a refusal is Bridge\'s own: no email-links address, too many', async () => {
     fake.refuseInvites('no-email-links');
-    const refused = await cli.run(['invite', 'send', 'ann@example.com']);
+    const refused = await cli.run(['invite', 'send', 'ann@example.com', '--role', 'MEMBER']);
     expect(refused.error).toMatchObject({ code: 'conflict', message: 'The app has no email-links address, so its emails cannot carry a link.' });
     expect(refused.error).not.toHaveProperty('hint');
     expect(refused.exitCode).toBe(1);
 
     fake.refuseInvites('too-many');
-    expect((await cli.run(['invite', 'send', 'ann@example.com'])).error).toMatchObject({ code: 'rate-limited', hint: 'Try again in 3600 seconds.' });
+    expect((await cli.run(['invite', 'send', 'ann@example.com', '--role', 'MEMBER'])).error).toMatchObject({ code: 'rate-limited', hint: 'Try again in 3600 seconds.' });
 
     fake.refuseInvites(null);
     expect((await cli.run(['invite', 'list'])).data).toEqual([]);
   });
 
   it('--first-name and --last-name go on the invite', async () => {
-    const sent = await cli.run(['invite', 'send', 'ann@example.com', '--first-name', 'Ann', '--last-name', 'Lee']);
+    const sent = await cli.run(['invite', 'send', 'ann@example.com', '--first-name', 'Ann', '--last-name', 'Lee', '--role', 'MEMBER']);
     expect(sent.errors).toEqual([]);
-    expect(last('POST', '/v2/accounts/invites')?.body).toEqual({ email: 'ann@example.com', firstName: 'Ann', lastName: 'Lee' });
+    expect(last('POST', '/v2/accounts/invites')?.body).toEqual({ email: 'ann@example.com', role: 'MEMBER', firstName: 'Ann', lastName: 'Lee' });
     expect(sent.data).toMatchObject({ firstName: 'Ann', lastName: 'Lee' });
+  });
+});
+
+describe('the role is the developer\'s decision', () => {
+  it('without --role the command stops and asks, and sends nothing', async () => {
+    const done = await cli.run(['invite', 'send', 'ann@example.com']);
+    expect(done.error).toMatchObject({ code: 'DECISION_NEEDED', fields: [expect.objectContaining({ name: 'role', flag: '--role <key>' })] });
+    expect(done.exitCode).toBe(1);
+    expect(last('POST', '/v2/accounts/invites')).toBeUndefined();
+  });
+
+  it("in one of the app's workspaces it offers the app's role keys and names the default", async () => {
+    await cli.run(['app', 'use', appId]);
+    fake.addWorkspace(appId, { id: 'cust-1', name: 'Customer One' });
+    await cli.run(['role', 'create', 'viewer', '--name', 'Viewer', '--default']);
+    await cli.run(['role', 'create', 'editor', '--name', 'Editor']);
+    const done = await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1']);
+    expect(done.error).toMatchObject({ code: 'DECISION_NEEDED', fields: [expect.objectContaining({ name: 'role', type: 'enum', options: ['viewer', 'editor'] })] });
+    expect(String(done.error?.['message'])).toContain("The app's default role is viewer");
+    expect(last('POST', '/invites')).toBeUndefined();
   });
 });
 
@@ -111,7 +131,7 @@ describe("invites into one of the app's workspaces", () => {
   it('with BRIDGE_APP_KEY set, the key routes are used as the app\'s server, with the key and no sign-in', async () => {
     const key = fake.addKey(appId, ['USER_READ', 'USER_WRITE']);
     const env = { BRIDGE_APP_KEY: key };
-    const sent = await cli.run(['invite', 'send', 'dave@customer.example', '--workspace', 'cust-1'], { env });
+    const sent = await cli.run(['invite', 'send', 'dave@customer.example', '--workspace', 'cust-1', '--role', 'MEMBER'], { env });
     expect(sent.errors).toEqual([]);
     const request = last('POST', '/v2/accounts/invites')!;
     expect(request.headers['x-api-key']).toBe(key);
@@ -125,9 +145,9 @@ describe("invites into one of the app's workspaces", () => {
   });
 
   it('--first-name and --last-name go on the operator invite', async () => {
-    const sent = await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1', '--first-name', 'Carol', '--last-name', 'King']);
+    const sent = await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1', '--first-name', 'Carol', '--last-name', 'King', '--role', 'MEMBER']);
     expect(sent.errors).toEqual([]);
-    expect(last('POST', `/v2/accounts/apps/${appId}/workspaces/cust-1/invites`)?.body).toEqual({ email: 'carol@customer.example', firstName: 'Carol', lastName: 'King' });
+    expect(last('POST', `/v2/accounts/apps/${appId}/workspaces/cust-1/invites`)?.body).toEqual({ email: 'carol@customer.example', role: 'MEMBER', firstName: 'Carol', lastName: 'King' });
   });
 
   it('role OWNER is allowed with a recent sign-in', async () => {
@@ -157,7 +177,7 @@ describe("invites into one of the app's workspaces", () => {
 
   it('an app with no email-links address says how to add one', async () => {
     fake.refuseInvites('no-email-links');
-    const refused = await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1']);
+    const refused = await cli.run(['invite', 'send', 'carol@customer.example', '--workspace', 'cust-1', '--role', 'MEMBER']);
     expect(refused.error).toMatchObject({
       code: 'conflict',
       status: 409,

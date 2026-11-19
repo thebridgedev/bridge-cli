@@ -79,7 +79,7 @@ describe('stripe', () => {
   });
 
   it('connect with BRIDGE_APP_KEY set uses the key route as the app\'s server, and makes no key', async () => {
-    const key = fake.addKey(appId, []);
+    const key = fake.addKey(appId, ['billing.connection:manage']);
     const done = await cli.run(['stripe', 'connect', '--secret-key-stdin'], { stdin: 'sk_test_xyz', env: { BRIDGE_APP_KEY: key } });
     expect(done.errors).toEqual([]);
     expect(fake.keyMints()).toEqual([]);
@@ -103,13 +103,12 @@ describe('stripe', () => {
     expect((await cli.run(['stripe', 'connect'])).error).toMatchObject({ code: 'invalid', message: 'No terminal to ask for the key in.' });
   });
 
-  it('connect long after sign-in: needs a recent sign-in, and says so', async () => {
+  it('a change that needs a recent sign-in, long after sign-in, says so', async () => {
     fake.advance(10 * 60_000);
-    const done = await cli.run(['stripe', 'connect', '--secret-key-stdin'], { stdin: 'sk_test_abc' });
+    const done = await cli.run(['key', 'create', '--name', 'ci']);
     expect(done.error).toMatchObject({ code: 'reauthenticate' });
     expect(String(done.error?.['hint'])).toContain('recent sign-in');
-    expect(fake.pastedKeys).toEqual([]);
-    expect(fake.keyMints()).toEqual([]);
+    expect(fake.keys.size).toBe(0);
   });
 
   it('disconnect', async () => {
