@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0-alpha.4] - Unreleased
+## [1.0.0-alpha.5] - Unreleased
 
 ### Added
 
@@ -12,6 +12,8 @@
 
 - **Without `--server`, `--issuer`, `BRIDGE_SERVER` or `BRIDGE_ISSUER`, and before any sign-in is saved, the CLI goes to `https://api.thebridge.dev`, as 0.x did.** Every command prints the server it reached, and a password goes only to the issuer that server names on its own address.
 - **`plan create` and `invite send` ask what is yours to decide.** Without a price and a trial (`--price "<amount> <CURRENCY>/<interval>"` with `--trial-days <n>` or `--no-trial`; a free plan needs no trial answer), `plan create` stops with `DECISION_NEEDED` and the questions in `fields`, and creates nothing. `invite send` and `user invite` do the same without `--role`.
+
+## [1.0.0-alpha.4] - Unreleased
 
 ### Changed
 
