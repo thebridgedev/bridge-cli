@@ -58,6 +58,20 @@ describe('tenant', () => {
     expect(gone.data).toMatchObject({ state: 'deletion_scheduled' });
     expect(last('DELETE', '/workspaces/cust-1')?.headers['authorization']).toMatch(/^Bearer /);
   });
+
+  it('get, update, set-plan and delete find the tenant in the app they act on, the same way, even with BRIDGE_APP_KEY set', async () => {
+    const env = { BRIDGE_APP_KEY: 'bk.some-other-key' };
+    fake.requests.length = 0;
+    const preview = await cli.run(['tenant', 'delete', '--name', 'Customer One', '--dry-run'], { env });
+    expect(preview.data).toMatchObject({ dryRun: true, target: { id: 'cust-1' } });
+    expect((await cli.run(['tenant', 'get', '--name', 'Customer One'], { env })).data).toMatchObject({ id: 'cust-1' });
+    const lookups = fake.requests.filter((r) => r.method === 'GET' && r.path.includes('/workspaces'));
+    expect(lookups.length).toBeGreaterThan(0);
+    for (const lookup of lookups) {
+      expect(lookup.path).toContain(`/apps/${appId}/`);
+      expect(lookup.headers['x-api-key']).toBeUndefined();
+    }
+  });
 });
 
 describe('user', () => {

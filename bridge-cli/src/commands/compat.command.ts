@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import { appInvites, members, roles, workspaces, type InviteFields, type Workspace } from '../api/accounts.js';
 import type { Door } from '../api/door.js';
+import type { BridgeClient } from '../client.js';
 import { keys } from '../api/keys.js';
 import { CliError } from '../core/errors.js';
 import { action, type Context, type Deps } from './context.js';
@@ -40,11 +41,17 @@ async function personIn(d: Door, workspace: string, opts: { email?: string; user
   return found;
 }
 
-/** The workspace a `tenant` command names, by `--id`, else by `--name`. */
-async function tenantOf(ctx: Context, opts: { id?: string; name?: string }): Promise<Workspace> {
+/**
+ * The workspace a `tenant` command names, by `--id`, else by `--name`, and the app it is looked up in: the command's
+ * own app, with the developer's sign-in, the same way the command then acts on it, so a preview and the change it
+ * shows are always about the same tenant of the same app.
+ */
+async function tenantOf(ctx: Context, opts: { id?: string; name?: string }): Promise<{ found: Workspace; c: BridgeClient; appId: string; door: Door }> {
   const wanted = opts.id ?? opts.name;
   if (wanted === undefined) throw new CliError('invalid', 'Name the tenant with --name or --id.');
-  return workspaces.find(await ctx.door(), wanted);
+  const { c, appId } = await ctx.forApp();
+  const door: Door = { kind: 'session', c, appId };
+  return { found: await workspaces.find(door, wanted), c, appId, door };
 }
 
 export function registerCompatCommands(program: Command, deps: Deps): void {
@@ -56,8 +63,7 @@ export function registerCompatCommands(program: Command, deps: Deps): void {
     .option('--id <id>', 'The tenant\'s id')
     .action(
       action(deps, async (ctx, opts: { name?: string; id?: string }) => {
-        const found = await tenantOf(ctx, opts);
-        const { c, appId } = await ctx.forApp();
+        const { found, c, appId } = await tenantOf(ctx, opts);
         ctx.io.result(await workspaces.get(c, appId, found.id));
       }),
     );
@@ -91,11 +97,10 @@ export function registerCompatCommands(program: Command, deps: Deps): void {
     .option('--logo <url>', 'Its logo')
     .action(
       action(deps, async (ctx, opts: { name?: string; id?: string; newName?: string; locale?: string; logo?: string }) => {
-        const found = opts.id !== undefined ? await tenantOf(ctx, { id: opts.id }) : await tenantOf(ctx, { name: opts.name });
+        const { found, c, appId } = opts.id !== undefined ? await tenantOf(ctx, { id: opts.id }) : await tenantOf(ctx, { name: opts.name });
         const renamed = opts.newName ?? (opts.id !== undefined ? opts.name : undefined);
         const fields = { ...(renamed === undefined ? {} : { name: renamed }), ...(opts.locale === undefined ? {} : { locale: opts.locale }), ...(opts.logo === undefined ? {} : { logo: opts.logo }) };
         if (Object.keys(fields).length === 0) throw new CliError('invalid', 'Nothing to change: give --new-name, --locale or --logo.');
-        const { c, appId } = await ctx.forApp();
         ctx.io.result(await workspaces.update(c, appId, found.id, fields));
       }),
     );
@@ -109,8 +114,7 @@ export function registerCompatCommands(program: Command, deps: Deps): void {
     .option('--currency <code>', 'Which of the plan\'s prices: its currency')
     .action(
       action(deps, async (ctx, opts: { name?: string; id?: string; plan: string; interval?: string; currency?: string }) => {
-        const found = await tenantOf(ctx, opts);
-        const { c, appId } = await ctx.forApp();
+        const { found, c, appId } = await tenantOf(ctx, opts);
         ctx.io.result(await workspaces.setPlan(c, appId, found.id, { plan: opts.plan, ...(opts.interval === undefined ? {} : { interval: opts.interval }), ...(opts.currency === undefined ? {} : { currency: opts.currency.toUpperCase() }) }));
       }),
     );
@@ -123,11 +127,9 @@ export function registerCompatCommands(program: Command, deps: Deps): void {
     .option('--yes', 'Confirm the deletion')
     .action(
       action(deps, async (ctx, opts: { name?: string; id?: string; dryRun?: boolean; yes?: boolean }) => {
-        const found = await tenantOf(ctx, opts);
-        const door = await ctx.door();
+        const { found, c, appId, door } = await tenantOf(ctx, opts);
         if (opts.dryRun) return ctx.io.result(await workspaceDeletionPreview(door, found));
         if (opts.yes !== true) throw new CliError('invalid', 'Confirm the deletion with --yes. `--dry-run` shows what it would do first.');
-        const { c, appId } = await ctx.forApp();
         ctx.io.result(await workspaces.remove(c, appId, found.id));
       }),
     );
