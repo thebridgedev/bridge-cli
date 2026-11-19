@@ -65,8 +65,40 @@ export const privileges = {
   },
 };
 
+/** One of the app's workspaces, as Accounts answers it. */
+export interface Workspace {
+  readonly id: string;
+  readonly name: string | null;
+  readonly [field: string]: unknown;
+}
+
+export interface WorkspaceFields {
+  readonly name?: string;
+  readonly locale?: string;
+  readonly logo?: string;
+}
+
 export const workspaces = {
   list: (d: Door, query: { limit?: string; after?: string; search?: string } = {}) => viaDoor(d, 'workspacesList', { query }),
+  get: (c: BridgeClient, appId: string, workspaceId: string) => c.person<Workspace>('workspacesGet', { params: { appId, workspaceId } }).then(body),
+  create: (c: BridgeClient, appId: string, fields: WorkspaceFields & { owner: { email: string } }) => c.person<Workspace>('workspacesCreate', { params: { appId }, body: fields }).then(body),
+  update: (c: BridgeClient, appId: string, workspaceId: string, fields: WorkspaceFields) => c.person<Workspace>('workspacesUpdate', { params: { appId, workspaceId }, body: fields }).then(body),
+  remove: (c: BridgeClient, appId: string, workspaceId: string) => c.person<Workspace>('workspacesDelete', { params: { appId, workspaceId } }).then(body),
+  /** Which plan the workspace is on: Billing's payer subscription. */
+  setPlan: (c: BridgeClient, appId: string, workspaceId: string, fields: { plan: string; interval?: string; currency?: string }) => c.person('payerSubscriptionSet', { params: { appId, workspaceId }, body: fields }).then(body),
+
+  /** A workspace by its name, which must be unique, else by its id. The names there are, when it is neither. */
+  async find(d: Door, wanted: string): Promise<Workspace> {
+    const listed = (await viaDoor<Workspace[]>(d, 'workspacesList', { query: { search: wanted } })) ?? [];
+    const named = listed.filter((each) => each.name === wanted);
+    if (named.length > 1) throw new CliError('conflict', `More than one workspace is named "${wanted}".`, { hint: 'Name it by its id: `bridge workspace list` shows them.' });
+    const found = named[0] ?? listed.find((each) => each.id === wanted) ?? (await viaDoor<Workspace[]>(d, 'workspacesList')).find((each) => each.id === wanted);
+    if (found === undefined) {
+      const known = (await viaDoor<Workspace[]>(d, 'workspacesList')).map((each) => each.name ?? each.id).join(', ');
+      throw new CliError('not-found', `The app has no workspace "${wanted}".`, { hint: `Its workspaces: ${known === '' ? '(none)' : known}.` });
+    }
+    return found;
+  },
 };
 
 export const members = {

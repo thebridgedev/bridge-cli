@@ -120,6 +120,12 @@ export function createFakeBridge() {
   const workspaces = new Map<string, Json[]>();
   const members = new Map<string, Json[]>();
   const holders = new Map<string, number>();
+  const brandings = new Map<string, Json>();
+  const signInSettings = new Map<string, Json>();
+  const eventLogs = new Map<string, Json[]>();
+  const senders = new Map<string, Json | null>();
+  const schedules = new Map<string, Json[]>();
+  const appUsers = new Map<string, Json[]>();
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
   /** Why Bridge refuses to send invites now: no email-links address, or too many. */
@@ -362,6 +368,16 @@ export function createFakeBridge() {
     const app = apps.get(appId);
     if (!app || (app['owner'] as Json)['workspace'] !== session.workspace) return notFound();
 
+    if (service === 'app-registry' && rest === '/branding') {
+      const current = perApp(brandings, appId, () => ({ scheme: 'auto', colors: {}, radius: 'medium', font: 'system', revision: 1 }) as Json);
+      if (method === 'GET') return json(200, current, { etag: `"${String(current['revision'])}"` });
+      const match = headers['if-match'];
+      if (match === undefined) return json(428, { message: 'Name the revision the change is made on, in If-Match.' });
+      if (match !== `"${String(current['revision'])}"`) return json(412, { message: 'The branding changed since it was read.' });
+      for (const [field, value] of Object.entries(input)) current[field] = field === 'colors' ? { ...(current['colors'] as Json), ...(value as Json) } : value;
+      current['revision'] = (current['revision'] as number) + 1;
+      return json(200, current);
+    }
     if (service === 'app-registry') {
       if (method === 'GET') return json(200, app);
       if (method === 'DELETE') {
@@ -377,6 +393,34 @@ export function createFakeBridge() {
       return json(200, app);
     }
 
+    if (service === 'identity-access' && rest === '/sign-in-settings') {
+      const current = perApp(
+        signInSettings,
+        appId,
+        () => ({ methods: { password: true, magicLink: false, passkeys: false }, signUp: true, signUpPlan: null, lifetimes: { accessTokenSeconds: 300, sessionIdleSeconds: 1_209_600, sessionAbsoluteSeconds: 2_592_000 }, password: { minLength: 8 }, bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } } }) as Json,
+      );
+      if (method === 'GET') return json(200, current);
+      const next = { ...current, ...input, methods: { ...(current['methods'] as Json), ...((input['methods'] as Json | undefined) ?? {}) }, lifetimes: { ...(current['lifetimes'] as Json), ...((input['lifetimes'] as Json | undefined) ?? {}) } };
+      if (!Object.values(next['methods'] as Json).some(Boolean)) return json(400, { message: 'At least one sign-in method stays on.' });
+      Object.assign(current, next);
+      return json(200, current);
+    }
+    if (service === 'events-and-logs' && rest === '/events') {
+      let list = perApp(eventLogs, appId, () => [] as Json[]);
+      const type = url.searchParams.get('type');
+      if (type !== null) list = list.filter((each) => each['type'] === type);
+      const workspace = url.searchParams.get('workspaceId');
+      if (workspace !== null) list = list.filter((each) => each['workspaceId'] === workspace);
+      const from = url.searchParams.get('from');
+      if (from !== null) list = list.filter((each) => String(each['time']) >= from);
+      return json(200, { events: list.slice(0, Number(url.searchParams.get('limit') ?? 100)), next: null });
+    }
+    if (service === 'communication' && rest === '/sender') {
+      if (method === 'GET') return json(200, perApp(senders, appId, () => null));
+      senders.set(appId, { ...input, state: 'pending' });
+      return json(200, senders.get(appId));
+    }
+    if (service === 'billing' && rest === '/connection/health') return json(200, { connected: connections.has(appId), status: connections.get(appId)?.['status'] ?? 'not-connected' });
     if (service === 'identity-access') {
       if (rest === '/keys' && method === 'GET') return json(200, [...keys.values()].filter((k) => k.app === appId && !k.revoked).map(({ secret: _s, app: _a, ...view }) => ({ ...view, kind: 'app_key' })));
       if (rest === '/keys' && method === 'POST') {
@@ -394,9 +438,9 @@ export function createFakeBridge() {
       return notFound();
     }
 
-    if (service === 'accounts') return operatorAccounts(method, rest, headers, input, appId, session.person.id, clock - session.authTime > 300_000);
+    if (service === 'accounts') return operatorAccounts(method, rest, headers, input, appId, session.person.id, clock - session.authTime > 300_000, url);
     if (service === 'billing') return billing(method, rest, url, input, appId);
-    if (service === 'flags') return flagRoutes(method, rest, headers, input, appId);
+    if (service === 'flags') return flagRoutes(method, rest, headers, input, appId, url);
     return notFound();
   }
 
@@ -404,13 +448,34 @@ export function createFakeBridge() {
    * The operator routes for the app's roles, privileges, workspaces, members and invites: the same
    * handlers as the app's server's key routes, with the workspace in the path instead of a header.
    */
-  function operatorAccounts(method: string, rest: string, headers: Record<string, string>, input: Json, appId: string, personId: string, stale: boolean): Response {
+  function operatorAccounts(method: string, rest: string, headers: Record<string, string>, input: Json, appId: string, personId: string, stale: boolean, url: URL): Response {
     const inWorkspace = /^\/workspaces\/([^/]+)(\/(?:members|invites)(?:\/.*)?)$/.exec(rest);
     if (inWorkspace) {
       const [, workspace, tail] = inWorkspace as unknown as [string, string, string];
       return asApp(method, `/v2/accounts${tail}`, { ...headers, 'bridge-workspace': workspace }, input, appId, personId, stale);
     }
-    if (/^\/(roles|privileges)(\/[^/]+)?$/.test(rest) || rest === '/workspaces') return asApp(method, `/v2/accounts${rest}`, headers, input, appId, personId, stale);
+    if (/^\/(roles|privileges)(\/[^/]+)?$/.test(rest) || (rest === '/workspaces' && method === 'GET')) return asApp(method, `/v2/accounts${rest}`, headers, input, appId, personId, stale);
+    const list = perApp(workspaces, appId, () => [] as Json[]);
+    if (rest === '/workspaces' && method === 'POST') {
+      const owner = input['owner'] as { email: string };
+      const made = { id: id('ws'), name: input['name'] ?? null, locale: input['locale'] ?? null, logo: null, state: 'active', owner, createdAt: new Date(clock).toISOString() };
+      list.push(made);
+      perApp(members, `${appId}/${made.id}`, () => [] as Json[]).push({ id: id('member'), user: { id: id('user'), email: owner.email, firstName: null, lastName: null }, role: 'OWNER', status: 'active' });
+      return json(201, made);
+    }
+    if (rest === '/users' && method === 'GET') {
+      const email = url.searchParams.get('email');
+      return json(200, perApp(appUsers, appId, () => [] as Json[]).filter((each) => email === null || String(each['email']).toLowerCase() === email.toLowerCase()));
+    }
+    const one = /^\/workspaces\/([^/]+)$/.exec(rest);
+    if (one !== null) {
+      const found = list.find((each) => each['id'] === one[1]);
+      if (!found) return notFound();
+      if (method === 'GET') return json(200, found);
+      if (method === 'PATCH') return json(200, Object.assign(found, input));
+      list.splice(list.indexOf(found), 1);
+      return json(200, { ...found, state: 'deletion_scheduled', deleteAt: new Date(clock + 30 * 86_400_000).toISOString() });
+    }
     return notFound();
   }
 
@@ -494,9 +559,56 @@ export function createFakeBridge() {
     return notFound();
   }
 
-  function flagRoutes(method: string, rest: string, headers: Record<string, string>, input: Json, appId: string): Response {
+  function flagRoutes(method: string, rest: string, headers: Record<string, string>, input: Json, appId: string, url: URL): Response {
     const items = perApp(flags, appId, () => new Map<string, Json>());
     if (rest === '/segments') return json(200, []);
+    if (rest === '/export') return json(200, { version: 1, flags: [...items.values()].map(({ id: _i, revision: _r, ...each }) => each).sort((a, b) => String(a['key']).localeCompare(String(b['key']))) });
+    if (rest === '/import' && method === 'POST') {
+      const report = { created: [] as string[], updated: [] as { key: string; fields: string[] }[], unchanged: [] as string[], extraneous: [] as string[] };
+      const given = new Set<string>();
+      for (const each of input['flags'] as Json[]) {
+        const key = String(each['key']);
+        given.add(key);
+        const found = items.get(key);
+        if (found === undefined) {
+          report.created.push(key);
+          if (input['dryRun'] !== true) items.set(key, { id: id('flag'), description: '', state: 'off', valueType: 'boolean', onValue: true, offValue: false, rule: null, public: false, ...each, revision: 1 });
+          continue;
+        }
+        const fields = Object.keys(each).filter((field) => JSON.stringify(each[field]) !== JSON.stringify(found[field]));
+        if (fields.length === 0) report.unchanged.push(key);
+        else {
+          report.updated.push({ key, fields });
+          if (input['dryRun'] !== true) Object.assign(found, each, { revision: (found['revision'] as number) + 1 });
+        }
+      }
+      report.extraneous = [...items.keys()].filter((key) => !given.has(key) && !report.created.includes(key));
+      return json(200, report);
+    }
+    if (rest === '/schedules' && method === 'GET') return json(200, perApp(schedules, appId, () => [] as Json[]).filter((each) => url.searchParams.get('flag') === null || each['flag'] === url.searchParams.get('flag')));
+    const scheduleId = /^\/schedules\/([^/]+)$/.exec(rest)?.[1];
+    if (scheduleId !== undefined && method === 'DELETE') {
+      const list = perApp(schedules, appId, () => [] as Json[]);
+      const at = list.findIndex((each) => each['id'] === scheduleId);
+      if (at < 0) return notFound();
+      list.splice(at, 1);
+      return json(200, { deleted: scheduleId });
+    }
+    const scheduling = /^\/flags\/([^/]+)\/schedules$/.exec(rest);
+    if (scheduling !== undefined && scheduling !== null && method === 'POST') {
+      const found = items.get(scheduling[1] as string);
+      if (!found) return notFound();
+      if (headers['if-match'] !== `"${String(found['revision'])}"`) return json(428, { message: 'Name the revision, in If-Match.' });
+      const made = { id: id('schedule'), flag: scheduling[1], at: input['at'], patch: input['patch'], state: 'pending' };
+      perApp(schedules, appId, () => [] as Json[]).push(made);
+      return json(201, made);
+    }
+    const previewing = /^\/flags\/([^/]+)\/deletion-preview$/.exec(rest);
+    if (previewing !== null && previewing !== undefined) {
+      const found = items.get(previewing[1] as string);
+      if (!found) return notFound();
+      return json(200, { dryRun: true, target: { key: found['key'], state: found['state'] }, affects: { schedules: perApp(schedules, appId, () => [] as Json[]).filter((each) => each['flag'] === found['key']).length }, sideEffects: ['App code that reads this flag gets its default.'] });
+    }
     if (rest === '/flags') {
       if (method === 'GET') return json(200, [...items.values()]);
       const key = String(input['key']);
@@ -655,6 +767,17 @@ export function createFakeBridge() {
       perApp(members, `${appId}/${String(workspace['id'])}`, () => [] as Json[]).push(...people);
     },
     roles: (appId: string) => perApp(roles, appId, () => [] as Json[]),
+    /** One event of the app's log, as Events and logs lists them. */
+    addEvent(appId: string, event: { type: string; workspaceId?: string | null; userId?: string | null; data?: Json }) {
+      perApp(eventLogs, appId, () => [] as Json[]).unshift({ id: id('event'), time: new Date(clock).toISOString(), workspaceId: null, userId: null, data: {}, ...event });
+    },
+    /** A person of the app, as Accounts' users route finds them by email. */
+    addUser(appId: string, user: { id: string; email: string }) {
+      perApp(appUsers, appId, () => [] as Json[]).push({ ...user, suspended: false, workspaces: [{ id: 'cust-1', status: 'active' }] });
+    },
+    members: (appId: string, workspace: string) => perApp(members, `${appId}/${workspace}`, () => [] as Json[]),
+    workspaces: (appId: string) => perApp(workspaces, appId, () => [] as Json[]),
+    branding: (appId: string) => perApp(brandings, appId, () => ({ scheme: 'auto', colors: {}, radius: 'medium', font: 'system', revision: 1 }) as Json),
     /** Every invite of a workspace, any state: `bridge/<workspace>` for the developer's own, `<app>/<workspace>` for an app's. */
     invites: (where: string) => perApp(invites, where, () => [] as Json[]),
     /** Bridge refuses to send invites: the app has no email-links address, or the workspace sent too many. */
