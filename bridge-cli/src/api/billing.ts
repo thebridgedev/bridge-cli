@@ -133,6 +133,8 @@ export const billingSettings = {
 
 export const connection = {
   get: (c: BridgeClient, appId: string) => c.person('connectionGet', { params: { appId } }).then(body),
+  /** Whether the connection works, and the state of its webhook. */
+  health: (c: BridgeClient, appId: string) => c.person<{ connection?: string; connected?: boolean; status?: string; webhook?: { state: string } | null }>('connectionHealth', { params: { appId } }).then(body),
   remove: (c: BridgeClient, appId: string) => c.person('connectionDelete', { params: { appId } }).then(body),
   /** Connects Stripe with a pasted secret key: with the developer's sign-in, or as the app's server with `BRIDGE_APP_KEY`. */
   pasteKey: (d: Door, fields: { secretKey: string; publishableKey?: string }) => viaDoor(d, 'connectionPasteKey', { body: { connector: 'stripe', ...fields } }),

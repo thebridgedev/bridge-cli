@@ -106,6 +106,9 @@ export function readMetadata(issuer: string, document: unknown): Discovery {
   // Listed by name when the issuer lists them; else found next to the ones it lists.
   const identityAccess = listed(v2?.['identity_access'], 'identity_access') ?? baseFrom(sessions, '/sessions') ?? baseFrom(signOut, '/sign-out');
   const appRegistry = listed(v2?.['app_registry'], 'app_registry') ?? (baseFrom(accounts, '/accounts') === null ? null : `${baseFrom(accounts, '/accounts') as string}/app-registry`);
+  // Listed by name when the issuer lists them; else beside Accounts, where Bridge keeps every microservice.
+  const eventsAndLogs = listed(v2?.['events_and_logs'], 'events_and_logs') ?? (baseFrom(accounts, '/accounts') === null ? null : `${baseFrom(accounts, '/accounts') as string}/events-and-logs`);
+  const communication = listed(v2?.['communication'], 'communication') ?? (baseFrom(accounts, '/accounts') === null ? null : `${baseFrom(accounts, '/accounts') as string}/communication`);
 
   return {
     issuer,
@@ -122,6 +125,8 @@ export function readMetadata(issuer: string, document: unknown): Discovery {
       billing: required(billing, 'billing'),
       flags: required(flags, 'flags'),
       accounts: required(accounts, 'accounts'),
+      'events-and-logs': required(eventsAndLogs, 'events_and_logs'),
+      communication: required(communication, 'communication'),
     },
   };
 }

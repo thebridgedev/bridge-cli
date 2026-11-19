@@ -53,7 +53,7 @@ describe('app setup', () => {
     // A second run changes nothing.
     const again = await cli.run(['app', 'setup', '--dotenv', envFile]);
     expect(again.data.added).toEqual([]);
-    expect(again.infos[0]).toMatch(/^Kept PUBLIC_BRIDGE_ISSUER=/);
+    expect(again.infos.find((line) => !line.startsWith('bridge: '))).toMatch(/^Kept PUBLIC_BRIDGE_ISSUER=/);
   });
 
   it('makes the .env file when there is none, with another address, page and variable', async () => {

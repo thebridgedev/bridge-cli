@@ -2,6 +2,17 @@
 
 ## [1.0.0-alpha.4] - Unreleased
 
+### Added
+
+- **A line before every command says which server and app it acts on.** `bridge: acting on app Demo (<id>) · https://api.example.com · app from --app, server from BRIDGE_SERVER` goes to stderr, so stdout stays the result alone and a write never lands on another app unannounced. `BRIDGE_NO_BANNER=true` silences it.
+- **The 0.x commands that returned:** `tenant` (list, get, create, update, set-plan, delete), `user` (list, get, invite, update, remove), `token` (list, create, revoke), `role set-default`, `branding get|update`, `event list`, `auth methods list|enable|disable`, `auth config`, `auth password-policy`, `flag toggle`, `flag schedule set|clear|list`, `flag export`, `flag import`, `setup communication`, `setup status`, `info app|auth-config|flags|plans|roles`, `doctor` (also `diagnose`: checks a project's env files against the app), `event auth-attempts`, `flag eval` (worked out on your machine from the flag's rule and the app's segments; `regex` uses the JavaScript engine), `flag init` and `guide` (read from Bridge's public repositories, so it needs the network). Each acts on the version 2 routes; `tenant`, `user` and `token` are the 0.x forms of `workspace`, `member` and `key`.
+- **`--dry-run` on deletes.** `flag delete`, `plan delete`, `tenant delete`, `user remove` and `token revoke` say what they would do and change nothing. A delete without `--dry-run` needs `--yes`.
+
+### Changed
+
+- **Without `--server`, `--issuer`, `BRIDGE_SERVER` or `BRIDGE_ISSUER`, and before any sign-in is saved, the CLI goes to `https://api.thebridge.dev`, as 0.x did.** Every command prints the server it reached, and a password goes only to the issuer that server names on its own address.
+- **`plan create` and `invite send` ask what is yours to decide.** Without a price and a trial (`--price "<amount> <CURRENCY>/<interval>"` with `--trial-days <n>` or `--no-trial`; a free plan needs no trial answer), `plan create` stops with `DECISION_NEEDED` and the questions in `fields`, and creates nothing. `invite send` and `user invite` do the same without `--role`.
+
 ### Changed
 
 - **Change from 0.6: `bridge auth login --password` no longer signs in with delete rights.** The session can do what you may do, except delete: a delete command is refused with a 403 from Bridge. Add `--allow-delete` to allow deletes, up to what you hold yourself (Bridge never gives more than your own rights). The CLI now always tells Bridge which it wants (`delete: false` by default). Browser sign-in already works this way: you tick delete on the approval page, and `--allow-delete` is refused there. Scripts that sign in with `--password` and then delete things need `--allow-delete` added.

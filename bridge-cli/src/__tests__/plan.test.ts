@@ -80,13 +80,33 @@ describe('plan commands', () => {
     expect((await cli.run(['plan', 'get', 'pro'])).data.trial).toEqual({ days: 14, cardRequired: true });
   });
 
+  it('the price and the trial are the developer\'s decisions: without them the command stops, asks and writes nothing', async () => {
+    const none = await cli.run(['plan', 'create', 'pro', '--name', 'Pro']);
+    expect(none.error).toMatchObject({ code: 'DECISION_NEEDED' });
+    expect((none.error?.['fields'] as { name: string }[]).map((each) => each.name)).toEqual(['amount', 'interval', 'currency', 'trial']);
+    expect(none.error?.['fields']).toContainEqual(expect.objectContaining({ name: 'interval', type: 'enum', options: ['day', 'week', 'month', 'year'] }));
+    expect(String(none.error?.['hint'])).toContain('Ask the developer each question');
+    expect(none.exitCode).toBe(1);
+
+    const noTrial = await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--price', '19 EUR/month']);
+    expect((noTrial.error?.['fields'] as { name: string }[]).map((each) => each.name)).toEqual(['trial']);
+    const noDays = await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--price', '19 EUR/month', '--trial']);
+    expect((noDays.error?.['fields'] as { name: string }[]).map((each) => each.name)).toEqual(['trialDays']);
+    expect(last('POST')).toBeUndefined();
+
+    // A free plan needs no trial decision; a trial given or declined is decided.
+    expect((await cli.run(['plan', 'create', 'free', '--name', 'Free', '--price', '0 EUR/month'])).errors).toEqual([]);
+    expect((await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--price', '19 EUR/month', '--no-trial'])).errors).toEqual([]);
+    expect(last('POST')?.body).toMatchObject({ key: 'pro', trial: null });
+  });
+
   it('a usage price needs the plan\'s prices', async () => {
     const done = await cli.run(['plan', 'create', 'x', '--name', 'X', '--usage-price', 'api.calls 0.002 EUR/month']);
     expect(done.error).toMatchObject({ code: 'invalid' });
   });
 
   it('the sub-commands change one entry and write the document back', async () => {
-    await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--price', '10 EUR/month']);
+    await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--price', '10 EUR/month', '--no-trial']);
     await cli.run(['plan', 'usage-price', 'set', 'pro', 'api.calls 0.002 EUR/month included 100']);
     await cli.run(['plan', 'price', 'set', 'pro', '12 EUR/month']);
     expect(last('PATCH')?.body).toEqual({ prices: [{ currency: 'EUR', interval: 'month', amount: 1200, usage: [{ metric: 'api.calls', unitAmount: '0.2', included: 100 }] }] });
@@ -107,7 +127,7 @@ describe('plan commands', () => {
   });
 
   it('update: names only what changes; --no-trial removes the trial', async () => {
-    await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--trial-days', '7']);
+    await cli.run(['plan', 'create', 'pro', '--name', 'Pro', '--price', '10 EUR/month', '--trial-days', '7']);
     await cli.run(['plan', 'update', 'pro', '--name', 'Pro+', '--no-trial']);
     expect(last('PATCH')?.body).toEqual({ name: 'Pro+', trial: null });
     expect((await cli.run(['plan', 'update', 'pro'])).error).toMatchObject({ code: 'invalid', message: 'Nothing to change.' });
@@ -122,7 +142,7 @@ describe('plan commands', () => {
   });
 
   it('archive, and delete only when no workspace is on it', async () => {
-    await cli.run(['plan', 'create', 'old', '--name', 'Old']);
+    await cli.run(['plan', 'create', 'old', '--name', 'Old', '--price', '0 EUR/month']);
     expect((await cli.run(['plan', 'archive', 'old'])).data.archived).toBe(true);
     expect(last('POST')?.body).toEqual({ archived: true });
     await cli.run(['plan', 'archive', 'old', '--undo']);

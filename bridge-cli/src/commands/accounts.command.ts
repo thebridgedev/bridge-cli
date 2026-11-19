@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { appInvites, invites, members, privileges, roles, workspaces, type InviteFields, type RoleFields } from '../api/accounts.js';
-import { CliError, isCliError } from '../core/errors.js';
-import { action, collect, type Deps } from './context.js';
+import { CliError, decisionNeeded, isCliError } from '../core/errors.js';
+import { action, collect, type Context, type Deps } from './context.js';
 
 const KEY_NOTE = " Acts with your sign-in; with BRIDGE_APP_KEY set, as the app's server with that key.";
 
@@ -19,6 +19,30 @@ function withEmailLinksHint(error: unknown, appWorkspace: boolean): never {
     });
   }
   throw error;
+}
+
+/**
+ * Which role an invitee joins with is the developer's decision: stop and ask, offering the app's role keys and naming
+ * the default as a starting suggestion, when `--role` is not given. Nothing is sent.
+ */
+export async function roleDecision(ctx: Context, workspace: string | undefined, command = 'bridge invite send'): Promise<never> {
+  const field = { name: 'role', question: 'Which role should this person get? (a role key from `bridge role list`; the default role is only a starting suggestion)', type: 'string' as const, flag: '--role <key>' };
+  let keys: string[] = [];
+  let fallback: string | undefined;
+  if (workspace !== undefined) {
+    try {
+      const listed = await roles.list(await ctx.door());
+      keys = listed.map((each) => each.key);
+      fallback = listed.find((each) => each.isDefault === true)?.key;
+    } catch {
+      // The roles could not be read: ask all the same.
+    }
+  }
+  throw decisionNeeded(
+    command,
+    [keys.length > 0 ? { ...field, type: 'enum', options: keys } : field],
+    fallback === undefined ? (workspace === undefined ? undefined : '`bridge role list` shows the role keys.') : `The app's default role is ${fallback}; pass it explicitly if that is what the developer wants.`,
+  );
 }
 
 function roleFields(opts: { name?: string; description?: string; privilege?: string[]; default?: boolean }): RoleFields {
@@ -166,11 +190,12 @@ export function registerAccountCommands(program: Command, deps: Deps): void {
     invite
       .command('send <email>')
       .description('Email an invite. Sending again to the same address sends a new link, and the old one stops working. An invite lasts 30 days')
-      .option('--role <role>', "The role they join with; left out, the workspace's default. OWNER needs a recent sign-in")
+      .option('--role <role>', 'The role they join with (a role key, `bridge role list` shows them). Which role is yours to decide: without it the command stops and asks (DECISION_NEEDED). OWNER needs a recent sign-in')
       .option('--first-name <name>', "The person's first name, used when they accept and have none yet")
       .option('--last-name <name>', "The person's last name, used when they accept and have none yet"),
   ).action(
     action(deps, async (ctx, email: string, opts: { workspace?: string; role?: string; firstName?: string; lastName?: string }) => {
+      if (opts.role === undefined) await roleDecision(ctx, opts.workspace);
       const fields: InviteFields = {
         email,
         ...(opts.role === undefined ? {} : { role: opts.role }),

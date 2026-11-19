@@ -110,6 +110,14 @@ bridge flag create team-admin --when "privileges contains USER_WRITE"
 | `flag list` · `get` · `create` · `update` · `on` · `off` · `restore` · `delete` | Feature flags |
 | `flag rule show` · `add` · `set` · `clear` | A flag's rule: ordered branches of conditions, the first match wins |
 | `role` · `privilege` · `workspace list` · `member` | Roles, privileges, your customers' workspaces and their members |
+| `branding get` · `update` | The look of the hosted sign-in page: scheme, colours, radius, font |
+| `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` | Sign-in methods, and the token lifetimes |
+| `event list` | The app's event log, newest first |
+| `tenant` · `user` · `token` | The 0.x forms of `workspace`, `member` and `key`, with `--dry-run` on deletes |
+| `flag toggle` · `schedule set` · `schedule clear` · `export` · `import` | A flag's state at a time, and flags as code |
+| `setup communication` · `setup status` · `info app` · `info flags` | The email sender; the readiness checklist; read the app's configuration |
+| `doctor` · `event auth-attempts` · `flag eval` · `flag init` | Check a project against the app; one person's sign-ins; what a flag gives someone; set a project up for flags |
+| `guide` | The integration guides, from Bridge's public repositories |
 | `check gates` | Lists every direct role, privilege or plan check in your project, with the flag to use instead |
 
 `bridge <command> --help` has every option.
@@ -136,7 +144,7 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 
 | Variable | Flag | What it is |
 |---|---|---|
-| `BRIDGE_SERVER` | `--server` | Your Bridge server's address; the CLI reads the issuer from it. Saved at sign-in, as the issuer |
+| `BRIDGE_SERVER` | `--server` | Your Bridge server's address; the CLI reads the issuer from it. Saved at sign-in, as the issuer. Without any of these, and before a sign-in is saved, `https://api.thebridge.dev` |
 | `BRIDGE_ISSUER` | `--issuer` | Your issuer, instead of the server. Wins over the server. Saved at sign-in |
 | `BRIDGE_APP` | `--app` | The app commands act on. Default: the one chosen with `bridge app use` |
 | `BRIDGE_APP_KEY` | | An app key of your app: roles, privileges, workspaces, members, invites and the Stripe key then run as your app's server with it, instead of with your sign-in |

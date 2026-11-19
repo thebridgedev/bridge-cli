@@ -58,7 +58,7 @@ describe('role and privilege', () => {
   });
 
   it('with BRIDGE_APP_KEY set, the key routes are used as the app\'s server, with that key and no sign-in', async () => {
-    const key = fake.addKey(appId, ['ROLE_DELETE']);
+    const key = fake.addKey(appId, ['ROLE_DELETE', 'apps.settings:manage']);
     await cli.run(['role', 'create', 'editor', '--name', 'Editor'], { env: { BRIDGE_APP_KEY: key } });
     const created = last('POST', '/v2/accounts/roles')!;
     expect(created.headers['x-api-key']).toBe(key);
