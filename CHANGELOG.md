@@ -1,11 +1,16 @@
 # Changelog
 
-## [1.0.0-alpha.3] - Unreleased
+## [1.0.0-alpha.4] - Unreleased
 
 ### Changed
 
 - **Change from 0.6: `bridge auth login --password` no longer signs in with delete rights.** The session can do what you may do, except delete: a delete command is refused with a 403 from Bridge. Add `--allow-delete` to allow deletes, up to what you hold yourself (Bridge never gives more than your own rights). The CLI now always tells Bridge which it wants (`delete: false` by default). Browser sign-in already works this way: you tick delete on the approval page, and `--allow-delete` is refused there. Scripts that sign in with `--password` and then delete things need `--allow-delete` added.
 - **Roles, privileges, workspaces, members, invites and the pasted Stripe key run with your sign-in.** They call the same routes the dashboard uses (`/apps/{appId}/…`), so Bridge checks what you may do, as it does for the dashboard. The CLI no longer makes a one-day app key for them. `bridge invite send --workspace` emails the person an invite they accept, as the dashboard does; `--first-name` and `--last-name` go on the invite, and `--role OWNER` is allowed with a recent sign-in. With `BRIDGE_APP_KEY` set (CI), these commands run as your app's own server with that key, as before, and the CLI makes no key.
+
+## [1.0.0-alpha.3] - Unreleased
+
+### Changed
+
 - **Browser sign-in through the dashboard.** The sign-in page your issuer publishes for the CLI may be on another address than the issuer: on The Bridge it is the dashboard. When you are already signed in there in that browser, you only approve the CLI; otherwise you sign in first, then approve. The CLI says so when it opens the page. Nothing else changes: the CLI still starts a sign-in request for its loopback with PKCE, and the code still goes only to `127.0.0.1`.
 
 ## [1.0.0-alpha.2] - 2026-11-15
