@@ -28,6 +28,12 @@ export interface PasswordSignIn {
   /** The workspace to enter; asked for with `chooseWorkspace` when the person has several and none is named. */
   readonly workspace?: string;
   readonly chooseWorkspace: ChooseWorkspace;
+  /**
+   * Whether the session may delete, up to what the person holds. Off unless asked for: the sign-in always says so,
+   * `delete: false` by default, so a session made in the terminal holds no delete privilege, as a browser approval
+   * does until the delete box is ticked.
+   */
+  readonly allowDelete?: boolean;
 }
 
 /**
@@ -35,7 +41,7 @@ export interface PasswordSignIn {
  * endpoint. The Bridge App is a first-party client, so no page is needed.
  * The code is bound with PKCE to this process and traded at once.
  *
- * 1. `{ email, password, code_challenge }` gives a code, or the workspace step.
+ * 1. `{ email, password, code_challenge, delete }` gives a code, or the workspace step.
  * 2. The workspace step: `{ flow, workspace }` gives the code.
  * 3. The token endpoint trades the code and the verifier for tokens.
  */
@@ -51,6 +57,7 @@ export async function signInWithPassword(fetchFn: Fetch, sessions: Sessions, d: 
       code_challenge: challenge,
       code_challenge_method: 'S256',
       client_id: d.appId,
+      delete: input.allowDelete === true,
       ...(input.workspace === undefined ? {} : { workspace: input.workspace }),
     },
   });

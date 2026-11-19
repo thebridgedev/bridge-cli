@@ -65,6 +65,8 @@ interface Session {
   workspace: string | null;
   authTime: number;
   ended: boolean;
+  /** False when the sign-in said `delete: false`: the person's session then holds no delete privilege. */
+  canDelete?: boolean;
 }
 
 type Json = Record<string, unknown>;
@@ -95,7 +97,7 @@ export function createFakeBridge() {
   const violations: string[] = [];
   const people = new Map<string, Person>();
   const codes = new Map<string, { session: Omit<Session, 'ended'>; challenge: string; redirectUri: string | null }>();
-  const flows = new Map<string, { person: Person; challenge: string; request: SignInRequest | null }>();
+  const flows = new Map<string, { person: Person; challenge: string; request: SignInRequest | null; canDelete?: boolean }>();
   /** Sign-in requests by id: the CLI's challenge, state and loopback return, held by Bridge. */
   const signInRequests = new Map<string, SignInRequest>();
   const sessions = new Map<string, Session>();
@@ -151,9 +153,9 @@ export function createFakeBridge() {
     return { access_token: access, token_type: 'Bearer', expires_in: 300, refresh_token: refresh, id_token: 'unused', ...(session.workspace === null ? {} : { workspace: session.workspace }) };
   }
 
-  function codeFor(person: Person, workspace: string | null, challenge: string, request: SignInRequest | null = null): Response {
+  function codeFor(person: Person, workspace: string | null, challenge: string, request: SignInRequest | null = null, canDelete?: boolean): Response {
     const code = `code-${secret()}`;
-    codes.set(code, { session: { person, workspace, authTime: clock }, challenge: request?.challenge ?? challenge, redirectUri: request?.redirectUri ?? null });
+    codes.set(code, { session: { person, workspace, authTime: clock, ...(canDelete === undefined ? {} : { canDelete }) }, challenge: request?.challenge ?? challenge, redirectUri: request?.redirectUri ?? null });
     return json(200, request === null ? { code } : { code, redirect_uri: request.redirectUri, state: request.state });
   }
 
@@ -179,8 +181,11 @@ export function createFakeBridge() {
       flows.delete(body['flow']);
       const workspace = String(body['workspace']);
       if (!flow.person.workspaces.some((each) => each.id === workspace)) return json(403, { error: 'access_denied', reason: 'not_a_member' });
-      return codeFor(flow.person, workspace, flow.challenge, flow.request);
+      return codeFor(flow.person, workspace, flow.challenge, flow.request, flow.canDelete);
     }
+    // `delete` is for a password sign-in only: a boolean, never on a sign-in request (the approval decides there).
+    if (body['delete'] !== undefined && (typeof body['delete'] !== 'boolean' || body['request'] !== undefined)) return json(400, { error: 'invalid_request' });
+    const canDelete = typeof body['delete'] === 'boolean' ? body['delete'] : undefined;
     // On a sign-in request, the request's challenge and return; the page names neither.
     let request: SignInRequest | null = null;
     if (body['request'] !== undefined) {
@@ -194,12 +199,12 @@ export function createFakeBridge() {
     if (request !== null) request.used = true;
     if (requested === null && person.workspaces.length > 1) {
       const handle = `flow-${secret()}`;
-      flows.set(handle, { person, challenge, request });
+      flows.set(handle, { person, challenge, request, ...(canDelete === undefined ? {} : { canDelete }) });
       return json(200, { next: 'workspace', flow: handle, workspaces: person.workspaces.map((each) => ({ ...each, logo: null })) });
     }
     const workspace = requested ?? person.workspaces[0]?.id ?? null;
     if (workspace !== null && !person.workspaces.some((each) => each.id === workspace)) return json(403, { error: 'access_denied', reason: 'not_a_member' });
-    return codeFor(person, workspace, challenge, request);
+    return codeFor(person, workspace, challenge, request, canDelete);
   }
 
   function token(body: Json): Response {
@@ -301,7 +306,12 @@ export function createFakeBridge() {
         const p = who.session.person;
         return json(200, { id: p.id, email: p.email, firstName: p.firstName, lastName: p.lastName, workspaces: p.workspaces.map((each) => ({ ...each, role: 'OWNER' })) });
       }
-      const own = inviteRoutes(method, path, input, `bridge/${String(who.session.workspace)}`, who.session.person.id);
+      // A session made with `delete: false` holds no delete privilege: a DELETE is refused, whatever the person holds.
+      if (method === 'DELETE' && who.session.canDelete === false) {
+        return problem(403, 'privilege-missing', `This needs the privilege ${entry.privilege ?? 'to delete'}, which this sign-in does not hold.`, { privilege: entry.privilege });
+      }
+      const stale = clock - who.session.authTime > 300_000;
+      const own = inviteRoutes(method, path, input, `bridge/${String(who.session.workspace)}`, who.session.person.id, stale);
       if (own !== null) return own;
       return operator(method, path, url, headers, input, who.session);
     }
@@ -313,16 +323,17 @@ export function createFakeBridge() {
   }
 
   /** Invites in one workspace: list the open ones, send (or send again, with a new link), revoke. */
-  function inviteRoutes(method: string, path: string, input: Json, where: string, invitedBy: string | null): Response | null {
+  function inviteRoutes(method: string, path: string, input: Json, where: string, invitedBy: string | null, stale = false): Response | null {
     if (!path.startsWith('/v2/accounts/invites')) return null;
     const list = perApp(invites, where, () => [] as Json[]);
     if (path === '/v2/accounts/invites' && method === 'GET') return json(200, list.filter((each) => each['state'] === 'open'));
     if (path === '/v2/accounts/invites' && method === 'POST') {
       if (inviteRefusal === 'no-email-links') return problem(409, 'conflict', 'The app has no email-links address, so its emails cannot carry a link.');
       if (inviteRefusal === 'too-many') return problem(429, 'rate-limited', 'Too many invites from this workspace for now.', {}, { 'retry-after': '3600' });
-      if (input['role'] === 'OWNER') return problem(409, 'granting-owner', 'Invite people with another role; an Owner then offers them the Owner role.');
+      // An Owner invite by a person needs a fresh sign-in (the identity re-check); an app's server key passes its own checks.
+      if (input['role'] === 'OWNER' && stale) return problem(401, 'identity-recheck', 'Sign in again to confirm it is you.', { maxAge: 300 });
       const email = String(input['email']).toLowerCase();
-      const fields = { role: input['role'] ?? 'MEMBER', state: 'open', expiresAt: new Date(clock + 30 * 86_400_000).toISOString(), invitedBy };
+      const fields = { role: input['role'] ?? 'MEMBER', ...(input['firstName'] === undefined ? {} : { firstName: input['firstName'] }), ...(input['lastName'] === undefined ? {} : { lastName: input['lastName'] }), state: 'open', expiresAt: new Date(clock + 30 * 86_400_000).toISOString(), invitedBy };
       const existing = list.find((each) => each['email'] === email);
       if (existing) return json(201, Object.assign(existing, fields));
       const made = { id: id('inv'), email, createdAt: new Date(clock).toISOString(), ...fields };
@@ -383,8 +394,23 @@ export function createFakeBridge() {
       return notFound();
     }
 
+    if (service === 'accounts') return operatorAccounts(method, rest, headers, input, appId, session.person.id, clock - session.authTime > 300_000);
     if (service === 'billing') return billing(method, rest, url, input, appId);
     if (service === 'flags') return flagRoutes(method, rest, headers, input, appId);
+    return notFound();
+  }
+
+  /**
+   * The operator routes for the app's roles, privileges, workspaces, members and invites: the same
+   * handlers as the app's server's key routes, with the workspace in the path instead of a header.
+   */
+  function operatorAccounts(method: string, rest: string, headers: Record<string, string>, input: Json, appId: string, personId: string, stale: boolean): Response {
+    const inWorkspace = /^\/workspaces\/([^/]+)(\/(?:members|invites)(?:\/.*)?)$/.exec(rest);
+    if (inWorkspace) {
+      const [, workspace, tail] = inWorkspace as unknown as [string, string, string];
+      return asApp(method, `/v2/accounts${tail}`, { ...headers, 'bridge-workspace': workspace }, input, appId, personId, stale);
+    }
+    if (/^\/(roles|privileges)(\/[^/]+)?$/.test(rest) || rest === '/workspaces') return asApp(method, `/v2/accounts${rest}`, headers, input, appId, personId, stale);
     return notFound();
   }
 
@@ -459,6 +485,7 @@ export function createFakeBridge() {
       return json(200, current);
     }
     if (rest === '/connection') {
+      if (method === 'POST') return pasteStripeKey(input, appId);
       if (method === 'GET') return json(200, connections.get(appId) ?? null);
       const current = connections.get(appId);
       if (current) current['status'] = 'disconnected';
@@ -510,15 +537,20 @@ export function createFakeBridge() {
     return json(200, found);
   }
 
-  /** The routes version 2 offers only to the app's own server: an app key, acting on its app. */
-  function asApp(method: string, path: string, headers: Record<string, string>, input: Json, appId: string): Response {
-    if (path === '/v2/billing/connection' && method === 'POST') {
-      if (input['secretKey'] === 'sk_test_refused') return json(400, { statusCode: 400, message: 'Stripe refused the key: it is not valid.' });
-      pastedKeys.push(String(input['secretKey']));
-      const made = { connector: input['connector'], status: 'active', account: 'acct_test', publicKey: input['publishableKey'] ?? null };
-      connections.set(appId, made);
-      return json(200, made);
-    }
+  function pasteStripeKey(input: Json, appId: string): Response {
+    if (input['secretKey'] === 'sk_test_refused') return json(400, { statusCode: 400, message: 'Stripe refused the key: it is not valid.' });
+    pastedKeys.push(String(input['secretKey']));
+    const made = { connector: input['connector'], status: 'active', account: 'acct_test', publicKey: input['publishableKey'] ?? null };
+    connections.set(appId, made);
+    return json(200, made);
+  }
+
+  /**
+   * The app's own server's key routes, acting on its app. The operator routes for the same things end here too:
+   * `invitedBy` is the person, for those.
+   */
+  function asApp(method: string, path: string, headers: Record<string, string>, input: Json, appId: string, invitedBy: string | null = null, stale = false): Response {
+    if (path === '/v2/billing/connection' && method === 'POST') return pasteStripeKey(input, appId);
     const listOf = (map: Map<string, Json[]>) => perApp(map, appId, () => [] as Json[]);
     const crud = (list: Json[], base: string, idName: string): Response => {
       if (path === base && method === 'GET') return json(200, list);
@@ -540,7 +572,7 @@ export function createFakeBridge() {
     if (path.startsWith('/v2/accounts/invites')) {
       const workspace = headers['bridge-workspace'] as string;
       if (!listOf(workspaces).some((each) => each['id'] === workspace)) return notFound();
-      return inviteRoutes(method, path, input, `${appId}/${workspace}`, null) as Response;
+      return inviteRoutes(method, path, input, `${appId}/${workspace}`, invitedBy, stale) as Response;
     }
     if (path.startsWith('/v2/accounts/members')) {
       const workspace = headers['bridge-workspace'] as string;
@@ -577,6 +609,8 @@ export function createFakeBridge() {
     revoked,
     pastedKeys,
     keys,
+    /** Every request that made an app key: `POST /v2/identity-access/apps/{appId}/keys`. */
+    keyMints: () => requests.filter((r) => r.method === 'POST' && /^\/v2\/identity-access\/apps\/[^/]+\/keys$/.test(r.path)),
     apps,
     sessions,
     holders,
@@ -609,6 +643,12 @@ export function createFakeBridge() {
       const appId = id('app');
       apps.set(appId, { id: appId, name: fields.name, state: 'active', owner: { workspace: fields.owner }, addresses: [], defaultReturn: null, profile: {}, trust: null, version: 1 });
       return appId;
+    },
+    /** An app key made out of band, as an operator would for CI: no request is made, so `keyMints` stays as it was. */
+    addKey(appId: string, privileges: string[]): string {
+      const made = { id: id('key'), app: appId, name: 'ci', privileges, secret: secret(), revoked: false };
+      keys.set(made.id, made);
+      return `bk.${appId}.${made.id}.${made.secret}`;
     },
     addWorkspace(appId: string, workspace: Json, people: Json[] = []) {
       perApp(workspaces, appId, () => [] as Json[]).push(workspace);

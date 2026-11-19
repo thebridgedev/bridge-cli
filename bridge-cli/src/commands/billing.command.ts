@@ -1,6 +1,5 @@
 import type { Command } from 'commander';
 import { billingSettings, connection, metrics, products, taxes, type BillingSettings, type ProductFields } from '../api/billing.js';
-import { withAppKey } from '../api/keys.js';
 import { CliError } from '../core/errors.js';
 import { parseFeature, parsePrice } from '../money.js';
 import { action, collect, type Context, type Deps } from './context.js';
@@ -191,7 +190,7 @@ export function registerBillingCommands(program: Command, deps: Deps): void {
     );
   stripe
     .command('connect')
-    .description('Connect Stripe in test mode with your secret key (sk_test_…). Asked for without echo, or read from stdin')
+    .description('Connect Stripe in test mode with your secret key (sk_test_…). Asked for without echo, or read from stdin. Needs a recent sign-in')
     .option('--secret-key-stdin', 'Read the secret key from stdin')
     .option('--publishable-key <key>', 'Your publishable key (pk_test_…)')
     .option('--live', 'Allow a live key (sk_live_…)')
@@ -205,12 +204,8 @@ export function registerBillingCommands(program: Command, deps: Deps): void {
         if (opts.publishableKey !== undefined && !/^pk_(test|live)_\w+$/.test(opts.publishableKey)) {
           throw new CliError('invalid', 'That is not a Stripe publishable key (pk_test_…).');
         }
-        const { c, appId } = await ctx.forApp();
-        const connected = await withAppKey(c, appId, [], ctx.env, (key) =>
-          connection.pasteKey(c, key, { secretKey, ...(opts.publishableKey === undefined ? {} : { publishableKey: opts.publishableKey }) }),
-          { warn: (message) => ctx.io.info(message) },
-        );
-        ctx.io.result(connected);
+        const door = await ctx.door();
+        ctx.io.result(await connection.pasteKey(door, { secretKey, ...(opts.publishableKey === undefined ? {} : { publishableKey: opts.publishableKey }) }));
       }),
     );
   stripe

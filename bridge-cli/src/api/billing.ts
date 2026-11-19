@@ -1,4 +1,5 @@
 import type { BridgeClient } from '../client.js';
+import { viaDoor, type Door } from './door.js';
 
 /** A price per unit of a metric above what the price includes, in minor units as text ("0.25"). */
 export interface UsagePrice {
@@ -133,7 +134,6 @@ export const billingSettings = {
 export const connection = {
   get: (c: BridgeClient, appId: string) => c.person('connectionGet', { params: { appId } }).then(body),
   remove: (c: BridgeClient, appId: string) => c.person('connectionDelete', { params: { appId } }).then(body),
-  /** Connects Stripe with a pasted secret key: the app-key route, the one version 2 offers for it. */
-  pasteKey: (c: BridgeClient, appKey: string, fields: { secretKey: string; publishableKey?: string }) =>
-    c.withKey('connectionPasteKey', appKey, { body: { connector: 'stripe', ...fields } }).then(body),
+  /** Connects Stripe with a pasted secret key: with the developer's sign-in, or as the app's server with `BRIDGE_APP_KEY`. */
+  pasteKey: (d: Door, fields: { secretKey: string; publishableKey?: string }) => viaDoor(d, 'connectionPasteKey', { body: { connector: 'stripe', ...fields } }),
 };

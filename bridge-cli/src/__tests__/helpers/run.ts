@@ -105,8 +105,9 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
     env,
     run,
     /** Signs in with the password, in the person's only workspace, and checks it worked. */
-    async signIn(email = 'dev@example.com', password = 'correct horse') {
-      const done = await run(['auth', 'login', '--password', '--email', email, '--password-stdin'], { stdin: `${password}\n` });
+    /** Signs in with a password. The session may delete (`--allow-delete`) unless the test passes its own flags: a plain `--password` session holds no delete privilege. */
+    async signIn(email = 'dev@example.com', password = 'correct horse', flags: string[] = ['--allow-delete']) {
+      const done = await run(['auth', 'login', '--password', '--email', email, '--password-stdin', ...flags], { stdin: `${password}\n` });
       if (done.exitCode !== 0) throw new Error(`sign-in failed: ${JSON.stringify(done.errors)}`);
       return done;
     },
