@@ -10,6 +10,48 @@ export interface Address {
   readonly uses: AddressUse[];
 }
 
+export type AppMode = 'development' | 'production';
+export type SignInLocation = 'app' | 'hosted';
+
+/** The "Your app" settings the App registry shows on an app. */
+export interface YourApp {
+  readonly mode: AppMode;
+  readonly main: string | null;
+  readonly mainChoices: string[];
+  readonly passkeyDomain: string | null;
+  readonly signIn: { readonly location: SignInLocation; readonly path: string; readonly returnPath: string; readonly emailLinks: SignInLocation | null; readonly emailLinksOpenOn: string | null };
+  readonly productionRules: Rule[];
+}
+
+/** One rule production keeps on. `passes: null` means the App registry does not know it (the password rule: Identity and Access checks it when users sign in). */
+export interface Rule {
+  readonly rule: string;
+  readonly text: string;
+  readonly passes: boolean | null;
+}
+
+/** The answer of `GET /apps/{appId}/mode`. */
+export interface ModeAnswer {
+  readonly mode: AppMode;
+  readonly main: string | null;
+  readonly rules: Rule[];
+  readonly canSwitchToProduction: boolean;
+}
+
+/** The answer of `GET /apps/{appId}/sign-in-settings/production`: the password rule's status and who must choose a new password. */
+export interface ProductionStatus {
+  readonly mode: string | null;
+  readonly passwordRules: { readonly passes: boolean; readonly preset: string; readonly required: string };
+  readonly usersToChooseNewPassword: number;
+}
+
+/** The answer of `GET /apps/{appId}/sign-in-settings/passkey-impact?main=`. */
+export interface PasskeyImpact {
+  readonly from: string | null;
+  readonly to: string | null;
+  readonly stopWorking: number;
+}
+
 export interface App {
   readonly id: string;
   readonly name: string;
@@ -17,6 +59,7 @@ export interface App {
   readonly addresses: Address[];
   readonly defaultReturn: string | null;
   readonly profile?: Record<string, string>;
+  readonly yourApp?: YourApp;
   readonly trust?: { readonly issuer: string; readonly audience: string } | null;
   readonly [field: string]: unknown;
 }
@@ -30,6 +73,12 @@ export interface AppFields {
   readonly website?: string | null;
   readonly privacyPolicy?: string | null;
   readonly termsOfService?: string | null;
+  /** At creation: development or production, and the main address (listed if it is not). */
+  readonly mode?: AppMode;
+  readonly main?: string | null;
+  readonly signIn?: { location?: SignInLocation; path?: string; returnPath?: string; emailLinks?: SignInLocation | null };
+  /** You have seen how many passkeys stop working and go ahead with a main address on another domain. */
+  readonly confirmPasskeys?: boolean;
 }
 
 export function checkUses(uses: readonly string[]): AddressUse[] {
@@ -54,6 +103,18 @@ export const apps = {
   },
   async update(c: BridgeClient, appId: string, fields: AppFields): Promise<App> {
     return (await c.person<App>('appsUpdate', { params: { appId }, body: fields })).body;
+  },
+  async mode(c: BridgeClient, appId: string): Promise<ModeAnswer> {
+    return (await c.person<ModeAnswer>('appsModeGet', { params: { appId } })).body;
+  },
+  async switchMode(c: BridgeClient, appId: string, mode: AppMode): Promise<App> {
+    return (await c.person<App>('appsModeSwitch', { params: { appId }, body: { mode, confirm: true } })).body;
+  },
+  async production(c: BridgeClient, appId: string): Promise<ProductionStatus> {
+    return (await c.person<ProductionStatus>('productionStatus', { params: { appId } })).body;
+  },
+  async passkeyImpact(c: BridgeClient, appId: string, main: string): Promise<PasskeyImpact> {
+    return (await c.person<PasskeyImpact>('passkeyImpact', { params: { appId }, query: { main } })).body;
   },
   async remove(c: BridgeClient, appId: string): Promise<unknown> {
     return (await c.person('appsDelete', { params: { appId } })).body;

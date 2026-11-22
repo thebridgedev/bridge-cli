@@ -5,6 +5,7 @@ import { CliError } from '../core/errors.js';
 import { normalizeIssuer, secureUrl } from '../core/urls.js';
 import { setEnvValue } from '../setup/env-file.js';
 import { action, collect, type Deps } from './context.js';
+import { registerYourAppCommands } from './your-app.command.js';
 
 interface ProfileOptions {
   name?: string;
@@ -59,21 +60,26 @@ export function registerAppCommands(program: Command, deps: Deps): void {
       .option('--sign-in-return <url>', 'An address sign-in may return to; repeat for several', collect)
       .option('--email-links <url>', 'The page email links (sign-up, password reset, invites) open', collect)
       .option('--browser-origin <origin>', 'An origin whose pages may call Bridge from the browser; repeat for several', collect)
+      .option('--mode <mode>', 'development | production (default: follows the main address)')
+      .option('--main <origin>', 'The main address: its domain is where passkeys belong (listed if it is not)')
       .option('--no-use', 'Create it without choosing it'),
   ).action(
-    action(deps, async (ctx, opts: ProfileOptions & { signInReturn?: string[]; emailLinks?: string[]; browserOrigin?: string[]; use?: boolean }) => {
+    action(deps, async (ctx, opts: ProfileOptions & { signInReturn?: string[]; emailLinks?: string[]; browserOrigin?: string[]; use?: boolean; mode?: string; main?: string }) => {
       const c = await ctx.client();
       const byUrl = new Map<string, Set<string>>();
       const add = (urls: string[] | undefined, use: string) => urls?.forEach((url) => byUrl.set(url, (byUrl.get(url) ?? new Set()).add(use)));
       add(opts.signInReturn, 'sign-in-return');
       add(opts.emailLinks, 'email-links');
       add(opts.browserOrigin, 'browser-origin');
+      if (opts.mode !== undefined && opts.mode !== 'development' && opts.mode !== 'production') throw new CliError('invalid', `--mode is development or production: ${opts.mode}`);
       const addresses = [...byUrl].map(([url, uses]) => ({ url, uses: checkUses([...uses]) }));
       const made = await apps.create(c, {
         ...profile(opts),
         name: opts.name as string,
         ...(addresses.length === 0 ? {} : { addresses }),
         ...(opts.signInReturn?.[0] === undefined ? {} : { defaultReturn: opts.signInReturn[0] }),
+        ...(opts.mode === undefined ? {} : { mode: opts.mode as 'development' | 'production' }),
+        ...(opts.main === undefined ? {} : { main: opts.main }),
       });
       if (opts.use !== false) {
         const issuer = await ctx.issuer();
@@ -234,4 +240,6 @@ export function registerAppCommands(program: Command, deps: Deps): void {
         ctx.io.result({ addresses: changed.addresses, defaultReturn: changed.defaultReturn });
       }),
     );
+
+  registerYourAppCommands(app, deps);
 }

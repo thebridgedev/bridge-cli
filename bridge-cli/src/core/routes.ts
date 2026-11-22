@@ -58,6 +58,11 @@ export const ROUTES = {
   appsGet: r('GET', 'app-registry', '/apps/{appId}', 'person'),
   appsUpdate: r('PATCH', 'app-registry', '/apps/{appId}', 'person'),
   appsDelete: r('DELETE', 'app-registry', '/apps/{appId}', 'person'),
+  // Development or production mode, and what production keeps on; the passkeys a new main address would stop.
+  appsModeGet: r('GET', 'app-registry', '/apps/{appId}/mode', 'person'),
+  appsModeSwitch: r('POST', 'app-registry', '/apps/{appId}/mode', 'person'),
+  productionStatus: r('GET', 'identity-access', '/apps/{appId}/sign-in-settings/production', 'person'),
+  passkeyImpact: r('GET', 'identity-access', '/apps/{appId}/sign-in-settings/passkey-impact', 'person'),
 
   // App keys.
   keysList: r('GET', 'identity-access', '/apps/{appId}/keys', 'person'),

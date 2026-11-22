@@ -138,6 +138,28 @@ export function createFakeBridge() {
     return map.get(app) as T;
   };
 
+  /** What Identity and Access knows for TBP-872: whether the password rules are at least Recommended and how many users must choose a new one. */
+  const production = new Map<string, Json>();
+  /** How many passkeys each app's users made on its main address's domain. */
+  const passkeys = new Map<string, number>();
+  const domainOf = (origin: string | null): string | null => (origin === null ? null : new URL(origin).hostname.split('.').slice(-2).join('.'));
+  const isLocal = (origin: string | null) => origin !== null && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(origin);
+  /** The app's "Your app" settings, kept on the record; an app made by `addApp` has none until read, and then production with no main address. */
+  function yourAppOf(app: Json): Json {
+    if (app['yourApp'] === undefined) app['yourApp'] = { mode: 'production', main: null, signIn: { location: 'hosted', path: '/auth/login', returnPath: '/auth/oauth-callback', emailLinks: null } };
+    return app['yourApp'] as Json;
+  }
+  const productionRules = (main: string | null) => [
+    { rule: 'main-address-is-a-real-website', text: 'Main address is a real website', passes: main !== null && !isLocal(main) && /^https:/.test(main) },
+    { rule: 'password-rules-at-least-recommended', text: 'Password rules at least Recommended', passes: null as boolean | null },
+  ];
+  function withYourApp(app: Json): Json {
+    const mine = yourAppOf(app);
+    const main = mine['main'] as string | null;
+    const choices = (app['addresses'] as { url: string; uses: string[] }[]).filter((each) => each.uses.includes('browser-origin') && !each.url.includes('*')).map((each) => each.url);
+    return { ...app, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main) } };
+  }
+
   let signInPage: string | null = null;
   /** What the server's protected resource metadata names as its issuer, when a test changes it. */
   let protectedResourceIssuer: string | null = null;
@@ -358,9 +380,13 @@ export function createFakeBridge() {
   function operator(method: string, path: string, url: URL, headers: Record<string, string>, input: Json, session: Session): Response {
     if (path === '/v2/app-registry/apps') {
       if (method === 'GET') return json(200, [...apps.values()].filter((app) => (app['owner'] as Json)['workspace'] === session.workspace));
-      const app = { id: id('app'), name: input['name'], state: 'active', owner: { workspace: session.workspace }, addresses: input['addresses'] ?? [], defaultReturn: input['defaultReturn'] ?? null, profile: {}, trust: null, version: 1 };
+      const given = ((input['addresses'] as { url: string; uses: string[] }[] | undefined) ?? []).map((each) => ({ url: each.url, uses: [...each.uses] }));
+      const main = typeof input['main'] === 'string' ? input['main'] : null;
+      if (main !== null && !given.some((each) => each.url === main)) given.push({ url: main, uses: ['browser-origin'] });
+      const app = { id: id('app'), name: input['name'], state: 'active', owner: { workspace: session.workspace }, addresses: given, defaultReturn: input['defaultReturn'] ?? null, profile: {}, trust: null, version: 1 };
+      Object.assign(app, { yourApp: { mode: input['mode'] ?? (main !== null && /localhost/.test(main) ? 'development' : 'production'), main, signIn: { location: 'app', path: '/auth/login', returnPath: '/auth/oauth-callback', emailLinks: null } } });
       apps.set(app.id as string, app);
-      return json(201, app);
+      return json(201, withYourApp(app));
     }
     const match = /^\/v2\/([a-z-]+)\/apps\/([^/]+)(\/.*)?$/.exec(path);
     if (!match) return notFound();
@@ -378,19 +404,47 @@ export function createFakeBridge() {
       current['revision'] = (current['revision'] as number) + 1;
       return json(200, current);
     }
+    if (service === 'app-registry' && rest === '/mode') {
+      const mine = yourAppOf(app);
+      if (method === 'GET') return json(200, { mode: mine['mode'], main: mine['main'], rules: productionRules(mine['main'] as string | null), canSwitchToProduction: productionRules(mine['main'] as string | null).every((rule) => rule.passes !== false), version: app['version'] });
+      if (input['confirm'] !== true) return json(409, { message: 'Switching needs a confirmation: send confirm: true.' });
+      if (input['mode'] === 'production' && productionRules(mine['main'] as string | null).some((rule) => rule.passes !== true && rule.rule === 'main-address-is-a-real-website')) {
+        return json(409, { message: 'The app can go to production once its main address is a real website, not localhost.' });
+      }
+      mine['mode'] = input['mode'];
+      return json(200, withYourApp(app));
+    }
+    if (service === 'identity-access' && rest === '/sign-in-settings/production') {
+      return json(200, { mode: yourAppOf(app)['mode'], passwordRules: { passes: perApp(production, appId, () => ({ passes: true, users: 0 }) as Json)['passes'], preset: 'basic', required: 'recommended' }, usersToChooseNewPassword: perApp(production, appId, () => ({ passes: true, users: 0 }) as Json)['users'] });
+    }
+    if (service === 'identity-access' && rest === '/sign-in-settings/passkey-impact') {
+      const from = domainOf(yourAppOf(app)['main'] as string | null);
+      const to = domainOf(url.searchParams.get('main'));
+      return json(200, { from, to, stopWorking: from === null || from === to ? 0 : (passkeys.get(appId) ?? 0) });
+    }
     if (service === 'app-registry') {
-      if (method === 'GET') return json(200, app);
+      if (method === 'GET') return json(200, withYourApp(app));
       if (method === 'DELETE') {
         apps.delete(appId);
         return json(200, { deleted: appId });
       }
+      if (input['main'] !== undefined) {
+        const was = domainOf(yourAppOf(app)['main'] as string | null);
+        const next = domainOf(input['main'] as string | null);
+        if (!(app['addresses'] as { url: string }[]).some((each) => each.url === input['main'])) return json(400, { message: 'The main address must be one of the app\'s listed addresses.' });
+        if (was !== null && was !== next && input['confirmPasskeys'] !== true) return json(409, { message: 'Passkeys belong to the main address\'s domain.' });
+        yourAppOf(app)['main'] = input['main'];
+      }
+      const mine = yourAppOf(app);
+      if (input['signIn'] !== undefined) mine['signIn'] = { ...(mine['signIn'] as Json), ...(input['signIn'] as Json) };
       for (const [field, value] of Object.entries(input)) {
+        if (['main', 'confirmPasskeys', 'signIn', 'mode'].includes(field)) continue;
         if (['logo', 'website', 'privacyPolicy', 'termsOfService'].includes(field)) (app['profile'] as Json)[field] = value;
         else app[field] = value;
       }
       const returns = (app['addresses'] as { url: string; uses: string[] }[]).filter((each) => each.uses.includes('sign-in-return')).map((each) => each.url);
       if (app['defaultReturn'] !== null && !returns.includes(app['defaultReturn'] as string)) return json(400, { message: 'defaultReturn must be one of the app\'s sign-in returns.' });
-      return json(200, app);
+      return json(200, withYourApp(app));
     }
 
     if (service === 'identity-access' && rest === '/sign-in-settings') {
@@ -755,6 +809,20 @@ export function createFakeBridge() {
       const appId = id('app');
       apps.set(appId, { id: appId, name: fields.name, state: 'active', owner: { workspace: fields.owner }, addresses: [], defaultReturn: null, profile: {}, trust: null, version: 1 });
       return appId;
+    },
+    /** What Identity and Access answers for the production switch: the password rules pass or not, and how many users must choose a new password. */
+    setProduction(appId: string, status: { passes: boolean; users: number }) {
+      production.set(appId, status);
+    },
+    /** How many passkeys the app's users made on its main address's domain. */
+    setPasskeys(appId: string, count: number) {
+      passkeys.set(appId, count);
+    },
+    /** Sets an app's list and "Your app" settings out of band. */
+    setYourApp(appId: string, fields: { mode: 'development' | 'production'; main: string | null; addresses: { url: string; uses: string[] }[] }) {
+      const app = apps.get(appId) as Json;
+      app['addresses'] = fields.addresses;
+      Object.assign(yourAppOf(app), { mode: fields.mode, main: fields.main });
     },
     /** An app key made out of band, as an operator would for CI: no request is made, so `keyMints` stays as it was. */
     addKey(appId: string, privileges: string[]): string {

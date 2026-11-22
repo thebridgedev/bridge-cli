@@ -102,6 +102,9 @@ bridge flag create team-admin --when "privileges contains USER_WRITE"
 | `app list` · `create` · `use` · `get` · `update` · `delete` | Your apps; `update` sets the name, logo, website, privacy policy and terms |
 | `app address list` · `add` · `remove` | Sign-in returns, email links, browser origins, sign-out and checkout returns |
 | `app default-return <url>` | The sign-in return used when a sign-in names none |
+| `app main [origin]` | Show the main address (its domain is where passkeys belong), or move it; a move to another domain shows how many passkeys stop working and needs `--confirm-passkeys` |
+| `app sign-in` | Where users sign in (`--location app\|hosted`) and the paths under Advanced (`--path`, `--return-path`, `--email-links`) |
+| `app mode [development\|production]` | Show the mode and what production keeps on, or switch it (`--yes` confirms; production needs its rules to hold) |
 | `key list` · `create` · `revoke` | App keys, for your server |
 | `plan list` · `get` · `create` · `update` · `apply` · `archive` · `delete` | Plans as one document; `apply <file>` creates or replaces one from JSON |
 | `plan price` · `usage-price` · `feature` · `limit` (`set`/`add`, `remove`) | Change one entry of a plan |
