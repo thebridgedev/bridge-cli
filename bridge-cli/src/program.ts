@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { registerAccountCommands } from './commands/accounts.command.js';
+import { registerSecurityCommands } from './commands/security.command.js';
 import { registerAppCommands } from './commands/app.command.js';
 import { registerAuthCommands } from './commands/auth.command.js';
 import { registerBillingCommands } from './commands/billing.command.js';
@@ -39,6 +40,8 @@ export function buildProgram(deps: Deps, version = '0.0.0'): Command {
   registerCompatCommands(program, deps);
   // After the auth commands: it adds `auth methods|config|password-policy` to the `auth` group.
   registerSettingsCommands(program, deps);
+  // After the account and settings commands: it adds `workspace limit` and `auth sign-up-protection|leaked-passwords|admin-notices|flagged-sign-ups`.
+  registerSecurityCommands(program, deps);
   // After the settings commands: it adds `event auth-attempts` to the `event` group.
   registerDiagnoseCommands(program, deps);
   registerInfoCommands(program, deps);

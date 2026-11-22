@@ -24,10 +24,22 @@ export interface SignInSettings {
   readonly signUpPlan: string | null;
   readonly lifetimes: { readonly accessTokenSeconds: number; readonly sessionIdleSeconds: number; readonly sessionAbsoluteSeconds: number };
   readonly password: Readonly<Record<string, unknown>>;
+  /** Off, watch (the default) or block. Absent on a server that does not have it yet. */
+  readonly signUpProtection?: SignUpProtection;
+  /** Warn (the default) or refuse. */
+  readonly leakedPasswords?: LeakedPasswords;
+  /** A daily summary for the app's admins; off by default. */
+  readonly adminNotices?: boolean;
   readonly bounds?: { readonly lifetimes?: Readonly<Record<string, { readonly min: number; readonly max: number }>> };
 }
 
+export type SignUpProtection = 'off' | 'watch' | 'block';
+export type LeakedPasswords = 'warn' | 'refuse';
+
 export interface SignInSettingsFields {
+  signUpProtection?: SignUpProtection;
+  leakedPasswords?: LeakedPasswords;
+  adminNotices?: boolean;
   methods?: Partial<SignInSettings['methods']>;
   lifetimes?: Partial<SignInSettings['lifetimes']>;
 }

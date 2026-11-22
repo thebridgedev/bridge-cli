@@ -126,6 +126,10 @@ export function createFakeBridge() {
   const senders = new Map<string, Json | null>();
   const schedules = new Map<string, Json[]>();
   const appUsers = new Map<string, Json[]>();
+  /** Blocked email domains: the app's (`<app>`) and each workspace's (`<app>/<workspace>`). */
+  const domainBlockLists = new Map<string, Json[]>();
+  const workspaceLimits = new Map<string, number | null>();
+  const flagged = new Map<string, Json[]>();
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
   /** Why Bridge refuses to send invites now: no email-links address, or too many. */
@@ -421,6 +425,10 @@ export function createFakeBridge() {
       return json(200, senders.get(appId));
     }
     if (service === 'billing' && rest === '/connection/health') return json(200, { connected: connections.has(appId), status: connections.get(appId)?.['status'] ?? 'not-connected' });
+    if (service === 'identity-access' && rest === '/flagged-sign-ups') {
+      const list = perApp(flagged, appId, () => [] as Json[]).filter((each) => ((each['signUpRisk'] as Json)['score'] as number) >= Number(url.searchParams.get('minScore') ?? 1));
+      return json(200, { signUps: list.slice(0, Number(url.searchParams.get('limit') ?? 50)), next: null });
+    }
     if (service === 'identity-access') {
       if (rest === '/keys' && method === 'GET') return json(200, [...keys.values()].filter((k) => k.app === appId && !k.revoked).map(({ secret: _s, app: _a, ...view }) => ({ ...view, kind: 'app_key' })));
       if (rest === '/keys' && method === 'POST') {
@@ -455,6 +463,8 @@ export function createFakeBridge() {
       return asApp(method, `/v2/accounts${tail}`, { ...headers, 'bridge-workspace': workspace }, input, appId, personId, stale);
     }
     if (/^\/(roles|privileges)(\/[^/]+)?$/.test(rest) || (rest === '/workspaces' && method === 'GET')) return asApp(method, `/v2/accounts${rest}`, headers, input, appId, personId, stale);
+    const security = loginSecurity(method, rest, input, appId, personId);
+    if (security !== null) return security;
     const list = perApp(workspaces, appId, () => [] as Json[]);
     if (rest === '/workspaces' && method === 'POST') {
       const owner = input['owner'] as { email: string };
@@ -477,6 +487,61 @@ export function createFakeBridge() {
       return json(200, { ...found, state: 'deletion_scheduled', deleteAt: new Date(clock + 30 * 86_400_000).toISOString() });
     }
     return notFound();
+  }
+
+  /** Suspending with a reason, the blocked domains (the app's and a workspace's), the workspace limit. */
+  function loginSecurity(method: string, rest: string, input: Json, appId: string, personId: string): Response | null {
+    const people = perApp(appUsers, appId, () => [] as Json[]);
+    const suspend = /^\/users\/([^/]+)\/(suspend|resume)$/.exec(rest);
+    if (suspend !== null && method === 'POST') {
+      const found = people.find((each) => each['id'] === suspend[1]);
+      if (!found) return notFound();
+      if (suspend[2] === 'suspend') Object.assign(found, { suspended: true, suspension: { by: `person:${personId}`, at: new Date(clock).toISOString(), reason: (input['reason'] as string | undefined) ?? null, viaDomain: null } });
+      else Object.assign(found, { suspended: false, suspension: null });
+      return json(200, { id: found['id'], email: found['email'], suspended: found['suspended'], suspension: found['suspension'] ?? null });
+    }
+    const wsBlocks = /^\/workspaces\/([^/]+)\/domain-blocks(?:\/([^/]+))?$/.exec(rest);
+    if (wsBlocks !== null) {
+      const list = perApp(domainBlockLists, `${appId}/${wsBlocks[1]}`, () => [] as Json[]);
+      if (method === 'POST') list.push({ domain: String(input['domain']).toLowerCase(), by: `person:${personId}`, at: new Date(clock).toISOString(), reason: (input['reason'] as string | undefined) ?? null });
+      if (method === 'DELETE') domainBlockLists.set(`${appId}/${wsBlocks[1]}`, list.filter((each) => each['domain'] !== wsBlocks[2]));
+      return json(200, perApp(domainBlockLists, `${appId}/${wsBlocks[1]}`, () => [] as Json[]));
+    }
+    const preview = /^\/domain-blocks\/([^/]+)\/preview$/.exec(rest);
+    if (preview !== null && method === 'GET') {
+      const on = people.filter((each) => String(each['email']).toLowerCase().endsWith(`@${preview[1]}`));
+      return json(200, { domain: preview[1], users: on.length, active: on.filter((each) => !each['suspended']).length, blocked: perApp(domainBlockLists, appId, () => [] as Json[]).some((each) => each['domain'] === preview[1]) });
+    }
+    const blocks = /^\/domain-blocks(?:\/([^/]+))?$/.exec(rest);
+    if (blocks !== null) {
+      const list = perApp(domainBlockLists, appId, () => [] as Json[]);
+      if (method === 'POST') {
+        const domain = String(input['domain']).toLowerCase();
+        list.push({ domain, by: `person:${personId}`, at: new Date(clock).toISOString(), reason: (input['reason'] as string | undefined) ?? null });
+        let suspended = 0;
+        if (input['suspendExisting'] === true) {
+          for (const each of people.filter((one) => String(one['email']).toLowerCase().endsWith(`@${domain}`) && !one['suspended'])) {
+            Object.assign(each, { suspended: true, suspension: { by: `person:${personId}`, at: new Date(clock).toISOString(), reason: null, viaDomain: domain } });
+            suspended += 1;
+          }
+        }
+        return json(200, { domain, suspended });
+      }
+      if (method === 'DELETE') {
+        domainBlockLists.set(appId, list.filter((each) => each['domain'] !== blocks[1]));
+        return json(200, { domain: blocks[1] });
+      }
+      return json(200, list);
+    }
+    if (rest === '/workspace-limit') {
+      if (method === 'PUT') {
+        const wanted = input['workspacesPerPerson'];
+        if (wanted !== null && !(typeof wanted === 'number' && Number.isInteger(wanted) && wanted >= 1)) return json(400, { message: 'workspacesPerPerson is a whole number from 1, or null for no limit.' });
+        workspaceLimits.set(appId, wanted as number | null);
+      }
+      return json(200, { workspacesPerPerson: workspaceLimits.has(appId) ? workspaceLimits.get(appId) : null });
+    }
+    return null;
   }
 
   function catalog(map: Map<string, Map<string, Json>>, method: string, rest: string, url: URL, input: Json, appId: string, kind: 'plans' | 'products'): Response {
@@ -775,6 +840,12 @@ export function createFakeBridge() {
     addUser(appId: string, user: { id: string; email: string }) {
       perApp(appUsers, appId, () => [] as Json[]).push({ ...user, suspended: false, workspaces: [{ id: 'cust-1', status: 'active' }] });
     },
+    /** A sign-up Sign-up protection flagged, as the app's admins read it. */
+    addFlagged(appId: string, signUp: { user: string; email: string; score: number; reasons: string[] }) {
+      perApp(flagged, appId, () => [] as Json[]).push({ user: signUp.user, email: signUp.email, leakedPassword: null, signUpRisk: { score: signUp.score, reasons: signUp.reasons }, signedUpAt: new Date(clock).toISOString() });
+    },
+    /** The blocked domains of the app (`<app>`) or of one workspace (`<app>/<workspace>`). */
+    domainBlocks: (where: string) => perApp(domainBlockLists, where, () => [] as Json[]),
     members: (appId: string, workspace: string) => perApp(members, `${appId}/${workspace}`, () => [] as Json[]),
     workspaces: (appId: string) => perApp(workspaces, appId, () => [] as Json[]),
     branding: (appId: string) => perApp(brandings, appId, () => ({ scheme: 'auto', colors: {}, radius: 'medium', font: 'system', revision: 1 }) as Json),

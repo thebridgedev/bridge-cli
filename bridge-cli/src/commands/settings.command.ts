@@ -144,6 +144,9 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
         tokens: { accessTokenTTL: settings.lifetimes.accessTokenSeconds, refreshTokenTTL: settings.lifetimes.sessionAbsoluteSeconds, sessionIdleTTL: settings.lifetimes.sessionIdleSeconds },
         passwordRules: settings.password,
         signUp: settings.signUp,
+        ...(settings.signUpProtection === undefined ? {} : { signUpProtection: settings.signUpProtection }),
+        ...(settings.leakedPasswords === undefined ? {} : { leakedPasswords: settings.leakedPasswords }),
+        ...(settings.adminNotices === undefined ? {} : { adminNotices: settings.adminNotices }),
       });
     }),
   );

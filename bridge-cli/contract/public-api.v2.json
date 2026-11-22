@@ -1,6 +1,6 @@
 {
   "about": "A pinned copy of the endpoints Bridge's public API promises, from Bridge's API contract: each one's method, path, callers, privilege, the body fields it accepts and what it requires. The contract test checks every route the CLI calls, and the fields it sends, against it. To update: copy the contract's endpoints at a newer commit and change `source`.",
-  "source": {"file": "tools/access/public-api.json", "commit": "5be4240243dcd8bf0e8d1d16eadbfcc3a965535d"},
+  "source": {"file": "tools/access/public-api.json", "commit": "5be4240243dcd8bf0e8d1d16eadbfcc3a965535d", "also": "TBP-83, TBP-84, TBP-85 and TBP-87 entries (domain blocks, workspace limit, flagged sign-ups, login marks, the reason on suspend, the new sign-in settings) added from bridge-server commit 0e5a6ba (batch integration/batch-login-security)"},
   "endpoints": [
     {"method": "GET", "path": "/v2/accounts/apps/{appId}/custom-fields", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
     {"method": "GET", "path": "/v2/accounts/apps/{appId}/key-privileges", "public": false, "callers": ["person", "service:mcp"], "privilege": null, "fields": [], "requires": ["workspace"]},
@@ -15,7 +15,7 @@
     {"method": "PATCH", "path": "/v2/accounts/apps/{appId}/roles/{roleId}", "public": false, "callers": ["person", "service:mcp"], "privilege": "apps.settings:manage", "fields": ["description", "isDefault", "key", "name", "privileges"], "requires": ["workspace"]},
     {"method": "GET", "path": "/v2/accounts/apps/{appId}/users", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
     {"method": "POST", "path": "/v2/accounts/apps/{appId}/users/{userId}/resume", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": [], "requires": ["workspace"]},
-    {"method": "POST", "path": "/v2/accounts/apps/{appId}/users/{userId}/suspend", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": [], "requires": ["workspace"]},
+    {"method": "POST", "path": "/v2/accounts/apps/{appId}/users/{userId}/suspend", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": ["reason"], "requires": ["workspace"]},
     {"method": "GET", "path": "/v2/accounts/apps/{appId}/workspaces", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
     {"method": "POST", "path": "/v2/accounts/apps/{appId}/workspaces", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": ["locale", "logo", "name", "onboarded", "owner"], "requires": ["workspace"]},
     {"method": "DELETE", "path": "/v2/accounts/apps/{appId}/workspaces/{workspaceId}", "public": false, "callers": ["person", "service:mcp"], "privilege": "TENANT_DELETE", "fields": [], "requires": ["recent-sign-in", "workspace"]},
@@ -274,7 +274,7 @@
     {"method": "GET", "path": "/v2/identity-access/apps/{appId}/sign-in-options", "public": true, "callers": [], "privilege": null, "fields": [], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-in-requests", "public": true, "callers": [], "privilege": null, "fields": ["client_id", "code_challenge", "code_challenge_method", "link_address", "redirect_uri", "resource", "scope", "state"], "requires": []},
     {"method": "GET", "path": "/v2/identity-access/apps/{appId}/sign-in-settings", "public": false, "callers": ["person", "service:mcp"], "privilege": null, "fields": [], "requires": ["workspace"]},
-    {"method": "PATCH", "path": "/v2/identity-access/apps/{appId}/sign-in-settings", "public": false, "callers": ["person", "service:mcp"], "privilege": "apps.settings:manage", "fields": ["lifetimes", "methods", "password", "signUp", "signUpPlan"], "requires": ["recent-sign-in", "workspace"]},
+    {"method": "PATCH", "path": "/v2/identity-access/apps/{appId}/sign-in-settings", "public": false, "callers": ["person", "service:mcp"], "privilege": "apps.settings:manage", "fields": ["adminNotices", "leakedPasswords", "lifetimes", "methods", "password", "signUp", "signUpPlan", "signUpProtection"], "requires": ["recent-sign-in", "workspace"]},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-up", "public": true, "callers": [], "privilege": null, "fields": ["code_challenge", "code_challenge_method", "email", "firstName", "invite", "lastName", "link_address", "password", "request", "workspace"], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/sign-up/verify", "public": true, "callers": [], "privilege": null, "fields": ["code_verifier", "token"], "requires": []},
     {"method": "POST", "path": "/v2/identity-access/apps/{appId}/token", "public": true, "callers": [], "privilege": null, "fields": ["client_id", "client_secret", "code", "code_verifier", "grant_type", "key", "redirect_uri", "refresh_token", "resource", "scope", "workspace"], "requires": []},
@@ -314,6 +314,17 @@
     {"method": "GET", "path": "/v2/webhooks/apps/{appId}/event-types", "public": false, "callers": ["person"], "privilege": null, "fields": [], "requires": ["workspace"]},
     {"method": "POST", "path": "/v2/webhooks/apps/{appId}/secret/rotate", "public": false, "callers": ["person"], "privilege": "apps.settings:manage", "fields": [], "requires": ["recent-sign-in", "workspace"]},
     {"method": "GET", "path": "/v2/webhooks/apps/{appId}/settings", "public": false, "callers": ["person"], "privilege": null, "fields": [], "requires": ["workspace"]},
-    {"method": "PUT", "path": "/v2/webhooks/apps/{appId}/settings", "public": false, "callers": ["person"], "privilege": "apps.settings:manage", "fields": ["enabled", "events", "url"], "requires": ["recent-sign-in", "workspace"]}
+    {"method": "PUT", "path": "/v2/webhooks/apps/{appId}/settings", "public": false, "callers": ["person"], "privilege": "apps.settings:manage", "fields": ["enabled", "events", "url"], "requires": ["recent-sign-in", "workspace"]},
+    {"method": "GET", "path": "/v2/accounts/apps/{appId}/domain-blocks", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
+    {"method": "POST", "path": "/v2/accounts/apps/{appId}/domain-blocks", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": ["domain", "reason", "suspendExisting"], "requires": ["workspace"]},
+    {"method": "DELETE", "path": "/v2/accounts/apps/{appId}/domain-blocks/{domain}", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": [], "requires": ["workspace"]},
+    {"method": "GET", "path": "/v2/accounts/apps/{appId}/domain-blocks/{domain}/preview", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
+    {"method": "GET", "path": "/v2/accounts/apps/{appId}/workspace-limit", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
+    {"method": "PUT", "path": "/v2/accounts/apps/{appId}/workspace-limit", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": ["workspacesPerPerson"], "requires": ["workspace"]},
+    {"method": "GET", "path": "/v2/accounts/apps/{appId}/workspaces/{workspaceId}/domain-blocks", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
+    {"method": "POST", "path": "/v2/accounts/apps/{appId}/workspaces/{workspaceId}/domain-blocks", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": ["domain", "reason"], "requires": ["workspace"]},
+    {"method": "DELETE", "path": "/v2/accounts/apps/{appId}/workspaces/{workspaceId}/domain-blocks/{domain}", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:write", "fields": [], "requires": ["workspace"]},
+    {"method": "GET", "path": "/v2/identity-access/apps/{appId}/flagged-sign-ups", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]},
+    {"method": "GET", "path": "/v2/identity-access/apps/{appId}/login-marks", "public": false, "callers": ["person", "service:mcp"], "privilege": "accounts.members:read", "fields": [], "requires": ["workspace"]}
   ]
 }
