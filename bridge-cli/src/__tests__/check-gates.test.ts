@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { buildProgram } from '../program';
 import { checkGates, formatGateReport } from '../commands/check.command';
-import { codeGateFindings } from '../gate-rules';
+import { codeGateFindings, docGateViolations } from '../gate-rules';
 
 let root: string;
 const write = (path: string, body: string) => {
@@ -75,6 +75,12 @@ describe('bridge check gates', () => {
     "@RequirePrivilege('USER_READ')",
   ])('leaves alone %s', (line) => {
     expect(codeGateFindings(line, 'x.ts')).toEqual([]);
+  });
+
+  it('flags a route rule on a privilege in a guide, by either name format, never ANONYMOUS or AUTHENTICATED', () => {
+    expect(docGateViolations("Use `{ path: '/team/*', privilege: 'users:write' }` for admins.").map((v) => v.rule)).toEqual(['a route rule on a privilege']);
+    expect(docGateViolations("Use `{ path: '/team/*', privilege: 'USER_WRITE' }` for admins.").map((v) => v.rule)).toEqual(['a route rule on a privilege']);
+    expect(docGateViolations("Use `{ path: '/api/*', privilege: 'AUTHENTICATED', featureFlag: 'api' }`.")).toEqual([]);
   });
 
   it('names the flag only when the key is written out', () => {

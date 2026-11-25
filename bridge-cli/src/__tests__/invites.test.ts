@@ -129,7 +129,7 @@ describe("invites into one of the app's workspaces", () => {
   });
 
   it('with BRIDGE_APP_KEY set, the key routes are used as the app\'s server, with the key and no sign-in', async () => {
-    const key = fake.addKey(appId, ['USER_READ', 'USER_WRITE']);
+    const key = fake.addKey(appId, ['users:read', 'users:write']);
     const env = { BRIDGE_APP_KEY: key };
     const sent = await cli.run(['invite', 'send', 'dave@customer.example', '--workspace', 'cust-1', '--role', 'MEMBER'], { env });
     expect(sent.errors).toEqual([]);
@@ -168,7 +168,7 @@ describe("invites into one of the app's workspaces", () => {
   });
 
   it('with BRIDGE_APP_KEY set, the names and the Owner role go on the key route', async () => {
-    const key = fake.addKey(appId, ['USER_WRITE']);
+    const key = fake.addKey(appId, ['users:write']);
     fake.advance(10 * 60_000);
     const sent = await cli.run(['invite', 'send', 'erin@customer.example', '--workspace', 'cust-1', '--role', 'OWNER', '--first-name', 'Erin'], { env: { BRIDGE_APP_KEY: key } });
     expect(sent.errors).toEqual([]);
