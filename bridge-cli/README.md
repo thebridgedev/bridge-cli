@@ -90,7 +90,7 @@ bridge stripe connect
 
 # 6. Flags: every gate in your code is a flag, and its rule says who gets it.
 bridge flag create analytics --when "bridge:billing.entitlement.analytics eq true"
-bridge flag create team-admin --when "privileges contains USER_WRITE"
+bridge flag create team-admin --when "privileges contains users:write"
 ```
 
 ## Commands

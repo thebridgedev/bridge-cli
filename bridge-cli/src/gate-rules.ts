@@ -32,7 +32,7 @@ export const GATE_EXCEPTION_MARKER = 'bridge-gate-exception';
 
 const ROLE_INSTEAD =
   'A flag ruled on the privilege this role stands for (`bridge role list` shows which privileges each role holds), ' +
-  'e.g. `privileges contains "USER_WRITE"`. Then `<FeatureFlag key="…">` or a route rule with `featureFlag` in SvelteKit, ' +
+  'e.g. `privileges contains "users:write"`. Then `<FeatureFlag key="…">` or a route rule with `featureFlag` in SvelteKit, ' +
   '`@RequireFeatureFlag(\'…\')` in NestJS, `bridge.protect({ featureFlag: \'…\' })` in Express. A role rule (`user.role eq "ADMIN"`) only when the developer means the role itself.';
 
 const PLAN_NAME_INSTEAD =
@@ -167,7 +167,7 @@ export const DOC_FORBIDDEN: Array<[string, RegExp]> = [
   ['a plan-name helper', /\bis(?:Pro|Free|Enterprise|Team|Business)(?:Plan|User)?\b\s*[(=]/],
   ['a route rule on plans', /\bplans\s*:\s*\[/],
   ['a route rule on a role', /\{[^}\n]*\b(?:match|path)\s*:[^}\n]*\brole\s*:\s*['"`]/],
-  ['a route rule on a privilege', /\bprivilege\s*:\s*['"`](?!ANONYMOUS|AUTHENTICATED)[A-Z_]+['"`]/],
+  ['a route rule on a privilege', /\bprivilege\s*:\s*['"`](?!(?:ANONYMOUS|AUTHENTICATED)['"`])[A-Za-z][A-Za-z0-9_.:-]*['"`]/],
   ['a flag rule that names plans', /"attribute"\s*:\s*"(?:tenant\.plan|bridge:billing\.plan)"/],
   ['browser counting called demo-grade', /demo[- ]grade/i],
   ['browser counting called display only', /display,? not enforcement/i],
