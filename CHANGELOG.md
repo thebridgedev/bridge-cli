@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.0-alpha.6] - Unreleased
+
+### Changed
+
+- **Bridge's built-in privileges are named `resource:action`**, as every other privilege is: `users:read`, `users:write`, `users:delete`, `workspace:read`, `workspace:write`, `workspace:delete`, `roles:delete`, `flags:delete`, `app:delete`, `keys:write`, `branding:delete`, `communication:delete`, `phone-numbers:write`, and `app:use` for signed in (they were `USER_READ`, `TENANT_WRITE`, `AUTHENTICATED` and so on). The examples, `flag create --when` help and `check gates` advice use the new names. A `--privilege`, `--privileges` or `--when` naming one the old way needs the new name once your Bridge server has them.
+
 ## [1.0.0-alpha.5] - Unreleased
 
 ### Added
