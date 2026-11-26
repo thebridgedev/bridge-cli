@@ -8,7 +8,10 @@
  *
  * The server understands two response shapes from the sign-in page:
  *   `?code=<code>&state=<state>&iss=<issuer>`    → success
- *   `?error=access_denied&state=<state>`          → the person cancelled (or another error)
+ *   `?error=<code>&state=<state>&iss=<issuer>`   → not approved (`access_denied`), or not finished (any other)
+ *
+ * An error is told in a fixed message per code, the same in the terminal and on the browser's page: never
+ * the `error_description` from the address bar, which anyone can write.
  *
  * It CSRF-checks the returned `state` against the value the caller
  * generated, and requires the issuer the page names (`iss`, RFC 9207) to be
@@ -29,7 +32,7 @@ export interface RunLoopbackOptions {
   expectedIssuer?: string;
   /** Body of the success page rendered to the browser. */
   successHtml?: string;
-  /** Total time (ms) we'll wait for the redirect before giving up. */
+  /** Total time (ms) we'll wait for the redirect before giving up; {@link StartedLoopback.expireIn} sets it again. */
   timeoutMs?: number;
 }
 
@@ -40,6 +43,22 @@ export interface StartedLoopback {
   result: Promise<LoopbackResult>;
   /** Force-close the server (e.g. on Ctrl-C or a token-exchange failure). */
   close: () => void;
+  /**
+   * Gives up `ms` from now instead: when the sign-in request expires, so the CLI never waits longer than the
+   * request lives, and stops at the moment an approval could no longer reach it.
+   */
+  expireIn: (ms: number) => void;
+}
+
+/** What to do after any sign-in that did not finish: said in the terminal and on the browser's page alike. */
+export const SIGN_IN_AGAIN_HINT = 'Run `bridge auth login` again.';
+
+/** The fixed message for each way a browser sign-in ends without a code. */
+export function messageForError(error: string): { title: string; message: string } {
+  if (error === 'access_denied') return { title: 'Sign-in was not approved', message: 'Sign-in was not approved in the browser.' };
+  if (error === 'timeout') return { title: 'Sign-in request expired', message: 'The sign-in request expired before it was approved.' };
+  if (error === 'temporarily_unavailable') return { title: 'Sign-in was not finished', message: 'Sign-in was not finished: Bridge could not be reached while approving it.' };
+  return { title: 'Sign-in was not finished', message: 'Sign-in was not finished: Bridge could not complete it.' };
 }
 
 /**
@@ -137,19 +156,19 @@ const DEFAULT_SUCCESS_HTML = `<!doctype html>
 </body>
 </html>`;
 
-const FAILURE_HTML = (msg: string) => `<!doctype html>
+const FAILURE_HTML = (title: string, msg: string) => `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bridge CLI — Sign-in failed</title>
+  <title>Bridge CLI — ${escapeHtml(title)}</title>
   <style>${SHARED_STYLES} h1 { color: var(--color-bridge-red); }</style>
 </head>
 <body>
   <main class="card">
     <span class="logo">${BRIDGE_LOGO}</span>
     ${FAILURE_ICON}
-    <h1>Sign-in failed</h1>
+    <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(msg)}</p>
   </main>
 </body>
@@ -195,11 +214,13 @@ export function verifyCallback(
     throw new LoopbackError('State mismatch on the sign-in callback (possible CSRF).', 'state_mismatch');
   }
   if (parsed.error) {
-    if (parsed.error === 'access_denied') {
-      throw new LoopbackError('Sign-in cancelled.', 'access_denied');
+    // The browser came back with an error from Bridge: said in its own fixed words, whatever the address says.
+    // An error naming another issuer is not this sign-in's.
+    if (expectedIssuer !== undefined && parsed.iss !== undefined && parsed.iss !== expectedIssuer) {
+      throw new LoopbackError('The sign-in callback names another issuer.', 'issuer_mismatch');
     }
-    const desc = parsed.errorDescription ? `: ${parsed.errorDescription}` : '';
-    throw new LoopbackError(`Authorization failed (${parsed.error})${desc}`, parsed.error);
+    const kind = parsed.error === 'access_denied' || parsed.error === 'temporarily_unavailable' ? parsed.error : 'not_finished';
+    throw new LoopbackError(messageForError(parsed.error).message, kind);
   }
   if (!parsed.code) {
     throw new LoopbackError('Authorization callback was missing the `code` parameter.', 'invalid_callback');
@@ -228,7 +249,7 @@ export function verifyCallback(
  *  - Closes itself after the first GET to `/callback` completes its response.
  *  - Closes itself if the token-exchange caller invokes `close()` (e.g. on a
  *    later failure that wants to abort the wait).
- *  - Times out after `timeoutMs` (default 5 minutes).
+ *  - Times out after `timeoutMs` (default 5 minutes), or when `expireIn` says: the sign-in request's own lifetime.
  */
 export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLoopback> {
   const {
@@ -269,10 +290,12 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
       resolveResult(verified);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const title = err instanceof LoopbackError && err.kind !== 'state_mismatch' && err.kind !== 'invalid_callback' && !err.kind.startsWith('issuer_') ? messageForError(err.kind).title : 'Sign-in failed';
       res.statusCode = 400;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Connection', 'close');
-      res.end(FAILURE_HTML(msg), () => {
+      res.end(FAILURE_HTML(title, `${msg} ${SIGN_IN_AGAIN_HINT}`), () => {
         server.close();
         server.closeAllConnections();
       });
@@ -293,23 +316,30 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
   const redirectUri = `http://127.0.0.1:${addr.port}/callback`;
 
   // Hard timeout — never leave a port bound forever.
-  const timeoutHandle = setTimeout(() => {
-    rejectResult(
-      new LoopbackError(
-        `Timed out waiting for the browser callback after ${Math.round(timeoutMs / 1000)}s.`,
-        'timeout',
-      ),
-    );
-    server.close();
-    server.closeAllConnections();
-  }, timeoutMs);
-  // Don't keep the process alive for the timeout once the server closes.
-  timeoutHandle.unref?.();
+  let settled = false;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const expireIn = (ms: number) => {
+    if (settled) return;
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    timeoutHandle = setTimeout(() => {
+      rejectResult(new LoopbackError(messageForError('timeout').message, 'timeout'));
+      server.close();
+      server.closeAllConnections();
+    }, ms);
+    // Don't keep the process alive for the timeout once the server closes.
+    timeoutHandle.unref?.();
+  };
+  expireIn(timeoutMs);
 
   // Make sure the timeout is cleared whichever way the promise settles.
-  result.finally(() => clearTimeout(timeoutHandle)).catch(() => {
-    /* swallow — we only attached this for cleanup */
-  });
+  result
+    .finally(() => {
+      settled = true;
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    })
+    .catch(() => {
+      /* swallow — we only attached this for cleanup */
+    });
 
   return {
     redirectUri,
@@ -322,6 +352,7 @@ export async function startLoopback(opts: RunLoopbackOptions): Promise<StartedLo
         // server already closed; ignore.
       }
     },
+    expireIn,
   };
 }
 
