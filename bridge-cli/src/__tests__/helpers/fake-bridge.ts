@@ -139,6 +139,7 @@ export function createFakeBridge() {
   };
 
   let signInPage: string | null = null;
+  let signInRequestSeconds = 600;
   /** What the server's protected resource metadata names as its issuer, when a test changes it. */
   let protectedResourceIssuer: string | null = null;
 
@@ -176,7 +177,7 @@ export function createFakeBridge() {
     }
     const handle = `request-${secret()}`;
     signInRequests.set(handle, { redirectUri, challenge: body['code_challenge'], state: body['state'], used: false });
-    return json(201, { request: handle, expires_in: 600 });
+    return json(201, { request: handle, expires_in: signInRequestSeconds });
   }
 
   /** The challenge endpoint: what the CLI's password sign-in and Bridge's sign-in page (on a sign-in request) both call. */
@@ -729,6 +730,10 @@ export function createFakeBridge() {
     now: () => clock,
     advance(ms: number) {
       clock += ms;
+    },
+    /** How long a sign-in request lives, as its `expires_in` says. */
+    setSignInRequestSeconds(seconds: number) {
+      signInRequestSeconds = seconds;
     },
     /** The issuer publishes its sign-in page, and its sign-in requests, in its metadata. */
     setSignInPage(url: string | null) {

@@ -126,7 +126,35 @@ describe('auth login (browser)', () => {
         return { ok: true };
       },
     });
-    expect(done.error).toMatchObject({ code: 'cancelled', message: 'Sign-in cancelled.' });
+    expect(done.error).toMatchObject({ code: 'cancelled', message: 'Sign-in was not approved in the browser.', hint: 'Run `bridge auth login` again.' });
+    expect(done.exitCode).not.toBe(0);
+  });
+
+  it('stops at once when the page sends the browser back with an error: says it was not finished, and to sign in again (TBP-971)', async () => {
+    const started = Date.now();
+    const done = await cli.run(['auth', 'login'], {
+      openBrowser: async () => {
+        const [request] = [...fake.signInRequests.values()];
+        const back = new URL(request?.redirectUri as string);
+        back.searchParams.set('error', 'temporarily_unavailable');
+        back.searchParams.set('state', request?.state as string);
+        back.searchParams.set('iss', ISSUER);
+        setTimeout(() => void fetch(back).catch(() => undefined), 10);
+        return { ok: true };
+      },
+    });
+    expect(done.error).toMatchObject({ code: 'unavailable', message: 'Sign-in was not finished: Bridge could not be reached while approving it.', hint: 'Run `bridge auth login` again.' });
+    expect(done.exitCode).toBe(2);
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(tokenCalls()).toEqual([]);
+  });
+
+  it('waits only as long as the sign-in request lives, then says it expired (TBP-971)', async () => {
+    fake.setSignInRequestSeconds(0.2);
+    const started = Date.now();
+    const done = await cli.run(['auth', 'login'], { openBrowser: async () => ({ ok: true }) });
+    expect(done.error).toMatchObject({ code: 'flow-expired', message: 'The sign-in request expired before it was approved.', hint: 'Run `bridge auth login` again.' });
+    expect(Date.now() - started).toBeLessThan(4_000);
   });
 
   it('without a sign-in page and its requests, says to sign in with --password, and opens nothing', async () => {

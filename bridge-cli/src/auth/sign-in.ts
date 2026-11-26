@@ -1,7 +1,7 @@
 import type { Discovery } from '../core/discovery.js';
 import { CliError } from '../core/errors.js';
 import { call, type Fetch } from '../core/http.js';
-import { LoopbackError, startLoopback, type StartedLoopback } from './loopback.js';
+import { LoopbackError, SIGN_IN_AGAIN_HINT, startLoopback, type StartedLoopback } from './loopback.js';
 import { codeChallengeFor, generateCodeVerifier, generateState } from './pkce.js';
 import type { Sessions } from './session.js';
 import type { StoredSession } from './store.js';
@@ -96,15 +96,24 @@ export function signInPageUrl(page: string, request: string): string {
  * loopback return, checks the return against the Bridge App's registered ones (a loopback IP on any port, RFC 8252
  * 7.3), and answers with an opaque id. The code made on it goes only to that return, and only the verifier trades it.
  */
-async function startRequest(fetchFn: Fetch, d: Discovery, request: { codeChallenge: string; redirectUri: string; state: string }): Promise<string> {
-  const { body } = await call<{ request?: unknown }>(fetchFn, {
+async function startRequest(fetchFn: Fetch, d: Discovery, request: { codeChallenge: string; redirectUri: string; state: string }): Promise<{ id: string; expiresInMs: number | null }> {
+  const { body } = await call<{ request?: unknown; expires_in?: unknown }>(fetchFn, {
     method: 'POST',
     url: d.signInRequests as string,
     body: { redirect_uri: request.redirectUri, code_challenge: request.codeChallenge, code_challenge_method: 'S256', state: request.state, client_id: d.appId },
   });
   if (typeof body?.request !== 'string' || body.request === '') throw new CliError('misconfigured', 'Bridge did not start the sign-in request.');
-  return body.request;
+  const seconds = body.expires_in;
+  return { id: body.request, expiresInMs: typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null };
 }
+
+/** How each way a browser sign-in ends without a code is reported: what happened, and to run it again. */
+const LOOPBACK_KINDS: Readonly<Record<string, CliError['kind']>> = {
+  access_denied: 'cancelled',
+  timeout: 'flow-expired',
+  temporarily_unavailable: 'unavailable',
+  not_finished: 'unavailable',
+};
 
 /**
  * Browser sign-in through Bridge's own sign-in page (RFC 8252): a loopback listener on 127.0.0.1, a sign-in request
@@ -123,7 +132,10 @@ export async function signInWithBrowser(fetchFn: Fetch, sessions: Sessions, d: D
   const loopback = await startLoopback({ expectedState: state, expectedIssuer: d.issuer, timeoutMs: input.timeoutMs });
   try {
     const request = await startRequest(fetchFn, d, { codeChallenge: codeChallengeFor(verifier), redirectUri: loopback.redirectUri, state });
-    const url = signInPageUrl(d.signInPage, request);
+    // Wait as long as the request lives, never longer: an approval after that is refused at Bridge, and
+    // never sends the browser to a CLI that has stopped listening.
+    if (request.expiresInMs !== null) loopback.expireIn(Math.min(request.expiresInMs, input.timeoutMs ?? Infinity));
+    const url = signInPageUrl(d.signInPage, request.id);
     input.onListening?.(loopback, url);
     const opened = await input.openBrowser(url);
     input.show(
@@ -135,7 +147,8 @@ export async function signInWithBrowser(fetchFn: Fetch, sessions: Sessions, d: D
     return await sessions.exchangeCode(d, code, verifier, loopback.redirectUri);
   } catch (error) {
     if (error instanceof LoopbackError) {
-      throw new CliError(error.kind === 'access_denied' ? 'cancelled' : 'invalid', error.message);
+      const kind = LOOPBACK_KINDS[error.kind];
+      throw kind === undefined ? new CliError('invalid', error.message) : new CliError(kind, error.message, { hint: SIGN_IN_AGAIN_HINT });
     }
     throw error;
   } finally {
