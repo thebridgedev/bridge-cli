@@ -5,7 +5,7 @@ import { createCli } from './helpers/run';
 
 describe('parseCondition', () => {
   it('reads "<attribute> <operator> <value>"', () => {
-    expect(parseCondition('privileges contains USER_WRITE')).toEqual({ attribute: 'privileges', operator: 'contains', values: ['USER_WRITE'] });
+    expect(parseCondition('privileges contains users:write')).toEqual({ attribute: 'privileges', operator: 'contains', values: ['users:write'] });
     expect(parseCondition('bridge:billing.entitlement.analytics eq true')).toEqual({ attribute: 'bridge:billing.entitlement.analytics', operator: 'eq', values: [true] });
     expect(parseCondition('user.email in a@example.com, b@example.com')).toEqual({ attribute: 'user.email', operator: 'in', values: ['a@example.com', 'b@example.com'] });
     expect(parseCondition('account.age between 10,20')).toEqual({ attribute: 'account.age', operator: 'between', values: [10, 20] });
@@ -44,7 +44,7 @@ describe('flag commands', () => {
   });
 
   it('create with --when: a one-branch rule, running', async () => {
-    await cli.run(['flag', 'create', 'analytics', '--when', 'bridge:billing.entitlement.analytics eq true', '--when', 'privileges contains REPORTS_READ', '--rollout', '50']);
+    await cli.run(['flag', 'create', 'analytics', '--when', 'bridge:billing.entitlement.analytics eq true', '--when', 'privileges contains reports:read', '--rollout', '50']);
     expect(last('POST')?.body).toMatchObject({
       key: 'analytics',
       state: 'on-with-rule',
@@ -53,7 +53,7 @@ describe('flag commands', () => {
           {
             conditions: [
               { attribute: 'bridge:billing.entitlement.analytics', operator: 'eq', values: [true] },
-              { attribute: 'privileges', operator: 'contains', values: ['REPORTS_READ'] },
+              { attribute: 'privileges', operator: 'contains', values: ['reports:read'] },
             ],
             returnValue: true,
             rolloutPct: 50,
@@ -101,7 +101,7 @@ describe('flag commands', () => {
 
   it('rule add appends a branch (or puts it first), rule set replaces, rule clear removes', async () => {
     await cli.run(['flag', 'create', 'reports', '--state', 'on']);
-    await cli.run(['flag', 'rule', 'add', 'reports', '--when', 'privileges contains REPORTS_READ']);
+    await cli.run(['flag', 'rule', 'add', 'reports', '--when', 'privileges contains reports:read']);
     await cli.run(['flag', 'rule', 'add', 'reports', '--when', 'user.email eq boss@example.com', '--first']);
     const shown = await cli.run(['flag', 'rule', 'show', 'reports']);
     expect(shown.data.state).toBe('on-with-rule');

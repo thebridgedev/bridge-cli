@@ -106,8 +106,8 @@ describe('key', () => {
   });
 
   it('create shows the secret once; list and revoke', async () => {
-    const made = await cli.run(['key', 'create', '--name', 'production server', '--privilege', 'USER_READ', '--expires-in-days', '30']);
-    expect(last('POST', `/v2/identity-access/apps/${appId}/keys`)?.body).toEqual({ name: 'production server', privileges: ['USER_READ'], expiresInDays: 30 });
+    const made = await cli.run(['key', 'create', '--name', 'production server', '--privilege', 'users:read', '--expires-in-days', '30']);
+    expect(last('POST', `/v2/identity-access/apps/${appId}/keys`)?.body).toEqual({ name: 'production server', privileges: ['users:read'], expiresInDays: 30 });
     expect(made.data.key).toMatch(new RegExp(`^bk\\.${appId}\\.`));
     expect(made.infos.join('\n')).toContain('shown this once');
     const list = await cli.run(['key', 'list']);

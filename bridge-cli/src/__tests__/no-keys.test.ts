@@ -75,7 +75,7 @@ it('`role delete` and `invite send` call the operator routes and no key route', 
 });
 
 it('with BRIDGE_APP_KEY set: no key is made, the key routes are used and the sign-in is not', async () => {
-  const env = { BRIDGE_APP_KEY: fake.addKey(appId, ['USER_READ', 'USER_WRITE', 'ROLE_DELETE', 'apps.settings:manage', 'billing.connection:manage']) };
+  const env = { BRIDGE_APP_KEY: fake.addKey(appId, ['users:read', 'users:write', 'roles:delete', 'apps.settings:manage', 'billing.connection:manage']) };
   const before = fake.requests.length;
   for (const { args, stdin } of commands.filter((c) => ['role', 'privilege', 'workspace', 'member', 'stripe'].includes(c.args[0] as string) && c.args[1] !== 'status' && c.args[1] !== 'disconnect')) {
     const done = await cli.run(args, { env, ...(stdin === undefined ? {} : { stdin }) });

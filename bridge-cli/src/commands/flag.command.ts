@@ -49,7 +49,7 @@ const withFlagOptions = (cmd: Command) =>
     .option('--state <state>', `${FLAG_STATES.join(' | ')}`, oneOf(FLAG_STATES, '--state'))
     .option('--rule <json>', 'The rule as JSON: { "branches": [...], "otherwiseValue": … }')
     .option('--rule-file <file>', 'The rule from a JSON file')
-    .option('--when <condition>', 'A condition of a one-branch rule, "<attribute> <operator> <value>", such as "privileges contains USER_WRITE"; repeat to AND them', collect)
+    .option('--when <condition>', 'A condition of a one-branch rule, "<attribute> <operator> <value>", such as "privileges contains users:write"; repeat to AND them', collect)
     .option('--rollout <percent>', 'With --when: only this share of the people it matches', percent)
     .option('--public', 'Visitors who are not signed in may read it');
 

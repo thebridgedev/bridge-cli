@@ -58,7 +58,7 @@ describe('role and privilege', () => {
   });
 
   it('with BRIDGE_APP_KEY set, the key routes are used as the app\'s server, with that key and no sign-in', async () => {
-    const key = fake.addKey(appId, ['ROLE_DELETE', 'apps.settings:manage']);
+    const key = fake.addKey(appId, ['roles:delete', 'apps.settings:manage']);
     await cli.run(['role', 'create', 'editor', '--name', 'Editor'], { env: { BRIDGE_APP_KEY: key } });
     const created = last('POST', '/v2/accounts/roles')!;
     expect(created.headers['x-api-key']).toBe(key);
@@ -104,7 +104,7 @@ describe('workspace and member', () => {
   });
 
   it('with BRIDGE_APP_KEY set, members are read on the key route with Bridge-Workspace', async () => {
-    const key = fake.addKey(appId, ['USER_READ', 'USER_WRITE']);
+    const key = fake.addKey(appId, ['users:read', 'users:write']);
     const env = { BRIDGE_APP_KEY: key };
     expect((await cli.run(['member', 'list', '--workspace', 'cust-1'], { env })).data).toEqual([expect.objectContaining({ id: 'mem-1' })]);
     const request = last('GET', '/v2/accounts/members')!;

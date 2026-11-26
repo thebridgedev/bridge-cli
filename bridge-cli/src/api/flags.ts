@@ -132,7 +132,7 @@ function conditionValue(raw: string): ConditionValue {
  * `in`, `not_in` and `between` take a comma-separated list; `exists` and
  * `not_exists` take none.
  *
- *   privileges contains USER_WRITE
+ *   privileges contains users:write
  *   bridge:billing.entitlement.analytics eq true
  *   user.email in a@example.com,b@example.com
  */
