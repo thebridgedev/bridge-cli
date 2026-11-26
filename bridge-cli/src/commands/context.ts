@@ -19,6 +19,23 @@ export interface Deps {
   readonly now?: () => number;
   /** How long browser sign-in waits for the page, in ms. */
   readonly signInTimeoutMs?: number;
+  /** The update notice and `bridge update`; without it neither runs (as in tests that do not ask for them). */
+  readonly updates?: UpdateDeps;
+}
+
+/** What the update notice and `bridge update` need. */
+export interface UpdateDeps {
+  /** The npm registry to ask; default the public one. */
+  readonly registry?: string;
+  /** The real path (symlinks resolved) of the running CLI's own file, which says how it was installed. */
+  readonly installPath: string;
+  /** Runs a package manager with the terminal's input, its output on stderr; gives its exit code. */
+  readonly run: (command: string, args: readonly string[]) => Promise<number>;
+  /** How long the background check gives the registry, and how long the CLI waits for it after a command, in ms. */
+  readonly deadlineMs?: number;
+  readonly graceMs?: number;
+  /** How long `bridge update` gives the registry, in ms. */
+  readonly updateDeadlineMs?: number;
 }
 
 export interface GlobalOptions {

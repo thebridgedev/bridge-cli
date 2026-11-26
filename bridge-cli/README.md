@@ -120,6 +120,7 @@ bridge flag create team-admin --when "privileges contains users:write"
 | `doctor` · `event auth-attempts` · `flag eval` · `flag init` | Check a project against the app; one person's sign-ins; what a flag gives someone; set a project up for flags |
 | `guide` | The integration guides, from Bridge's public repositories |
 | `check gates` | Lists every direct role, privilege or plan check in your project, with the flag to use instead |
+| `update` | Updates the CLI on the line you use (alpha or stable) with the package manager that installed it; through npx or as a project dependency it prints the command to run. Without a terminal it prints the command, or runs it with `--yes` |
 
 `bridge <command> --help` has every option.
 
@@ -157,6 +158,8 @@ Exit codes: `0` done, `1` refused or failed, `2` Bridge could not be reached or 
 | `BRIDGE_APP_KEY` | | An app key of your app: roles, privileges, workspaces, members, invites and the Stripe key then run as your app's server with it, instead of with your sign-in |
 | `BRIDGE_TOKEN_STORE` | | `file` to keep the session in the 0600 file, `keychain` to require the keychain |
 | `BRIDGE_CONFIG_DIR` | | Where settings are kept. Default `~/.config/bridge/v1` |
+| `BRIDGE_NO_BANNER` | | `true` hides the line before each command that names the server and app |
+| `BRIDGE_NO_UPDATE_NOTICE` | | `true` hides the notice that a newer CLI is out. Otherwise the CLI asks npm at most once a day, in the background, and says so on stderr after the command when a newer version is out on your line: `alpha` for an alpha, `latest` for a stable version |
 
 ## Security
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **The CLI says when a newer version is out, and `bridge update` updates it.** At most once a day, the CLI asks npm in the background which version is newest on your line (`alpha` for an alpha, `latest` for a stable version) and, when it is newer, says so on stderr after the command: `A newer Bridge CLI is out: 1.0.0-alpha.7 (you have 1.0.0-alpha.6). Run: bridge update`. stdout and the exit code stay the command's; a slow or unreachable registry prints nothing and delays nothing. `BRIDGE_NO_UPDATE_NOTICE=true` switches it off. `bridge update` runs the package manager that installed the CLI globally (npm, pnpm, yarn or bun) on the same line, after asking; without a terminal it prints the command, or runs it with `--yes`. Through npx or as a project dependency it prints the command to run.
+
 ## [1.0.0-alpha.6] - Unreleased
 
 ### Changed

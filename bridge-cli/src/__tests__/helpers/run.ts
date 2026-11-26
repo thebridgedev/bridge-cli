@@ -14,6 +14,8 @@ export interface Run {
   errors: Record<string, unknown>[];
   infos: string[];
   texts: string[];
+  /** stdout and stderr in the order written: `out:` a result or text, `err:` a message or an error. */
+  order: string[];
   exitCode: number;
   readonly output: string;
   /** The one result, for commands that give one. */
@@ -31,7 +33,7 @@ export interface RunOptions {
 }
 
 /** A CLI with its own config dir, a file token store and the fake Bridge. */
-export function createCli(fake: FakeBridge, base: { env?: Record<string, string>; store?: (dir: string) => SessionStore } = {}) {
+export function createCli(fake: FakeBridge, base: { env?: Record<string, string>; store?: (dir: string) => SessionStore; updates?: Deps['updates']; now?: () => number; version?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bridge-cli-test-'));
   const env: Record<string, string> = { BRIDGE_CONFIG_DIR: dir, BRIDGE_TOKEN_STORE: 'file', BRIDGE_ISSUER: ISSUER, ...base.env };
 
@@ -40,14 +42,25 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
     const errors: Record<string, unknown>[] = [];
     const infos: string[] = [];
     const texts: string[] = [];
+    const order: string[] = [];
     let exitCode = 0;
     const answers = [...(options.answers ?? [])];
     const io: Io = {
-      result: (data) => results.push(JSON.parse(JSON.stringify(data ?? null))),
-      text: (content) => texts.push(content),
-      info: (message) => infos.push(message),
+      result: (data) => {
+        results.push(JSON.parse(JSON.stringify(data ?? null)));
+        order.push('out:result');
+      },
+      text: (content) => {
+        texts.push(content);
+        order.push('out:text');
+      },
+      info: (message) => {
+        infos.push(message);
+        order.push(`err:${message}`);
+      },
       error: (error) => {
         errors.push(errorBody(error));
+        order.push('err:error');
         exitCode = exitCodeOf(error);
       },
       interactive: options.interactive ?? false,
@@ -64,9 +77,10 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
       io,
       openBrowser: options.openBrowser ?? (async () => ({ ok: false })),
       store: base.store ?? ((configDir) => new FileStore(configDir)),
-      now: fake.now,
+      now: base.now ?? fake.now,
+      ...(base.updates === undefined ? {} : { updates: base.updates }),
       signInTimeoutMs: 5_000,
-    });
+    }, base.version);
     // commander's own refusals (a missing option, an unknown command) throw instead of exiting, on every command.
     const quiet = (command: typeof program) => {
       command.exitOverride();
@@ -86,6 +100,7 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
       errors,
       infos,
       texts,
+      order,
       exitCode,
       /** Everything the command wrote: stdout and stderr. */
       get output() {

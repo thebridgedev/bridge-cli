@@ -13,6 +13,9 @@ import { registerInfoCommands } from './commands/info.command.js';
 import { registerKeyCommands } from './commands/key.command.js';
 import { registerPlanCommands } from './commands/plan.command.js';
 import { registerSettingsCommands } from './commands/settings.command.js';
+import { registerUpdateCommands } from './commands/update.command.js';
+import { configDir } from './config.js';
+import { noticeOff, startUpdateCheck } from './core/updates.js';
 
 /**
  * The whole command tree. Kept apart from `cli.ts` (which reads the package
@@ -44,5 +47,34 @@ export function buildProgram(deps: Deps, version = '0.0.0'): Command {
   registerInfoCommands(program, deps);
   registerGuideCommands(program, deps);
   registerCheckCommands(program, deps);
+  registerUpdateCommands(program, deps, version);
+  addUpdateNotice(program, deps, version);
   return program;
+}
+
+/**
+ * The notice that a newer CLI is out: checked in the background while a command runs, printed on stderr after its
+ * output, at most once a day. Never for `bridge update` itself, and never with `BRIDGE_NO_UPDATE_NOTICE=true`.
+ */
+function addUpdateNotice(program: Command, deps: Deps, version: string): void {
+  const updates = deps.updates;
+  if (updates === undefined) return;
+  let check: ReturnType<typeof startUpdateCheck> | undefined;
+  program.hook('preAction', (_program, command) => {
+    if (noticeOff(deps.env) || (command.name() === 'update' && command.parent === program)) return;
+    check = startUpdateCheck({
+      version,
+      dir: configDir(deps.env),
+      registry: updates.registry,
+      now: deps.now ?? Date.now,
+      deadlineMs: updates.deadlineMs,
+      graceMs: updates.graceMs,
+    });
+  });
+  program.hook('postAction', async () => {
+    const running = check;
+    check = undefined;
+    const notice = await running?.finish().catch(() => null);
+    if (notice) deps.io.info(notice);
+  });
 }
