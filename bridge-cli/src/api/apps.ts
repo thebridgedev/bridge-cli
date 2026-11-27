@@ -21,7 +21,7 @@ export interface YourApp {
   readonly passkeyDomain: string | null;
   readonly signIn: { readonly location: SignInLocation; readonly path: string; readonly returnPath: string; readonly emailLinks: SignInLocation | null; readonly emailLinksOpenOn: string | null };
   readonly productionRules: Rule[];
-  /** Passkeys on other domains (TBP-873): the list, the file to publish on the main domain and the last check; null for none. */
+  /** Passkeys on other domains: the list, the file to publish on the main domain and the last check; null for none. */
   readonly relatedOrigins?: RelatedOrigins | null;
 }
 
