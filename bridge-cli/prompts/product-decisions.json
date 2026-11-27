@@ -1,0 +1,132 @@
+{
+  "_comment": [
+    "The product decisions the Bridge MCP server's tools and CLI 1.0's commands never make for the developer.",
+    "\"ask\": refused with DECISION_NEEDED, naming the question, and nothing changes.",
+    "Source: the DECISION_NEEDED answers of the Bridge MCP server (create_plan, apply_plan, set_plan_price, invite_user); CLI 1.0's `bridge plan create` asks the same.",
+    "The decision guides name these fields; src/__tests__/guides-v1.test.ts checks they still do."
+  ],
+  "source": "Bridge MCP server (version 2 API), 27 Nov 2026",
+  "decisions": [
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "amount",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "What does this plan cost per billing period? (0 for a free or contact-sales plan)",
+      "type": "number"
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "interval",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is it billed monthly, yearly, weekly or daily?",
+      "type": "enum",
+      "options": [
+        "day",
+        "week",
+        "month",
+        "year"
+      ]
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "currency",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)",
+      "type": "string"
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "trial",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is there a free trial on this plan?",
+      "type": "boolean"
+    },
+    {
+      "tool": "create_plan",
+      "cli": "bridge plan create",
+      "field": "trialDays",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "How many days does the free trial last?",
+      "type": "number"
+    },
+    {
+      "tool": "apply_plan",
+      "field": "name",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "What is this plan called?",
+      "type": "string"
+    },
+    {
+      "tool": "apply_plan",
+      "field": "prices.amount",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "What does this plan cost per billing period? (0 for a free or contact-sales plan)",
+      "type": "number"
+    },
+    {
+      "tool": "apply_plan",
+      "field": "prices.interval",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is it billed monthly, yearly, weekly or daily?",
+      "type": "enum",
+      "options": [
+        "day",
+        "week",
+        "month",
+        "year"
+      ]
+    },
+    {
+      "tool": "apply_plan",
+      "field": "prices.currency",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)",
+      "type": "string"
+    },
+    {
+      "tool": "apply_plan",
+      "field": "trial",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "Is there a free trial on this plan?",
+      "type": "boolean"
+    },
+    {
+      "tool": "apply_plan",
+      "field": "trialDays",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "How many days does the free trial last?",
+      "type": "number"
+    },
+    {
+      "tool": "set_plan_price",
+      "field": "currency",
+      "guide": "payments",
+      "enforcement": "ask",
+      "question": "In which currency is it charged? (ISO code, e.g. USD, EUR, SEK)",
+      "type": "string"
+    },
+    {
+      "tool": "invite_user",
+      "field": "role",
+      "guide": "teams",
+      "enforcement": "ask",
+      "question": "Which role should this person get? (a role key from list_roles; the default role is only a starting suggestion)",
+      "type": "string"
+    }
+  ]
+}

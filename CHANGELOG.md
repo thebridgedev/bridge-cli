@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-alpha.7] - Unreleased
+
+### Changed
+
+- **`bridge guide` teaches the 1.0 plugins.** It reads the guides of the 1.0 line (each repository's `v1` branch) and never falls back to the 0.x text: the shared guides (`bridge guide`, `flags`, `billing`, `mechanisms`, `orientation`, `fit-together`, `integration-success`, `decision <domain>`) are written for CLI 1.0 commands and the 1.0 plugins, and `bridge guide svelte` and `bridge guide nestjs` read those plugins' 1.0 guides. `bridge guide javascript` (and `javascript server`) is auth-core, for any other JavaScript app. React, Next.js, Angular and Express have no 1.0 plugin yet: their guide commands say so plainly instead of printing a 0.x guide. `BRIDGE_GUIDES_BASE_URL` reads the guides from another place laid out the same way (unset: GitHub, as before).
+- **The paid-plan and flag journeys split their checks** into terminal checks any assistant can run and browser checks, which go to the developer as a numbered list when the assistant has no browser, with a "Heads up: not verified in a browser" line instead of the success banner.
+- `bridge auth methods enable` no longer says social sign-in and the second step are unavailable: they are switched on in the dashboard, where their credentials are saved.
+
 ## [1.0.0-alpha.6] - Unreleased
 
 ### Changed

@@ -1,0 +1,38 @@
+{
+  "_comment": "Which per-framework guides exist on the 1.0 line, keyed by the feature names `bridge guide <framework> <feature>` takes (the file stems under mcp/ on each plugin's v1 branch). CLI 1.0's `bridge guide list` and the new Bridge MCP server read it from bridge-cli/v1/bridge-cli/prompts/guide-coverage.json. Only frameworks with a 1.0 plugin are listed; `javascript` is auth-core. Update it when a plugin's v1 line adds or removes an mcp/*-prompt.md. `topics` lists the framework-agnostic guides here (`bridge guide <topic>`).",
+  "aliases": {
+    "flags": "feature-flags"
+  },
+  "topics": {
+    "orientation": "What Bridge does: a short map to relay to the developer (bridge guide orientation)",
+    "fit-together": "How roles, plans, limits and flags fit together: the rule every decision guide builds on (bridge guide fit-together)",
+    "mechanisms": "How limits, the upgrade dialog and page customisation work (bridge guide mechanisms)"
+  },
+  "frameworks": {
+    "svelte": [
+      "integration",
+      "sdk-auth",
+      "feature-flags",
+      "billing",
+      "team",
+      "branding"
+    ],
+    "nestjs": [
+      "integration",
+      "auth",
+      "feature-flags",
+      "billing",
+      "team"
+    ],
+    "javascript": [
+      "integration",
+      "server"
+    ]
+  },
+  "noPluginYet": [
+    "react",
+    "nextjs",
+    "angular",
+    "express"
+  ]
+}
