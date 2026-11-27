@@ -51,7 +51,7 @@ describe('branding', () => {
 describe('auth methods, config and token lifetimes', () => {
   it('lists the methods with what Bridge does not offer yet; switches one; keeps the last', async () => {
     const listed = (await cli.run(['auth', 'methods', 'list'])).data.loginMethods;
-    expect(listed).toMatchObject({ password: { enabled: true }, magicLink: { enabled: false }, mfa: { enabled: false }, socialProviders: { google: { name: 'Google', enabled: false, credentialsSaved: false }, microsoft: { name: 'Microsoft', enabled: false }, apple: { enabled: false, note: 'Not available on Bridge yet' } } });
+    expect(listed).toMatchObject({ password: { enabled: true }, magicLink: { enabled: false }, mfa: { enabled: false }, socialProviders: { google: { name: 'Google', enabled: false, credentialsSaved: false }, microsoft: { name: 'Microsoft', enabled: false }, apple: { name: 'Apple', enabled: false, credentialsSaved: false } } });
     expect(JSON.stringify(listed)).not.toContain('Azure');
     const on = await cli.run(['auth', 'methods', 'enable', 'magic-link']);
     expect(on.data).toMatchObject({ method: 'magicLink', enabled: true });
@@ -61,7 +61,8 @@ describe('auth methods, config and token lifetimes', () => {
     const last_ = await cli.run(['auth', 'methods', 'disable', 'password']);
     expect(last_.errors).not.toEqual([]);
     expect(fake.requests.filter((r) => r.path.endsWith('/sign-in-settings') && r.method === 'GET').length).toBeGreaterThan(0);
-    expect((await cli.run(['auth', 'methods', 'enable', 'apple'])).error).toMatchObject({ code: 'not-offered' });
+    // Apple (TBP-778) is a provider now: it switches on once its details are saved.
+    expect((await cli.run(['auth', 'methods', 'enable', 'apple'])).error).toMatchObject({ code: 'invalid', hint: expect.stringContaining('--private-key-file') });
     // A provider switches on only once its credentials are saved (TBP-134).
     expect((await cli.run(['auth', 'methods', 'enable', 'google'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('not saved yet') });
     expect((await cli.run(['auth', 'methods', 'enable', 'carrier-pigeon'])).error).toMatchObject({ code: 'invalid' });
@@ -130,10 +131,28 @@ describe('auth providers (TBP-134, TBP-859)', () => {
     expect(directory.data).toMatchObject({ whoCanSignIn: 'directory', directory: 'contoso.onmicrosoft.com' });
     expect((await cli.run(['auth', 'providers', 'set', 'microsoft', '--client-id', 'a', '--client-secret', 'b', '--who-can-sign-in', 'directory'])).error).toMatchObject({ code: 'invalid' });
     expect((await cli.run(['auth', 'providers', 'set', 'google', '--client-id', 'a', '--client-secret', 'b', '--who-can-sign-in', 'work'])).error).toMatchObject({ code: 'invalid' });
-    expect((await cli.run(['auth', 'providers', 'set', 'apple', '--client-id', 'a', '--client-secret', 'b'])).error).toMatchObject({ code: 'invalid', hint: expect.stringContaining('Apple') });
+    expect((await cli.run(['auth', 'providers', 'set', 'apple', '--client-id', 'a', '--client-secret', 'b'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('no client secret') });
     const listed = (await cli.run(['auth', 'providers', 'list'])).data.providers;
     expect(listed.microsoft).toMatchObject({ name: 'Microsoft', credentialsSaved: true, secretExpiry: 'ok' });
     expect(JSON.stringify(listed)).not.toContain('Azure');
+  });
+
+  it('Apple (TBP-778): the Services ID, Team ID, Key ID and the .p8 file, no secret; prints the domain and return address to register', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const file = join(mkdtempSync(join(tmpdir(), 'apple-')), 'AuthKey_KEY1234567.p8');
+    writeFileSync(file, '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n');
+    expect((await cli.run(['auth', 'providers', 'set', 'apple', '--client-id', 'com.acme.signin', '--team-id', 'TEAM123456'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('--key-id') });
+    expect((await cli.run(['auth', 'providers', 'set', 'github', '--client-id', 'a', '--client-secret', 'b', '--team-id', 'TEAM123456'])).error).toMatchObject({ code: 'invalid' });
+    expect((await cli.run(['auth', 'providers', 'set', 'github', '--client-id', 'a'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('--client-secret') });
+    const set = await cli.run(['auth', 'providers', 'set', 'apple', '--client-id', 'com.acme.signin', '--team-id', 'TEAM123456', '--key-id', 'KEY1234567', '--private-key-file', file, '--enable']);
+    expect(set.errors).toEqual([]);
+    expect(fake.savedProvider(appId, 'apple')).toEqual({ clientId: 'com.acme.signin', teamId: 'TEAM123456', keyId: 'KEY1234567', privateKey: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----' });
+    expect(set.data).toMatchObject({ provider: 'apple', name: 'Apple', enabled: true, credentialsSaved: true, teamId: 'TEAM123456', keyId: 'KEY1234567', returnAddress: expect.stringContaining('/federated/apple/return') });
+    expect(set.infos.join(' ')).toContain('Domains and Subdomains');
+    expect(set.infos.join(' ')).toContain('Email Communication');
+    expect(JSON.stringify(set.data)).not.toContain('PRIVATE KEY');
   });
 });
 

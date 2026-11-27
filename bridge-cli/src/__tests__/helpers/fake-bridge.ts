@@ -459,7 +459,7 @@ export function createFakeBridge() {
             methods: { password: true, magicLink: false, passkeys: false },
             social: { google: false, linkedin: false, facebook: false, github: false, azure: false },
             secondStep: false,
-            providers: Object.fromEntries(['google', 'linkedin', 'facebook', 'github', 'azure'].map((p) => [p, { name: p === 'azure' ? 'Microsoft' : p, configured: false, clientId: null, tenantId: null, returnAddress: `${ISSUER.replace(BRIDGE_APP, appId)}/federated/${p}/return` }])),
+            providers: Object.fromEntries(['google', 'linkedin', 'facebook', 'github', 'azure', 'apple'].map((p) => [p, { name: p === 'azure' ? 'Microsoft' : p, configured: false, clientId: null, tenantId: null, returnAddress: `${ISSUER.replace(BRIDGE_APP, appId)}/federated/${p}/return`, ...(p === 'apple' ? { domain: new URL(ISSUER).host } : {}) }])),
             signUp: true,
             signUpPlan: null,
             lifetimes: { accessTokenSeconds: 300, sessionIdleSeconds: 1_209_600, sessionAbsoluteSeconds: 2_592_000 },
@@ -478,7 +478,7 @@ export function createFakeBridge() {
       if (provider !== 'azure' && input['tenantId'] !== undefined) return json(400, { message: 'Only Microsoft takes a tenantId.' });
       const tenant = (input['tenantId'] as string | undefined) ?? 'common';
       savedSecrets.set(`${appId}/${provider}`, input);
-      Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}) });
+      Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}), ...(provider === 'apple' ? { teamId: input['teamId'], keyId: input['keyId'], clientIdWarning: null } : {}) });
       return json(200, current);
     }
     // A User's passkeys (TBP-861).
