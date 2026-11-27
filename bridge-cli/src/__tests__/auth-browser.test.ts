@@ -93,7 +93,7 @@ describe('auth login (browser)', () => {
       },
     });
     expect(done.errors).toEqual([]);
-    expect(done.infos.join('\n')).toContain(`Open this address in your browser to sign in, and approve the sign-in there:\n  ${PAGE}?request=`);
+    expect(done.infos.join('\n')).toContain(`Open this address in your browser to sign in (or sign up), and approve the sign-in there:\n  ${PAGE}?request=`);
   });
 
   it('refuses a callback whose state is not its own', async () => {
