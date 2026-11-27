@@ -68,6 +68,16 @@ describe('auth methods, config and token lifetimes', () => {
     expect((await cli.run(['auth', 'methods', 'enable', 'carrier-pigeon'])).error).toMatchObject({ code: 'invalid' });
   });
 
+  it('shows and switches when a passkey is offered (TBP-536): after sign-in, and made automatically', async () => {
+    expect((await cli.run(['auth', 'methods', 'list'])).data.loginMethods.passkeys).toEqual({ enabled: false, offerAfterSignIn: true, createAutomatically: true });
+    const shown = await cli.run(['auth', 'methods', 'passkey-offer']);
+    expect(shown.data).toMatchObject({ passkeys: false, offerAfterSignIn: true, createAutomatically: true, note: expect.stringContaining('Passkeys are off') });
+    const changed = await cli.run(['auth', 'methods', 'passkey-offer', '--automatic', 'off']);
+    expect(changed.data).toMatchObject({ offerAfterSignIn: true, createAutomatically: false });
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ passkeyOffer: { automatic: false } });
+    expect((await cli.run(['auth', 'methods', 'passkey-offer', '--after-sign-in', 'maybe'])).errors).not.toEqual([]);
+  });
+
   it('config shows the methods, the lifetimes and the password rules; password-policy still sets the lifetimes within bounds, and says they moved', async () => {
     expect((await cli.run(['auth', 'config'])).data).toMatchObject({ tokens: { accessTokenTTL: 300, refreshTokenTTL: 2_592_000, sessionIdleTTL: 1_209_600 }, passwordRules: { minLength: 8 }, commonPasswordList: 'updated 2026-11-27', productionFloor: 'basic (kept from before the move)' });
     const set = await cli.run(['auth', 'password-policy', '--access-token-ttl', '120', '--refresh-token-ttl', '86400']);
