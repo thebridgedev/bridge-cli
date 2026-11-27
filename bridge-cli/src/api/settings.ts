@@ -24,6 +24,8 @@ export interface SignInSettings {
   readonly social?: Readonly<Record<string, boolean>>;
   /** The text-message second step (MFA). */
   readonly secondStep?: boolean;
+  /** When a person with no passkey is offered one: after signing in another way, and made by the browser on its own. */
+  readonly passkeyOffer?: { readonly afterSignIn: boolean; readonly automatic: boolean };
   /** Each provider's saved credentials as a console sees them, never the secret, and the return address to register. */
   readonly providers?: Readonly<Record<string, ProviderView>>;
   readonly signUp: boolean;
@@ -52,6 +54,7 @@ export interface SignInSettingsFields {
   social?: Record<string, boolean>;
   lifetimes?: Partial<SignInSettings['lifetimes']>;
   password?: Record<string, unknown>;
+  passkeyOffer?: { afterSignIn?: boolean; automatic?: boolean };
 }
 
 /** A passkey of one User, as the app's admins see it: never a key. */

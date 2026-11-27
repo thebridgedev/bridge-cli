@@ -82,7 +82,10 @@ function loginMethods(settings: SignInSettings) {
   return {
     password: { enabled: settings.methods.password },
     magicLink: { enabled: settings.methods.magicLink },
-    passkeys: { enabled: settings.methods.passkeys },
+    passkeys: {
+      enabled: settings.methods.passkeys,
+      ...(settings.passkeyOffer === undefined ? {} : { offerAfterSignIn: settings.passkeyOffer.afterSignIn, createAutomatically: settings.passkeyOffer.automatic }),
+    },
     mfa: { enabled: settings.secondStep === true, note: 'Second factor, not a standalone login method: a code by text message after any way of signing in' },
     socialProviders: { ...Object.fromEntries(PROVIDERS.map((each) => [each.view, providerState(settings, each)])), apple: NOT_YET },
   };
@@ -232,6 +235,22 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
   );
   methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys, password, or a social provider whose credentials are saved (google, linkedin, microsoft, github, facebook)').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
   methods.command('disable <method>').description('Switch a login method off. Bridge refuses to switch off the last one').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, false)));
+  methods
+    .command('passkey-offer')
+    .description('When people without a passkey are offered one: after signing in another way or resetting their password, and made by the browser on its own after a password sign-in where it can. Both on by default')
+    .option('--after-sign-in <on|off>', 'Offer a passkey after a sign-in with a password, a link or a social account, and after a password reset', yesNo)
+    .option('--automatic <on|off>', 'Let Safari 18 and Chrome 136 or later save a passkey on their own right after a password sign-in, on the app\'s own domain', yesNo)
+    .action(
+      action(deps, async (ctx, opts: { afterSignIn?: boolean; automatic?: boolean }) => {
+        const change: Record<string, boolean> = {};
+        if (opts.afterSignIn !== undefined) change['afterSignIn'] = opts.afterSignIn;
+        if (opts.automatic !== undefined) change['automatic'] = opts.automatic;
+        const { c, appId } = await ctx.forApp();
+        const settings = Object.keys(change).length === 0 ? await signInSettings.get(c, appId) : await signInSettings.update(c, appId, { passkeyOffer: change });
+        if (settings.passkeyOffer === undefined) throw new CliError('not-offered', 'This Bridge server does not offer passkeys at the right moment yet. Nothing was changed.');
+        ctx.io.result({ passkeys: settings.methods.passkeys, offerAfterSignIn: settings.passkeyOffer.afterSignIn, createAutomatically: settings.passkeyOffer.automatic, ...(settings.methods.passkeys ? {} : { note: 'Passkeys are off for the app: nothing is offered until they are on (bridge auth methods enable passkeys).' }) });
+      }),
+    );
 
   auth.command('config').description("The app's sign-in configuration: the login methods, the token lifetimes and the password rules").action(
     action(deps, async (ctx) => {

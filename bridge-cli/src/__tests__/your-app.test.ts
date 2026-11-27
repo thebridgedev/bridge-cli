@@ -141,3 +141,19 @@ describe('app mode', () => {
     expect((await cli.run(['app', 'mode', 'staging'])).error).toMatchObject({ code: 'invalid' });
   });
 });
+
+describe('app related-origins (TBP-873)', () => {
+  it('lists another address and Bridge\'s sign-in page, shows the file to publish, and checks it', async () => {
+    fake.setYourApp(appId, { mode: 'production', main: 'https://acme.com', addresses: origins('https://acme.com', 'https://acme.co.uk') });
+    expect((await cli.run(['app', 'related-origins'])).data).toEqual({ relatedOrigins: null });
+    const listed = await cli.run(['app', 'related-origins', '--add', 'https://acme.co.uk', '--hosted', 'on']);
+    expect(listed.errors).toEqual([]);
+    expect(last('PATCH', '/v2/app-registry/apps/')?.body).toEqual({ relatedOrigins: { origins: ['https://acme.co.uk'], hosted: true } });
+    expect(listed.infos.join(' ')).toContain('https://acme.com/.well-known/webauthn');
+    const checked = await cli.run(['app', 'related-origins', '--check']);
+    expect(checked.data).toMatchObject({ relatedOrigins: { check: { verified: false, missing: ['https://auth.bridge.test'] }, limit: 'at most 5 different domain names' } });
+    expect((await cli.run(['app', 'related-origins', '--hosted', 'maybe'])).error).toMatchObject({ code: 'invalid' });
+    await cli.run(['app', 'related-origins', '--none']);
+    expect(last('PATCH', '/v2/app-registry/apps/')?.body).toEqual({ relatedOrigins: null });
+  });
+});
