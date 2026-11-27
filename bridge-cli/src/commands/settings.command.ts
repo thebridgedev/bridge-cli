@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { InvalidArgumentError, type Command } from 'commander';
 import { branding, listEvents, sender, signInSettings, userPasskeys, type BrandingFields, type SignInSettings } from '../api/settings.js';
 import { apps } from '../api/apps.js';
@@ -10,7 +11,7 @@ import { findWorkspaceId } from './workspace-id.js';
  * The commands that read and change how the app looks and signs people in, and what happened in it: `branding`,
  * `auth methods|config|password-policy`, `event list` and `setup communication` (the 0.x commands of those names, on
  * version 2), with `auth providers`, `auth token-lifetime` and `user passkeys`. What
- * the new Bridge does not have yet (Apple, a free-form stylesheet) is said, never faked.
+ * the new Bridge does not have yet (a free-form stylesheet) is said, never faked.
  */
 
 const FONTS = ['system', 'inter', 'roboto', 'open-sans', 'montserrat', 'nunito', 'lora'];
@@ -40,9 +41,6 @@ function radiusOf(value: string): string {
   return px === 0 ? 'none' : px <= 6 ? 'small' : px <= 12 ? 'medium' : 'large';
 }
 
-/** The login methods, as `bridge auth methods list` shows them: what is on, and what Bridge does not offer yet. */
-const NOT_YET = { enabled: false, note: 'Not available on Bridge yet' } as const;
-
 /**
  * The social providers: the CLI's names, Identity and Access's key (`azure` stays the API name for
  * Microsoft, which callers rely on), the key the 0.x output used, and the name people read.
@@ -53,6 +51,7 @@ const PROVIDERS = [
   { cli: 'microsoft', key: 'azure', view: 'microsoft', name: 'Microsoft' },
   { cli: 'github', key: 'github', view: 'github', name: 'GitHub' },
   { cli: 'facebook', key: 'facebook', view: 'facebook', name: 'Facebook' },
+  { cli: 'apple', key: 'apple', view: 'apple', name: 'Apple' },
 ] as const;
 /** A provider by the name a developer types: `microsoft` (also `azure`, `azuread`), `google`, … */
 function providerOf(input: string) {
@@ -75,6 +74,9 @@ function providerState(settings: SignInSettings, provider: (typeof PROVIDERS)[nu
     ...(provider.key === 'azure' && saved?.configured === true
       ? { whoCanSignIn: saved.audience ?? 'any', ...(saved.audience === 'directory' ? { directory: saved.tenantId ?? null } : {}), secretExpiresAt: saved.secretExpiresAt ?? null, secretExpiry: saved.secretExpiry ?? null }
       : {}),
+    // Apple: which key is in use, and the domain to list on the Services ID.
+    ...(provider.key === 'apple' && saved?.configured === true ? { teamId: saved.teamId ?? null, keyId: saved.keyId ?? null, ...(saved.clientIdWarning ? { warning: saved.clientIdWarning } : {}) } : {}),
+    ...(provider.key === 'apple' && saved?.domain !== undefined ? { domain: saved.domain } : {}),
   };
 }
 
@@ -87,13 +89,13 @@ function loginMethods(settings: SignInSettings) {
       ...(settings.passkeyOffer === undefined ? {} : { offerAfterSignIn: settings.passkeyOffer.afterSignIn, createAutomatically: settings.passkeyOffer.automatic }),
     },
     mfa: { enabled: settings.secondStep === true, note: 'Second factor, not a standalone login method: a code by text message after any way of signing in' },
-    socialProviders: { ...Object.fromEntries(PROVIDERS.map((each) => [each.view, providerState(settings, each)])), apple: NOT_YET },
+    socialProviders: Object.fromEntries(PROVIDERS.filter((each) => each.key !== 'apple' || settings.providers?.['apple'] !== undefined).map((each) => [each.view, providerState(settings, each)])),
   };
 }
 
 /** The method names `auth methods enable|disable` takes, in any case, with kebab or snake forms (`magic-link`). */
 const SWITCHES = { magiclink: 'magicLink', passkeys: 'passkeys', password: 'password' } as const;
-const NOT_AVAILABLE = ['mfa', 'apple'];
+const NOT_AVAILABLE = ['mfa'];
 
 /** `--since` as a time: a duration back from now (24h, 7d, 2w) or an ISO date. */
 export function sinceOf(since: string, now: number): string {
@@ -114,7 +116,8 @@ async function methodSwitch(ctx: Context, input: string, on: boolean): Promise<v
   if (provider !== null) {
     const { c, appId } = await ctx.forApp();
     if (on && (await signInSettings.get(c, appId)).providers?.[provider.key]?.configured !== true) {
-      throw new CliError('invalid', `${provider.name}'s client ID and secret are not saved yet. Nothing was changed.`, { hint: `Save them first: bridge auth providers set ${provider.cli} --client-id <id> --client-secret <secret>${provider.key === 'azure' ? ' [--who-can-sign-in any|work|personal|directory]' : ''} --enable` });
+      const how = provider.key === 'apple' ? '--client-id <services id> --team-id <team id> --key-id <key id> --private-key-file <AuthKey.p8>' : `--client-id <id> --client-secret <secret>${provider.key === 'azure' ? ' [--who-can-sign-in any|work|personal|directory]' : ''}`;
+      throw new CliError('invalid', `${provider.name}'s ${provider.key === 'apple' ? 'details are' : 'client ID and secret are'} not saved yet. Nothing was changed.`, { hint: `Save them first: bridge auth providers set ${provider.cli} ${how} --enable` });
     }
     const settings = await signInSettings.update(c, appId, { social: { [provider.key]: on } });
     return ctx.io.result({ method: provider.cli, enabled: settings.social?.[provider.key] === true, loginMethods: loginMethods(settings) });
@@ -233,7 +236,7 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
       ctx.io.result({ loginMethods: loginMethods(await signInSettings.get(c, appId)) });
     }),
   );
-  methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys, password, or a social provider whose credentials are saved (google, linkedin, microsoft, github, facebook)').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
+  methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys, password, or a social provider whose credentials are saved (google, linkedin, microsoft, github, facebook, apple)').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
   methods.command('disable <method>').description('Switch a login method off. Bridge refuses to switch off the last one').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, false)));
   methods
     .command('passkey-offer')
@@ -320,7 +323,7 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
       }),
     );
 
-  const providers = auth.command('providers').description('Social sign-in providers: Google, LinkedIn, Microsoft, GitHub and Facebook');
+  const providers = auth.command('providers').description('Social sign-in providers: Google, LinkedIn, Microsoft, GitHub, Facebook and Apple');
   providers.command('list').description('Each provider: on or off, its credentials saved, and the return address to register with it').action(
     action(deps, async (ctx) => {
       const { c, appId } = await ctx.forApp();
@@ -330,20 +333,45 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
   );
   providers
     .command('set <provider>')
-    .description("Save a provider's client ID and secret (google, linkedin, microsoft, github, facebook), and print the exact return address to register with it")
-    .requiredOption('--client-id <id>', "The client ID from the provider's console (Microsoft: Application (client) ID)")
-    .requiredOption('--client-secret <secret>', "The client secret (Microsoft: the secret's Value, not its Secret ID)")
+    .description("Save a provider's client ID and secret (google, linkedin, microsoft, github, facebook), or Apple's Services ID, Team ID, Key ID and .p8 key, and print the exact return address to register with it")
+    .requiredOption('--client-id <id>', "The client ID from the provider's console (Microsoft: Application (client) ID; Apple: the Services ID)")
+    .option('--client-secret <secret>', "The client secret (Microsoft: the secret's Value, not its Secret ID); not for Apple")
+    .option('--team-id <id>', 'Apple: your Team ID (10 characters, Membership details)')
+    .option('--key-id <id>', 'Apple: the Key ID of your Sign in with Apple key (10 characters)')
+    .option('--private-key-file <path>', 'Apple: the .p8 key file Apple let you download once (AuthKey_<Key ID>.p8)')
     .option('--who-can-sign-in <who>', 'Microsoft: any (default) | work | personal | directory')
     .option('--directory <id>', 'Microsoft with --who-can-sign-in directory: the directory (tenant) id or domain')
     .option('--secret-expires-at <date>', 'Microsoft: when the client secret expires, YYYY-MM-DD (default: 24 months from now)')
     .option('--enable', 'Also switch the provider on')
     .action(
-      action(deps, async (ctx, name: string, opts: { clientId: string; clientSecret: string; whoCanSignIn?: string; directory?: string; secretExpiresAt?: string; enable?: boolean }) => {
+      action(deps, async (ctx, name: string, opts: { clientId: string; clientSecret?: string; teamId?: string; keyId?: string; privateKeyFile?: string; whoCanSignIn?: string; directory?: string; secretExpiresAt?: string; enable?: boolean }) => {
         const provider = providerOf(name);
         if (provider === null) {
-          throw new CliError('invalid', `"${name}" is not a provider Bridge offers.`, { hint: `Use one of: ${PROVIDERS.map((each) => each.cli).join(', ')}.${name.toLowerCase() === 'apple' ? ' Apple is not available on Bridge yet.' : ''}` });
+          throw new CliError('invalid', `"${name}" is not a provider Bridge offers.`, { hint: `Use one of: ${PROVIDERS.map((each) => each.cli).join(', ')}.` });
         }
         const microsoft = provider.key === 'azure';
+        const apple = provider.key === 'apple';
+        const appleGiven = [opts.teamId, opts.keyId, opts.privateKeyFile].filter((each) => each !== undefined).length;
+        if (!apple && appleGiven > 0) throw new CliError('invalid', '--team-id, --key-id and --private-key-file are for Apple only. Nothing was changed.');
+        if (apple) {
+          // Apple: no client secret; the key signs one for each sign-in, on Bridge.
+          if (opts.clientSecret !== undefined) throw new CliError('invalid', 'Apple has no client secret. Nothing was changed.', { hint: 'Give --team-id, --key-id and --private-key-file <AuthKey.p8> instead.' });
+          if (appleGiven < 3) throw new CliError('invalid', 'Apple needs --team-id, --key-id and --private-key-file. Nothing was changed.', { hint: 'All three are in your Apple developer account: Membership details, and Keys (the .p8 downloads once).' });
+          let privateKey: string;
+          try {
+            privateKey = readFileSync(opts.privateKeyFile as string, 'utf8').trim();
+          } catch {
+            throw new CliError('invalid', `Could not read ${opts.privateKeyFile as string}. Nothing was changed.`, { hint: 'Give the path of the .p8 file you downloaded from Apple.' });
+          }
+          const { c, appId } = await ctx.forApp();
+          let settings = await signInSettings.saveProvider(c, appId, 'apple', { clientId: opts.clientId, teamId: opts.teamId as string, keyId: opts.keyId as string, privateKey });
+          if (opts.enable === true) settings = await signInSettings.update(c, appId, { social: { apple: true } });
+          const state = providerState(settings, provider);
+          if (state.returnAddress !== undefined) ctx.io.info(`On your Services ID, Configure Sign in with Apple: Domains and Subdomains ${state.domain ?? ''}, Return URL ${state.returnAddress}`);
+          ctx.io.info("So people who hide their email still get your app's emails, register your sender in Apple's Sign in with Apple for Email Communication (the address `bridge setup communication` sets, or Bridge's own sender).");
+          return ctx.io.result({ provider: provider.cli, ...state });
+        }
+        if (opts.clientSecret === undefined || opts.clientSecret === '') throw new CliError('invalid', '--client-secret is required. Nothing was changed.');
         if (!microsoft && (opts.whoCanSignIn !== undefined || opts.directory !== undefined || opts.secretExpiresAt !== undefined)) throw new CliError('invalid', '--who-can-sign-in, --directory and --secret-expires-at are for Microsoft only. Nothing was changed.');
         const who = opts.whoCanSignIn ?? (opts.directory !== undefined ? 'directory' : 'any');
         if (microsoft && !['any', 'work', 'personal', 'directory'].includes(who)) throw new CliError('invalid', '--who-can-sign-in is any, work, personal or directory.');
@@ -351,7 +379,7 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
         if (opts.secretExpiresAt !== undefined && Number.isNaN(new Date(opts.secretExpiresAt).getTime())) throw new CliError('invalid', '--secret-expires-at is a date such as 2028-11-27.');
         const tenantId = !microsoft ? undefined : who === 'directory' ? (opts.directory as string).trim() : WHO[who as keyof typeof WHO];
         const { c, appId } = await ctx.forApp();
-        let settings = await signInSettings.saveProvider(c, appId, provider.key, { clientId: opts.clientId, clientSecret: opts.clientSecret, ...(tenantId === undefined ? {} : { tenantId }), ...(opts.secretExpiresAt === undefined ? {} : { secretExpiresAt: opts.secretExpiresAt }) });
+        let settings = await signInSettings.saveProvider(c, appId, provider.key, { clientId: opts.clientId, clientSecret: opts.clientSecret as string, ...(tenantId === undefined ? {} : { tenantId }), ...(opts.secretExpiresAt === undefined ? {} : { secretExpiresAt: opts.secretExpiresAt }) });
         if (opts.enable === true) settings = await signInSettings.update(c, appId, { social: { [provider.key]: true } });
         const state = providerState(settings, provider);
         if (state.returnAddress !== undefined) ctx.io.info(`Register this return address with ${provider.name}: ${state.returnAddress}${microsoft ? ' (platform Web)' : ''}`);

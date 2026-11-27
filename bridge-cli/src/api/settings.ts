@@ -47,6 +47,11 @@ export interface ProviderView {
   readonly audience?: 'any' | 'work' | 'personal' | 'directory';
   readonly secretExpiresAt?: string | null;
   readonly secretExpiry?: 'ok' | 'soon' | 'expired' | null;
+  /** Apple only: the Team ID and Key ID in use, the domain to list on the Services ID, and a Services ID that looks wrong. */
+  readonly teamId?: string | null;
+  readonly keyId?: string | null;
+  readonly domain?: string;
+  readonly clientIdWarning?: string | null;
 }
 
 export interface SignInSettingsFields {
@@ -97,7 +102,7 @@ export const signInSettings = {
   get: (c: BridgeClient, appId: string) => c.person<SignInSettings>('signInSettingsGet', { params: { appId } }).then((answer) => answer.body),
   update: (c: BridgeClient, appId: string, fields: SignInSettingsFields) => c.person<SignInSettings>('signInSettingsUpdate', { params: { appId }, body: fields }).then((answer) => answer.body),
   /** Saves a provider's client ID and secret (and Microsoft's tenant and secret expiry): switches nothing on. */
-  saveProvider: (c: BridgeClient, appId: string, provider: string, fields: { clientId: string; clientSecret: string; tenantId?: string; secretExpiresAt?: string }) =>
+  saveProvider: (c: BridgeClient, appId: string, provider: string, fields: { clientId: string; clientSecret: string; tenantId?: string; secretExpiresAt?: string } | { clientId: string; teamId: string; keyId: string; privateKey: string }) =>
     c.person<SignInSettings>('signInProviderSave', { params: { appId, provider }, body: fields }).then((answer) => answer.body),
 };
 
