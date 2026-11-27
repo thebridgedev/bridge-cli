@@ -23,6 +23,16 @@ export interface YourApp {
   readonly productionRules: Rule[];
   /** Extra MCP endpoint URLs on other domains; absent from an older server. The app's own addresses never need listing. */
   readonly mcp?: string[];
+  /** Passkeys on other domains: the list, the file to publish on the main domain and the last check; null for none. */
+  readonly relatedOrigins?: RelatedOrigins | null;
+}
+
+export interface RelatedOrigins {
+  readonly origins: string[];
+  readonly hosted: boolean;
+  readonly check: { readonly verified: boolean; readonly at: string; readonly missing: string[]; readonly problem: string | null } | null;
+  readonly file: { readonly url: string; readonly body: { readonly origins: string[] } } | null;
+  readonly labelLimit: number;
 }
 
 /** One rule production keeps on. `passes: null` means the App registry does not know it (the password rule: Identity and Access checks it when users sign in). */
@@ -68,6 +78,7 @@ export interface App {
 
 /** An app's name and public profile, as it is created or changed. `null` clears a profile field. */
 export interface AppFields {
+  relatedOrigins?: { origins: string[]; hosted: boolean } | null;
   readonly name?: string;
   readonly addresses?: Address[];
   readonly defaultReturn?: string | null;
@@ -116,6 +127,9 @@ export const apps = {
   },
   async production(c: BridgeClient, appId: string): Promise<ProductionStatus> {
     return (await c.person<ProductionStatus>('productionStatus', { params: { appId } })).body;
+  },
+  async checkRelatedOrigins(c: BridgeClient, appId: string): Promise<App> {
+    return (await c.person<App>('relatedOriginsCheck', { params: { appId }, body: {} })).body;
   },
   async passkeyImpact(c: BridgeClient, appId: string, main: string): Promise<PasskeyImpact> {
     return (await c.person<PasskeyImpact>('passkeyImpact', { params: { appId }, query: { main } })).body;

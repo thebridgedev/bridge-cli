@@ -166,7 +166,9 @@ export function createFakeBridge() {
     const main = mine['main'] as string | null;
     const choices = (app['addresses'] as { url: string; uses: string[] }[]).filter((each) => each.uses.includes('browser-origin') && !each.url.includes('*')).map((each) => each.url);
     const { mcp, ...rest } = app;
-    return { ...rest, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main), ...(olderServer ? {} : { mcp: mcp ?? [] }) } };
+    const related = (mine['relatedOrigins'] as Json | null | undefined) ?? null;
+    const file = related === null || main === null ? null : { url: `https://${domainOf(main)}/.well-known/webauthn`, body: { origins: [...(related['origins'] as string[]), ...(related['hosted'] === true ? ['https://auth.bridge.test'] : [])] } };
+    return { ...rest, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main), relatedOrigins: related === null ? null : { ...related, file, labelLimit: 5 }, ...(olderServer ? {} : { mcp: mcp ?? [] }) } };
   }
 
   let signInPage: string | null = null;
@@ -460,6 +462,12 @@ export function createFakeBridge() {
       current['revision'] = (current['revision'] as number) + 1;
       return json(200, current);
     }
+    if (service === 'app-registry' && rest === '/related-origins/check') {
+      const mine = yourAppOf(app);
+      if (mine['relatedOrigins'] == null) return json(400, { message: 'The app lists no related origins.' });
+      mine['relatedOrigins'] = { ...(mine['relatedOrigins'] as Json), check: { verified: false, at: '2026-11-27T20:00:00.000Z', missing: ['https://auth.bridge.test'], problem: 'The file could not be read.' } };
+      return json(200, withYourApp(app));
+    }
     if (service === 'app-registry' && rest === '/mode') {
       const mine = yourAppOf(app);
       if (method === 'GET') return json(200, { mode: mine['mode'], main: mine['main'], rules: productionRules(mine['main'] as string | null), canSwitchToProduction: productionRules(mine['main'] as string | null).every((rule) => rule.passes !== false), version: app['version'] });
@@ -495,8 +503,9 @@ export function createFakeBridge() {
       if (input['signIn'] !== undefined) mine['signIn'] = { ...(mine['signIn'] as Json), ...(input['signIn'] as Json) };
       const mcp = input['mcp'] as string[] | undefined;
       if (mcp !== undefined && (mcp.length > 10 || mcp.some((each) => !/^https:\/\/[^*?#]+$/.test(each)))) return json(400, { message: 'mcp lists at most 10 https URLs, with no wildcard, query or fragment.' });
+      if (input['relatedOrigins'] !== undefined) mine['relatedOrigins'] = input['relatedOrigins'] === null ? null : { ...(input['relatedOrigins'] as Json), check: null };
       for (const [field, value] of Object.entries(input)) {
-        if (['main', 'confirmPasskeys', 'signIn', 'mode'].includes(field)) continue;
+        if (['main', 'confirmPasskeys', 'signIn', 'mode', 'relatedOrigins'].includes(field)) continue;
         if (['logo', 'website', 'privacyPolicy', 'termsOfService'].includes(field)) (app['profile'] as Json)[field] = value;
         else app[field] = value;
       }
@@ -514,12 +523,13 @@ export function createFakeBridge() {
             methods: { password: true, magicLink: false, passkeys: false },
             social: { google: false, linkedin: false, facebook: false, github: false, azure: false },
             secondStep: false,
-            providers: Object.fromEntries(['google', 'linkedin', 'facebook', 'github', 'azure'].map((p) => [p, { name: p === 'azure' ? 'Microsoft' : p, configured: false, clientId: null, tenantId: null, returnAddress: `${ISSUER.replace(BRIDGE_APP, appId)}/federated/${p}/return` }])),
+            providers: Object.fromEntries(['google', 'linkedin', 'facebook', 'github', 'azure', 'apple'].map((p) => [p, { name: p === 'azure' ? 'Microsoft' : p, configured: false, clientId: null, tenantId: null, returnAddress: `${ISSUER.replace(BRIDGE_APP, appId)}/federated/${p}/return`, ...(p === 'apple' ? { domain: new URL(ISSUER).host } : {}) }])),
             signUp: true,
             signUpPlan: null,
             lifetimes: { accessTokenSeconds: 300, sessionIdleSeconds: 1_209_600, sessionAbsoluteSeconds: 2_592_000 },
             password: { preset: 'basic', minLength: 8 },
             passwordFacts: { badge: null, commonPasswords: { updated: '2026-11-27' }, productionFloor: { kept: true, preset: 'basic' } },
+            passkeyOffer: { afterSignIn: true, automatic: true },
             bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } },
             ...(olderServer ? {} : { tools: { anyAssistant: true, assistants: [], shortCode: false } }),
           }) as Json,
@@ -534,7 +544,7 @@ export function createFakeBridge() {
       if (provider !== 'azure' && input['tenantId'] !== undefined) return json(400, { message: 'Only Microsoft takes a tenantId.' });
       const tenant = (input['tenantId'] as string | undefined) ?? 'common';
       savedSecrets.set(`${appId}/${provider}`, input);
-      Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}) });
+      Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}), ...(provider === 'apple' ? { teamId: input['teamId'], keyId: input['keyId'], clientIdWarning: null } : {}) });
       return json(200, current);
     }
     // A User's connected tools and every session (TBP-854).
@@ -594,6 +604,7 @@ export function createFakeBridge() {
         social: { ...(current['social'] as Json), ...((input['social'] as Json | undefined) ?? {}) },
         lifetimes: { ...(current['lifetimes'] as Json), ...((input['lifetimes'] as Json | undefined) ?? {}) },
         ...(input['tools'] === undefined ? {} : { tools: { ...(current['tools'] as Json), ...(input['tools'] as Json) } }),
+        passkeyOffer: { ...(current['passkeyOffer'] as Json), ...((input['passkeyOffer'] as Json | undefined) ?? {}) },
       };
       if (!Object.values(next['methods'] as Json).some(Boolean) && !Object.values(next['social'] as Json).some(Boolean)) return json(400, { message: 'At least one sign-in method stays on.' });
       Object.assign(current, next);
