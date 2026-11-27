@@ -182,3 +182,32 @@ describe('flag toggle, schedule, export, import and delete preview', () => {
     expect(fake.flags(appId).has('beta-ui')).toBe(false);
   });
 });
+
+describe('auth terms-line (TBP-864)', () => {
+  it('shows the line on by default, and says it is not shown while the pages are placeholders', async () => {
+    await cli.run(['app', 'update', '--terms-of-service', 'https://your-landing-page.com/terms', '--privacy-policy', 'https://acme.com/privacy']);
+    const shown = await cli.run(['auth', 'terms-line']);
+    expect(shown.errors).toEqual([]);
+    expect(shown.data.termsLine).toEqual({ enabled: true, shown: false, missingPages: ['termsOfService'] });
+    expect(shown.infos.join(' ')).toContain('bridge app update --terms-of-service');
+    expect(last('PATCH', '/sign-in-settings')).toBeUndefined();
+  });
+
+  it('switches it off and on with the sign-in settings change, and shows it in auth config', async () => {
+    await cli.run(['app', 'update', '--terms-of-service', 'https://acme.com/terms', '--privacy-policy', 'https://acme.com/privacy']);
+    const off = await cli.run(['auth', 'terms-line', 'off']);
+    expect(off.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ signUpTerms: false });
+    expect(off.data.termsLine).toEqual({ enabled: false, shown: false });
+    expect(off.infos.join(' ')).not.toContain('bridge app update');
+    expect((await cli.run(['auth', 'config'])).data.termsLine).toEqual({ enabled: false });
+    const on = await cli.run(['auth', 'terms-line', 'ON']);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ signUpTerms: true });
+    expect(on.data.termsLine).toEqual({ enabled: true, shown: true });
+  });
+
+  it('refuses anything but on or off, and changes nothing', async () => {
+    expect((await cli.run(['auth', 'terms-line', 'maybe'])).error).toMatchObject({ code: 'invalid' });
+    expect(last('PATCH', '/sign-in-settings')).toBeUndefined();
+  });
+});

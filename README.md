@@ -111,7 +111,7 @@ bridge flag create team-admin --when "privileges contains users:write"
 | `flag rule show` · `add` · `set` · `clear` | A flag's rule: ordered branches of conditions, the first match wins |
 | `role` · `privilege` · `workspace list` · `member` | Roles, privileges, your customers' workspaces and their members |
 | `branding get` · `update` | The look of the hosted sign-in page: scheme, colours, radius, font |
-| `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` | Sign-in methods, and the token lifetimes |
+| `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` · `auth terms-line [on\|off]` | Sign-in methods, the token lifetimes, and sign-up's terms line |
 | `event list` | The app's event log, newest first |
 | `tenant` · `user` · `token` | The 0.x forms of `workspace`, `member` and `key`, with `--dry-run` on deletes |
 | `flag toggle` · `schedule set` · `schedule clear` · `export` · `import` | A flag's state at a time, and flags as code |

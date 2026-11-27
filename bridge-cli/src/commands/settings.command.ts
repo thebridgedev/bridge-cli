@@ -53,6 +53,25 @@ function loginMethods(settings: SignInSettings) {
 
 /** The method names `auth methods enable|disable` takes, in any case, with kebab or snake forms (`magic-link`). */
 const SWITCHES = { magiclink: 'magicLink', passkeys: 'passkeys', password: 'password' } as const;
+/** The hosts a new app's links start with, which stand for "not set yet": with one, the terms line is not shown. */
+const PLACEHOLDER_HOSTS = new Set(['your-landing-page.com', 'www.your-landing-page.com']);
+function isRealLink(url: string | undefined): boolean {
+  if (url === undefined || url.trim() === '') return false;
+  try {
+    return !PLACEHOLDER_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/** The terms line as `auth terms-line` and `auth config` show it: on or off, and whether it is shown at all (both pages real). */
+function termsLineOf(settings: SignInSettings, profile: Record<string, string> | undefined) {
+  const on = settings.signUpTerms !== false;
+  const missing = [...(isRealLink(profile?.['termsOfService']) ? [] : ['termsOfService']), ...(isRealLink(profile?.['privacyPolicy']) ? [] : ['privacyPolicy'])];
+  return { enabled: on, shown: on && missing.length === 0, ...(missing.length === 0 ? {} : { missingPages: missing }) };
+}
+const MISSING_PAGES_HINT = 'The line is shown only with real Terms of Service and Privacy Policy links: set them with `bridge app update --terms-of-service <url> --privacy-policy <url>`.';
+
 const NOT_AVAILABLE = ['mfa', 'google', 'linkedin', 'azuread', 'apple', 'github', 'facebook'];
 
 /** `--since` as a time: a duration back from now (24h, 7d, 2w) or an ISO date. */
@@ -144,9 +163,24 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
         tokens: { accessTokenTTL: settings.lifetimes.accessTokenSeconds, refreshTokenTTL: settings.lifetimes.sessionAbsoluteSeconds, sessionIdleTTL: settings.lifetimes.sessionIdleSeconds },
         passwordRules: settings.password,
         signUp: settings.signUp,
+        termsLine: { enabled: settings.signUpTerms !== false },
       });
     }),
   );
+  auth
+    .command('terms-line [state]')
+    .description("Sign-up's terms line, \"By continuing you accept the Terms of Service and Privacy Policy\": on (the default) or off. With no state, shows it")
+    .action(
+      action(deps, async (ctx, state: string | undefined) => {
+        const { c, appId } = await ctx.forApp();
+        const wanted = state === undefined ? undefined : state.trim().toLowerCase();
+        if (wanted !== undefined && wanted !== 'on' && wanted !== 'off') throw new CliError('invalid', `"${state ?? ''}" is not on or off.`, { hint: 'bridge auth terms-line on | off, or with no state to show it.' });
+        const settings = wanted === undefined ? await signInSettings.get(c, appId) : await signInSettings.update(c, appId, { signUpTerms: wanted === 'on' });
+        const line = termsLineOf(settings, (await apps.get(c, appId)).profile);
+        if (line.enabled && !line.shown) ctx.io.info(MISSING_PAGES_HINT);
+        ctx.io.result({ termsLine: line });
+      }),
+    );
   auth
     .command('password-policy')
     .description('Set the token lifetimes (the 0.x name of this command, which never set password rules): both in seconds')

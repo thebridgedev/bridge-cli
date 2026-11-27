@@ -21,6 +21,8 @@ export interface BrandingFields {
 export interface SignInSettings {
   readonly methods: { readonly password: boolean; readonly magicLink: boolean; readonly passkeys: boolean };
   readonly signUp: boolean;
+  /** Sign-up's terms line: on by default; absent from a server before it, which means on. */
+  readonly signUpTerms?: boolean;
   readonly signUpPlan: string | null;
   readonly lifetimes: { readonly accessTokenSeconds: number; readonly sessionIdleSeconds: number; readonly sessionAbsoluteSeconds: number };
   readonly password: Readonly<Record<string, unknown>>;
@@ -30,6 +32,7 @@ export interface SignInSettings {
 export interface SignInSettingsFields {
   methods?: Partial<SignInSettings['methods']>;
   lifetimes?: Partial<SignInSettings['lifetimes']>;
+  signUpTerms?: boolean;
 }
 
 export interface LoggedEvent {

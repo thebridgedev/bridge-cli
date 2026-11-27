@@ -1,3 +1,9 @@
+## Unreleased
+
+### Added
+
+- **`bridge auth terms-line [on|off]`** switches sign-up's terms line ("By continuing you accept the Terms of Service and Privacy Policy", on by default) on or off; with no state it shows it. The answer says whether the line is shown at all: only with real Terms of Service and Privacy Policy links, which `bridge app update --terms-of-service <url> --privacy-policy <url>` sets, and it says so while one is missing or a placeholder. `bridge auth config` shows `termsLine`. Needs a Bridge server with the terms line.
+
 # Changelog
 
 ## [1.0.0-alpha.6] - Unreleased
