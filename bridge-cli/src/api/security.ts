@@ -80,7 +80,26 @@ export const users = {
   suspend: (c: BridgeClient, appId: string, userId: string, reason?: string) =>
     c.person<AppUser>('usersSuspend', { params: { appId, userId }, body: reason === undefined ? {} : { reason } }).then((answer) => answer.body),
   resume: (c: BridgeClient, appId: string, userId: string) => c.person<AppUser>('usersResume', { params: { appId, userId }, body: {} }).then((answer) => answer.body),
+  /**
+   * Changes a User's sign-in address at once, for someone who lost their inbox; Bridge tells both addresses. Wants a
+   * recent sign-in (`reauthenticate`). An address Google or a company's sign-in manages is refused (`conflict`,
+   * `managed_by_provider`): it is changed there.
+   */
+  changeEmail: (c: BridgeClient, appId: string, userId: string, email: string) =>
+    c.person<{ email: string }>('usersEmailChange', { params: { appId, userId }, body: { email } }).then((answer) => answer.body),
 };
+
+const PROVIDERS: Readonly<Record<string, string>> = { google: 'Google', microsoft: 'Microsoft', azure: 'Microsoft', apple: 'Apple', facebook: 'Facebook', github: 'GitHub', linkedin: 'LinkedIn' };
+
+/** Who manages the address, when Bridge refused an email change for that; null for any other error. */
+export function managedByOf(details: unknown): string | null {
+  if (details === null || typeof details !== 'object') return null;
+  const fields = details as Record<string, unknown>;
+  const named = fields['error'] === 'managed_by_provider' || (typeof fields['type'] === 'string' && fields['type'].endsWith(':managed-by-provider'));
+  if (!named) return null;
+  const provider = typeof fields['provider'] === 'string' && fields['provider'] !== '' ? fields['provider'] : null;
+  return provider === null ? 'their sign-in provider' : (PROVIDERS[provider.toLowerCase()] ?? provider);
+}
 
 export const domainBlocks = {
   list: (c: BridgeClient, appId: string) => c.person<BlockedDomain[]>('domainBlocksList', { params: { appId } }).then((answer) => answer.body),

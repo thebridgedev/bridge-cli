@@ -126,6 +126,8 @@ export function createFakeBridge() {
   const senders = new Map<string, Json | null>();
   const schedules = new Map<string, Json[]>();
   const appUsers = new Map<string, Json[]>();
+  /** What an admin's email change told: the old address and the new one. */
+  const emailNotices: { to: string; newEmail: string }[] = [];
   /** Blocked email domains: the app's (`<app>`) and each workspace's (`<app>/<workspace>`). */
   const domainBlockLists = new Map<string, Json[]>();
   const workspaceLimits = new Map<string, number | null>();
@@ -436,6 +438,17 @@ export function createFakeBridge() {
       return json(200, { signUps: list.slice(0, Number(url.searchParams.get('limit') ?? 50)), next: null });
     }
     if (service === 'identity-access') {
+      const emailChange = /^\/users\/([^/]+)\/email$/.exec(rest);
+      if (emailChange !== null && method === 'POST') {
+        const found = perApp(appUsers, appId, () => [] as Json[]).find((each) => each['id'] === decodeURIComponent(emailChange[1] as string));
+        if (found === undefined) return notFound();
+        if (typeof found['managedBy'] === 'string') return json(409, { error: 'managed_by_provider', provider: found['managedBy'] });
+        const next = String(input['email'] ?? '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) return problem(400, 'invalid', 'Give a valid email address.');
+        emailNotices.push({ to: String(found['email']), newEmail: next }, { to: next, newEmail: next });
+        found['email'] = next;
+        return json(200, { email: next });
+      }
       if (rest === '/keys' && method === 'GET') return json(200, [...keys.values()].filter((k) => k.app === appId && !k.revoked).map(({ secret: _s, app: _a, ...view }) => ({ ...view, kind: 'app_key' })));
       if (rest === '/keys' && method === 'POST') {
         const made = { id: id('key'), app: appId, name: String(input['name']), privileges: (input['privileges'] as string[]) ?? [], secret: secret(), revoked: false, ...(typeof input['expiresInDays'] === 'number' ? { expiresInDays: input['expiresInDays'] } : {}) };
@@ -843,7 +856,8 @@ export function createFakeBridge() {
       perApp(eventLogs, appId, () => [] as Json[]).unshift({ id: id('event'), time: new Date(clock).toISOString(), workspaceId: null, userId: null, data: {}, ...event });
     },
     /** A person of the app, as Accounts' users route finds them by email. */
-    addUser(appId: string, user: { id: string; email: string }) {
+    emailNotices,
+    addUser(appId: string, user: { id: string; email: string; managedBy?: string }) {
       perApp(appUsers, appId, () => [] as Json[]).push({ ...user, suspended: false, workspaces: [{ id: 'cust-1', status: 'active' }] });
     },
     /** How many people signed up of their own in the app, flagged ones included (the counts never go below the flagged ones). */

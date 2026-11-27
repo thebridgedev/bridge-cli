@@ -122,6 +122,8 @@ export const ROUTES = {
   usersList: r('GET', 'accounts', '/apps/{appId}/users', 'person'),
   usersSuspend: r('POST', 'accounts', '/apps/{appId}/users/{userId}/suspend', 'person'),
   usersResume: r('POST', 'accounts', '/apps/{appId}/users/{userId}/resume', 'person'),
+  // An admin changes a User's sign-in address, for someone who lost their inbox: both addresses are told.
+  usersEmailChange: r('POST', 'identity-access', '/apps/{appId}/users/{userId}/email', 'person'),
   domainBlocksList: r('GET', 'accounts', '/apps/{appId}/domain-blocks', 'person'),
   domainBlocksPreview: r('GET', 'accounts', '/apps/{appId}/domain-blocks/{domain}/preview', 'person'),
   domainBlocksAdd: r('POST', 'accounts', '/apps/{appId}/domain-blocks', 'person'),

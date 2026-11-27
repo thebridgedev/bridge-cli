@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { signInSettings, type LeakedPasswords, type SignUpProtection } from '../api/settings.js';
-import { byText, domainBlocks, domainOf, flaggedSignUps, REASONS, signUpCounts, users, workspaceDomainBlocks, workspaceLimit, type AppUser } from '../api/security.js';
-import { CliError } from '../core/errors.js';
+import { byText, domainBlocks, domainOf, flaggedSignUps, managedByOf, REASONS, signUpCounts, users, workspaceDomainBlocks, workspaceLimit, type AppUser } from '../api/security.js';
+import { CliError, isCliError } from '../core/errors.js';
 import type { BridgeClient } from '../client.js';
 import { action, type Deps } from './context.js';
 
@@ -69,6 +69,33 @@ export function registerSecurityCommands(program: Command, deps: Deps): void {
       const who = await userOf(c, appId, opts);
       const done = await users.resume(c, appId, who.id);
       ctx.io.result({ ...userView({ ...done, email: done.email ?? who.email ?? '' }), changed: true });
+    }),
+  );
+
+  person(
+    user
+      .command('change-email <newEmail>')
+      .description("Change a person's sign-in address for them, for someone who lost their inbox: it changes at once and Bridge tells both addresses. Needs a recent sign-in. An address Google or a company's sign-in manages is changed there"),
+  ).action(
+    action(deps, async (ctx, newEmail: string, opts: { email?: string; userId?: string }) => {
+      const next = newEmail.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) throw new CliError('invalid', `"${newEmail}" is not an email address.`);
+      const { c, appId } = await ctx.forApp();
+      const who = await userOf(c, appId, opts);
+      if (who.email !== null && who.email.toLowerCase() === next.toLowerCase()) throw new CliError('invalid', `${next} is their address already.`);
+      try {
+        const done = await users.changeEmail(c, appId, who.id, next);
+        ctx.io.info('Both addresses were told.');
+        ctx.io.result({ id: who.id, ...(who.email === null ? {} : { previousEmail: who.email }), email: done.email, changed: true });
+      } catch (error) {
+        const provider = isCliError(error) ? managedByOf(error.details) : null;
+        if (provider === null) throw error;
+        throw new CliError('conflict', `This address is managed by ${provider}: it cannot be changed in Bridge.`, {
+          status: 409,
+          details: (error as CliError).details,
+          hint: `They sign in with ${provider}, so the address is changed there.`,
+        });
+      }
     }),
   );
 
