@@ -12,11 +12,33 @@ interface ProfileOptions {
   website?: string;
   privacyPolicy?: string;
   termsOfService?: string;
+  supportContact?: string;
+}
+
+/** The longest support contact Bridge takes (an email address's own limit). */
+const SUPPORT_CONTACT_MAX = 320;
+
+/** A support contact is an email address or an https address: the suspended message shows it to the person. */
+export function checkSupportContact(typed: string): string {
+  const value = typed.trim();
+  const email = /^[^\s@/:]+@[^\s@/:]+\.[^\s@/:]+$/.test(value);
+  let https = false;
+  try {
+    const url = new URL(value);
+    https = url.protocol === 'https:' && url.hostname.includes('.');
+  } catch {
+    https = false;
+  }
+  if (value.length > SUPPORT_CONTACT_MAX || !(email || https)) {
+    throw new CliError('invalid', `--support-contact is an email address (support@example.com) or an https address (https://example.com/help), at most ${String(SUPPORT_CONTACT_MAX)} characters, or "none": ${typed}`);
+  }
+  return value;
 }
 
 /** The profile fields given; "none" clears one. */
 function profile(opts: ProfileOptions): AppFields {
   const fields: Record<string, string | null> = {};
+  if (opts.supportContact !== undefined) fields['supportContact'] = opts.supportContact === 'none' ? null : checkSupportContact(opts.supportContact);
   for (const name of ['logo', 'website', 'privacyPolicy', 'termsOfService'] as const) {
     const value = opts[name];
     if (value !== undefined) fields[name] = value === 'none' ? null : value;
@@ -29,7 +51,8 @@ const withProfileOptions = (cmd: Command) =>
     .option('--logo <url>', 'Logo address ("none" clears it)')
     .option('--website <url>', 'Website ("none" clears it)')
     .option('--privacy-policy <url>', 'Privacy policy ("none" clears it)')
-    .option('--terms-of-service <url>', 'Terms of service ("none" clears it)');
+    .option('--terms-of-service <url>', 'Terms of service ("none" clears it)')
+    .option('--support-contact <email|url>', 'Where a suspended person turns for help: an email address or an https address ("none" clears it)');
 
 const USES = `one of ${ADDRESS_USES.join(', ')}; repeat for several`;
 
@@ -117,7 +140,7 @@ export function registerAppCommands(program: Command, deps: Deps): void {
   withProfileOptions(app.command('update').description('Rename the app or change its public profile').option('--name <name>', 'The app\'s name')).action(
     action(deps, async (ctx, opts: ProfileOptions) => {
       const fields = profile(opts);
-      if (Object.keys(fields).length === 0) throw new CliError('invalid', 'Nothing to change: give --name, --logo, --website, --privacy-policy or --terms-of-service.');
+      if (Object.keys(fields).length === 0) throw new CliError('invalid', 'Nothing to change: give --name, --logo, --website, --privacy-policy, --terms-of-service or --support-contact.');
       const { c, appId } = await ctx.forApp();
       ctx.io.result(await apps.update(c, appId, fields));
     }),

@@ -146,6 +146,43 @@ describe('sign-up protection and flagged sign-ups (TBP-83)', () => {
   });
 });
 
+describe('sign-up numbers with and without the flagged ones (TBP-83)', () => {
+  it('shows the last 30 days by default, and the days asked for', async () => {
+    fake.setSignUps(appId, 12);
+    fake.addFlagged(appId, { user: 'u2', email: 'x1@mailinator.com', score: 100, reasons: ['throwaway_domain'] });
+    const counted = await cli.run(['auth', 'sign-up-counts']);
+    expect(counted.errors).toEqual([]);
+    expect(counted.data).toEqual({ days: 30, signUps: 12, flagged: 1, withoutFlagged: 11 });
+    expect(last('GET', '/sign-up-counts')?.query.get('days')).toBe('30');
+    expect((await cli.run(['auth', 'sign-up-counts', '--days', '7'])).data).toMatchObject({ days: 7 });
+  });
+
+  it('refuses days that are not a whole number from 1 to 365 before calling Bridge', async () => {
+    for (const bad of ['0', '366', '1.5', 'week']) expect((await cli.run(['auth', 'sign-up-counts', '--days', bad])).error).toMatchObject({ code: 'invalid' });
+    expect(last('GET', '/sign-up-counts')).toBeUndefined();
+  });
+});
+
+describe('the support contact on the suspended message (TBP-84)', () => {
+  it('sets an email address or an https address with the app\'s public details, and clears it with none', async () => {
+    const set = await cli.run(['app', 'update', '--support-contact', ' support@acme-demo.com ']);
+    expect(set.errors).toEqual([]);
+    expect(last('PATCH', `/apps/${appId}`)?.body).toEqual({ supportContact: 'support@acme-demo.com' });
+    expect(set.data.profile).toMatchObject({ supportContact: 'support@acme-demo.com' });
+    await cli.run(['app', 'update', '--support-contact', 'https://acme-demo.com/help']);
+    expect(last('PATCH', `/apps/${appId}`)?.body).toEqual({ supportContact: 'https://acme-demo.com/help' });
+    await cli.run(['app', 'update', '--support-contact', 'none']);
+    expect(last('PATCH', `/apps/${appId}`)?.body).toEqual({ supportContact: null });
+  });
+
+  it('refuses what a suspended person could not use, before calling Bridge', async () => {
+    for (const bad of ['support', 'http://acme-demo.com', 'mailto:a@b.co', 'javascript:alert(1)']) {
+      expect((await cli.run(['app', 'update', '--support-contact', bad])).error).toMatchObject({ code: 'invalid' });
+    }
+    expect(last('PATCH', `/apps/${appId}`)).toBeUndefined();
+  });
+});
+
 describe('leaked passwords and admin notices (TBP-85)', () => {
   it('shows and changes the leaked-password setting (Warn by default)', async () => {
     expect((await cli.run(['auth', 'leaked-passwords'])).data).toEqual({ leakedPasswords: 'warn' });

@@ -104,6 +104,18 @@ export const workspaceLimit = {
     c.person<{ workspacesPerPerson: number | null }>('workspaceLimitSet', { params: { appId }, body: { workspacesPerPerson } }).then((answer) => answer.body),
 };
 
+/** People who signed up of their own in the last `days` days, and how many of them Sign-up protection flagged. */
+export interface SignUpCounts {
+  readonly days: number;
+  readonly total: number;
+  readonly flagged: number;
+}
+
+export const signUpCounts = {
+  get: (c: BridgeClient, appId: string, days: number) =>
+    c.person<SignUpCounts>('signUpCounts', { params: { appId }, query: { days: String(days) } }).then((answer) => answer.body),
+};
+
 export const flaggedSignUps = {
   list: (c: BridgeClient, appId: string, query: { limit?: string; after?: string; minScore?: string }) =>
     c.person<{ signUps: FlaggedSignUp[]; next: string | null }>('flaggedSignUps', { params: { appId }, query }).then((answer) => answer.body),

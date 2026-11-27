@@ -30,6 +30,8 @@ export interface AppFields {
   readonly website?: string | null;
   readonly privacyPolicy?: string | null;
   readonly termsOfService?: string | null;
+  /** Where a person turns for help, shown on the suspended message: an email address or an https address. */
+  readonly supportContact?: string | null;
 }
 
 export function checkUses(uses: readonly string[]): AddressUse[] {

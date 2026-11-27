@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import { signInSettings, type LeakedPasswords, type SignUpProtection } from '../api/settings.js';
-import { byText, domainBlocks, domainOf, flaggedSignUps, REASONS, users, workspaceDomainBlocks, workspaceLimit, type AppUser } from '../api/security.js';
+import { byText, domainBlocks, domainOf, flaggedSignUps, REASONS, signUpCounts, users, workspaceDomainBlocks, workspaceLimit, type AppUser } from '../api/security.js';
 import { CliError } from '../core/errors.js';
 import type { BridgeClient } from '../client.js';
 import { action, type Deps } from './context.js';
@@ -165,6 +165,19 @@ export function registerSecurityCommands(program: Command, deps: Deps): void {
           signUps: page.signUps.map((each) => ({ email: each.email, user: each.user, score: each.signUpRisk?.score ?? 0, reasons: (each.signUpRisk?.reasons ?? []).map((reason) => REASONS[reason] ?? reason), signedUpAt: each.signedUpAt })),
           next: page.next,
         });
+      }),
+    );
+  auth
+    .command('sign-up-counts')
+    .description('How many people signed up of their own in the last days, with and without the sign-ups Sign-up protection flagged. Invites are not counted')
+    .option('--days <n>', 'How many days back (default 30, 1 to 365)')
+    .action(
+      action(deps, async (ctx, opts: { days?: string }) => {
+        const days = opts.days === undefined ? 30 : Number(opts.days);
+        if (!(Number.isInteger(days) && days >= 1 && days <= 365 && (opts.days === undefined || /^\d{1,3}$/.test(opts.days)))) throw new CliError('invalid', `--days is a whole number from 1 to 365: ${String(opts.days)}`);
+        const { c, appId } = await ctx.forApp();
+        const counts = await signUpCounts.get(c, appId, days);
+        ctx.io.result({ days: counts.days, signUps: counts.total, flagged: counts.flagged, withoutFlagged: Math.max(0, counts.total - counts.flagged) });
       }),
     );
   auth

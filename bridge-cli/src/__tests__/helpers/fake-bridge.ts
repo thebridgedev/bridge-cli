@@ -130,6 +130,8 @@ export function createFakeBridge() {
   const domainBlockLists = new Map<string, Json[]>();
   const workspaceLimits = new Map<string, number | null>();
   const flagged = new Map<string, Json[]>();
+  /** Sign-ups of one's own per app, flagged or not, for the counts (TBP-83). */
+  const signUpTotals = new Map<string, number>();
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
   /** Why Bridge refuses to send invites now: no email-links address, or too many. */
@@ -389,7 +391,7 @@ export function createFakeBridge() {
         return json(200, { deleted: appId });
       }
       for (const [field, value] of Object.entries(input)) {
-        if (['logo', 'website', 'privacyPolicy', 'termsOfService'].includes(field)) (app['profile'] as Json)[field] = value;
+        if (['logo', 'website', 'privacyPolicy', 'termsOfService', 'supportContact'].includes(field)) (app['profile'] as Json)[field] = value;
         else app[field] = value;
       }
       const returns = (app['addresses'] as { url: string; uses: string[] }[]).filter((each) => each.uses.includes('sign-in-return')).map((each) => each.url);
@@ -425,6 +427,10 @@ export function createFakeBridge() {
       return json(200, senders.get(appId));
     }
     if (service === 'billing' && rest === '/connection/health') return json(200, { connected: connections.has(appId), status: connections.get(appId)?.['status'] ?? 'not-connected' });
+    if (service === 'identity-access' && rest === '/sign-up-counts') {
+      const marked = perApp(flagged, appId, () => [] as Json[]).length;
+      return json(200, { days: Number(url.searchParams.get('days') ?? 30), total: Math.max(marked, signUpTotals.get(appId) ?? marked), flagged: marked });
+    }
     if (service === 'identity-access' && rest === '/flagged-sign-ups') {
       const list = perApp(flagged, appId, () => [] as Json[]).filter((each) => ((each['signUpRisk'] as Json)['score'] as number) >= Number(url.searchParams.get('minScore') ?? 1));
       return json(200, { signUps: list.slice(0, Number(url.searchParams.get('limit') ?? 50)), next: null });
@@ -839,6 +845,10 @@ export function createFakeBridge() {
     /** A person of the app, as Accounts' users route finds them by email. */
     addUser(appId: string, user: { id: string; email: string }) {
       perApp(appUsers, appId, () => [] as Json[]).push({ ...user, suspended: false, workspaces: [{ id: 'cust-1', status: 'active' }] });
+    },
+    /** How many people signed up of their own in the app, flagged ones included (the counts never go below the flagged ones). */
+    setSignUps(appId: string, total: number) {
+      signUpTotals.set(appId, total);
     },
     /** A sign-up Sign-up protection flagged, as the app's admins read it. */
     addFlagged(appId: string, signUp: { user: string; email: string; score: number; reasons: string[] }) {

@@ -132,6 +132,7 @@ export const ROUTES = {
   workspaceLimitGet: r('GET', 'accounts', '/apps/{appId}/workspace-limit', 'person'),
   workspaceLimitSet: r('PUT', 'accounts', '/apps/{appId}/workspace-limit', 'person'),
   flaggedSignUps: r('GET', 'identity-access', '/apps/{appId}/flagged-sign-ups', 'person'),
+  signUpCounts: r('GET', 'identity-access', '/apps/{appId}/sign-up-counts', 'person'),
   workspacesList: r('GET', 'accounts', '/apps/{appId}/workspaces', 'person'),
   workspacesGet: r('GET', 'accounts', '/apps/{appId}/workspaces/{workspaceId}', 'person'),
   workspacesCreate: r('POST', 'accounts', '/apps/{appId}/workspaces', 'person'),

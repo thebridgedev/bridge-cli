@@ -113,7 +113,7 @@ bridge flag create team-admin --when "privileges contains users:write"
 | `invite send` · `list` · `revoke` | Invites by email: into your own workspace, or with `--workspace` into one of your app's |
 | `branding get` · `update` | The look of the hosted sign-in page: scheme, colours, radius, font |
 | `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` | Sign-in methods, and the token lifetimes |
-| `user suspend` · `resume` · `suspension` · `domain list` · `block` · `unblock` · `workspace limit` · `auth sign-up-protection` · `flagged-sign-ups` · `leaked-passwords` · `admin-notices` | Login security: suspend with a reason, blocked email domains, workspaces one person can create, sign-up protection, leaked passwords |
+| `user suspend` · `resume` · `suspension` · `domain list` · `block` · `unblock` · `workspace limit` · `auth sign-up-protection` · `flagged-sign-ups` · `sign-up-counts` · `leaked-passwords` · `admin-notices` | Login security: suspend with a reason, blocked email domains, workspaces one person can create, sign-up protection and sign-up numbers, leaked passwords. `app update --support-contact` sets where a suspended person turns for help |
 | `event list` | The app's event log, newest first |
 | `tenant` · `user` · `token` | The 0.x forms of `workspace`, `member` and `key`, with `--dry-run` on deletes |
 | `flag toggle` · `schedule set` · `schedule clear` · `export` · `import` | A flag's state at a time, and flags as code |
