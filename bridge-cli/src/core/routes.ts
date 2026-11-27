@@ -48,6 +48,10 @@ export const ROUTES = {
   brandingUpdate: r('PATCH', 'app-registry', '/apps/{appId}/branding', 'person'),
   signInSettingsGet: r('GET', 'identity-access', '/apps/{appId}/sign-in-settings', 'person'),
   signInSettingsUpdate: r('PATCH', 'identity-access', '/apps/{appId}/sign-in-settings', 'person'),
+  // A social provider's credentials, and a User's passkeys for the app's admins.
+  signInProviderSave: r('PUT', 'identity-access', '/apps/{appId}/sign-in-settings/providers/{provider}', 'person'),
+  userPasskeysList: r('GET', 'identity-access', '/apps/{appId}/users/{userId}/passkeys', 'person'),
+  userPasskeysRemove: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/passkeys/{passkeyId}', 'person'),
   eventsList: r('GET', 'events-and-logs', '/apps/{appId}/events', 'person'),
   senderGet: r('GET', 'communication', '/apps/{appId}/sender', 'person'),
   senderSet: r('PUT', 'communication', '/apps/{appId}/sender', 'person'),

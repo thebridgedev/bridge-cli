@@ -37,7 +37,7 @@ export function buildProgram(deps: Deps, version = '0.0.0'): Command {
   registerAccountCommands(program, deps);
   // After the account commands: it adds `role set-default` to the `role` group.
   registerCompatCommands(program, deps);
-  // After the auth commands: it adds `auth methods|config|password-policy` to the `auth` group.
+  // After the auth and compat commands: it adds `auth methods|config|password-policy|token-lifetime|providers` to the `auth` group and `user passkeys`.
   registerSettingsCommands(program, deps);
   // After the settings commands: it adds `event auth-attempts` to the `event` group.
   registerDiagnoseCommands(program, deps);

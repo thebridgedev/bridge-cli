@@ -1,5 +1,5 @@
 import { InvalidArgumentError, type Command } from 'commander';
-import { branding, listEvents, sender, signInSettings, type BrandingFields, type SignInSettings } from '../api/settings.js';
+import { branding, listEvents, sender, signInSettings, userPasskeys, type BrandingFields, type SignInSettings } from '../api/settings.js';
 import { apps } from '../api/apps.js';
 import { connection, plans } from '../api/billing.js';
 import { CliError } from '../core/errors.js';
@@ -9,7 +9,8 @@ import { findWorkspaceId } from './workspace-id.js';
 /**
  * The commands that read and change how the app looks and signs people in, and what happened in it: `branding`,
  * `auth methods|config|password-policy`, `event list` and `setup communication` (the 0.x commands of those names, on
- * version 2). What the new Bridge does not have yet (social sign-in, MFA, a free-form stylesheet) is said, never faked.
+ * version 2), with `auth providers`, `auth token-lifetime` and `user passkeys`. What
+ * the new Bridge does not have yet (Apple, a free-form stylesheet) is said, never faked.
  */
 
 const FONTS = ['system', 'inter', 'roboto', 'open-sans', 'montserrat', 'nunito', 'lora'];
@@ -41,19 +42,55 @@ function radiusOf(value: string): string {
 
 /** The login methods, as `bridge auth methods list` shows them: what is on, and what Bridge does not offer yet. */
 const NOT_YET = { enabled: false, note: 'Not available on Bridge yet' } as const;
+
+/**
+ * The social providers: the CLI's names, Identity and Access's key (`azure` stays the API name for
+ * Microsoft, which callers rely on), the key the 0.x output used, and the name people read.
+ */
+const PROVIDERS = [
+  { cli: 'google', key: 'google', view: 'google', name: 'Google' },
+  { cli: 'linkedin', key: 'linkedin', view: 'linkedin', name: 'LinkedIn' },
+  { cli: 'microsoft', key: 'azure', view: 'microsoft', name: 'Microsoft' },
+  { cli: 'github', key: 'github', view: 'github', name: 'GitHub' },
+  { cli: 'facebook', key: 'facebook', view: 'facebook', name: 'Facebook' },
+] as const;
+/** A provider by the name a developer types: `microsoft` (also `azure`, `azuread`), `google`, … */
+function providerOf(input: string) {
+  const wanted = input.replace(/[-_\s]/g, '').toLowerCase();
+  return PROVIDERS.find((each) => each.cli === wanted || each.key === wanted || (each.key === 'azure' && wanted === 'azuread')) ?? null;
+}
+
+/** Who can sign in with Microsoft, as the CLI names it, and the tenant Identity and Access keeps. */
+const WHO = { any: 'common', work: 'organizations', personal: 'consumers' } as const;
+
+/** One provider's state: on or off, its credentials saved or not, the return address to register, and Microsoft's facts. */
+function providerState(settings: SignInSettings, provider: (typeof PROVIDERS)[number]) {
+  const saved = settings.providers?.[provider.key];
+  return {
+    name: provider.name,
+    enabled: settings.social?.[provider.key] === true,
+    credentialsSaved: saved?.configured === true,
+    ...(saved?.clientId == null ? {} : { clientId: saved.clientId }),
+    ...(saved?.returnAddress === undefined ? {} : { returnAddress: saved.returnAddress }),
+    ...(provider.key === 'azure' && saved?.configured === true
+      ? { whoCanSignIn: saved.audience ?? 'any', ...(saved.audience === 'directory' ? { directory: saved.tenantId ?? null } : {}), secretExpiresAt: saved.secretExpiresAt ?? null, secretExpiry: saved.secretExpiry ?? null }
+      : {}),
+  };
+}
+
 function loginMethods(settings: SignInSettings) {
   return {
     password: { enabled: settings.methods.password },
     magicLink: { enabled: settings.methods.magicLink },
     passkeys: { enabled: settings.methods.passkeys },
-    mfa: { ...NOT_YET, note: 'Second factor, not a standalone login method; not available on Bridge yet' },
-    socialProviders: { google: NOT_YET, linkedin: NOT_YET, azureAd: NOT_YET, apple: NOT_YET, github: NOT_YET, facebook: NOT_YET },
+    mfa: { enabled: settings.secondStep === true, note: 'Second factor, not a standalone login method: a code by text message after any way of signing in' },
+    socialProviders: { ...Object.fromEntries(PROVIDERS.map((each) => [each.view, providerState(settings, each)])), apple: NOT_YET },
   };
 }
 
 /** The method names `auth methods enable|disable` takes, in any case, with kebab or snake forms (`magic-link`). */
 const SWITCHES = { magiclink: 'magicLink', passkeys: 'passkeys', password: 'password' } as const;
-const NOT_AVAILABLE = ['mfa', 'google', 'linkedin', 'azuread', 'apple', 'github', 'facebook'];
+const NOT_AVAILABLE = ['mfa', 'apple'];
 
 /** `--since` as a time: a duration back from now (24h, 7d, 2w) or an ISO date. */
 export function sinceOf(since: string, now: number): string {
@@ -70,11 +107,72 @@ async function methodSwitch(ctx: Context, input: string, on: boolean): Promise<v
   if (NOT_AVAILABLE.includes(wanted)) {
     throw new CliError('not-offered', `${input}: not available on Bridge yet.`, { hint: 'Password, magic links and passkeys are. Nothing was changed.' });
   }
+  const provider = providerOf(input);
+  if (provider !== null) {
+    const { c, appId } = await ctx.forApp();
+    if (on && (await signInSettings.get(c, appId)).providers?.[provider.key]?.configured !== true) {
+      throw new CliError('invalid', `${provider.name}'s client ID and secret are not saved yet. Nothing was changed.`, { hint: `Save them first: bridge auth providers set ${provider.cli} --client-id <id> --client-secret <secret>${provider.key === 'azure' ? ' [--who-can-sign-in any|work|personal|directory]' : ''} --enable` });
+    }
+    const settings = await signInSettings.update(c, appId, { social: { [provider.key]: on } });
+    return ctx.io.result({ method: provider.cli, enabled: settings.social?.[provider.key] === true, loginMethods: loginMethods(settings) });
+  }
   const field = (SWITCHES as Record<string, string | undefined>)[wanted];
-  if (field === undefined) throw new CliError('invalid', `Unknown login method "${input}".`, { hint: `Use one of: magicLink, passkeys, password. \`bridge auth methods list\` shows them all.` });
+  if (field === undefined) throw new CliError('invalid', `Unknown login method "${input}".`, { hint: `Use one of: magicLink, passkeys, password, ${PROVIDERS.map((each) => each.cli).join(', ')}. \`bridge auth methods list\` shows them all.` });
   const { c, appId } = await ctx.forApp();
   const settings = await signInSettings.update(c, appId, { methods: { [field]: on } });
   ctx.io.result({ method: field, enabled: (settings.methods as Record<string, boolean>)[field] === true, loginMethods: loginMethods(settings) });
+}
+
+/** The password presets. */
+const PRESETS = ['basic', 'recommended', 'strict', 'compliance', 'custom'];
+const RULES = [
+  ['requireUpper', '--require-upper', 'needs an upper-case letter'],
+  ['requireLower', '--require-lower', 'needs a lower-case letter'],
+  ['requireDigit', '--require-digit', 'needs a number'],
+  ['requireSymbol', '--require-symbol', 'needs a symbol'],
+  ['blockEmail', '--block-email', "refuses a password holding the person's email address"],
+  ['blockCommon', '--block-common', 'refuses common passwords (Bridge\'s list, refreshed every release)'],
+  ['blockAppName', '--block-app-name', "refuses a password holding the app's name"],
+] as const;
+const yesNo = (value: string): boolean => {
+  if (value === 'true' || value === 'yes' || value === 'on') return true;
+  if (value === 'false' || value === 'no' || value === 'off') return false;
+  throw new InvalidArgumentError('true or false');
+};
+
+/** What the password rules are, as the CLI shows them: the rules, the badge and the common-password list's date. */
+function passwordView(settings: SignInSettings) {
+  const facts = settings.passwordFacts;
+  const badge = facts?.badge === 'nist' ? 'Follows NIST password guidelines (SP 800-63B)' : facts?.badge === 'audit' ? 'Meets common audit checklists' : null;
+  return {
+    passwordRules: settings.password,
+    ...(badge === null ? {} : { badge }),
+    ...(facts?.commonPasswords?.updated === undefined ? {} : { commonPasswordList: `updated ${facts.commonPasswords.updated}` }),
+    ...(facts?.productionFloor === undefined ? {} : { productionFloor: facts.productionFloor.kept === true ? `${String(facts.productionFloor.preset)} (kept from before the move)` : 'recommended' }),
+  };
+}
+
+const tokensView = (settings: SignInSettings) => ({ accessTokenTTL: settings.lifetimes.accessTokenSeconds, refreshTokenTTL: settings.lifetimes.sessionAbsoluteSeconds, sessionIdleTTL: settings.lifetimes.sessionIdleSeconds });
+
+/** The lifetimes a change sets, within Identity and Access's bounds (shared by `token-lifetime` and the moved flags). */
+function lifetimesOf(current: SignInSettings, opts: { accessTokenTtl?: number; refreshTokenTtl?: number; sessionIdleTtl?: number }): Record<string, number> {
+  const lifetimes: Record<string, number> = {};
+  for (const [flag, name, value] of [['--access-token-ttl', 'accessTokenSeconds', opts.accessTokenTtl], ['--refresh-token-ttl', 'sessionAbsoluteSeconds', opts.refreshTokenTtl], ['--session-idle-ttl', 'sessionIdleSeconds', opts.sessionIdleTtl]] as const) {
+    if (value === undefined) continue;
+    if (!Number.isInteger(value) || value <= 0) throw new CliError('invalid', `${flag} is a whole number of seconds. Nothing was changed.`);
+    const range = current.bounds?.lifetimes?.[name];
+    if (range !== undefined && (value < range.min || value > range.max)) throw new CliError('invalid', `${flag} is ${String(range.min)} to ${String(range.max)} seconds on Bridge. Nothing was changed.`);
+    lifetimes[name] = value;
+  }
+  // A session's idle time never outlives its whole life: a shorter life shortens the idle time with it.
+  if (opts.refreshTokenTtl !== undefined && opts.sessionIdleTtl === undefined && current.lifetimes.sessionIdleSeconds > opts.refreshTokenTtl) lifetimes['sessionIdleSeconds'] = opts.refreshTokenTtl;
+  return lifetimes;
+}
+
+/** A refusal of the password rules (production's floor): said as Bridge said it, with what to do. */
+function rulesRefused(error: unknown): never {
+  if (error instanceof CliError && /password rules/i.test(error.message)) throw new CliError('invalid', `${error.message} Nothing was changed.`, { hint: 'Pick recommended or strict, or switch the app to development first (bridge app mode development --yes).' });
+  throw error;
 }
 
 export function registerSettingsCommands(program: Command, deps: Deps): void {
@@ -132,7 +230,7 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
       ctx.io.result({ loginMethods: loginMethods(await signInSettings.get(c, appId)) });
     }),
   );
-  methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys or password. Social sign-in and MFA are not available on Bridge yet').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
+  methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys, password, or a social provider whose credentials are saved (google, linkedin, microsoft, github, facebook)').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
   methods.command('disable <method>').description('Switch a login method off. Bridge refuses to switch off the last one').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, false)));
 
   auth.command('config').description("The app's sign-in configuration: the login methods, the token lifetimes and the password rules").action(
@@ -141,33 +239,138 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
       const settings = await signInSettings.get(c, appId);
       ctx.io.result({
         loginMethods: loginMethods(settings),
-        tokens: { accessTokenTTL: settings.lifetimes.accessTokenSeconds, refreshTokenTTL: settings.lifetimes.sessionAbsoluteSeconds, sessionIdleTTL: settings.lifetimes.sessionIdleSeconds },
-        passwordRules: settings.password,
+        tokens: tokensView(settings),
+        ...passwordView(settings),
         signUp: settings.signUp,
       });
     }),
   );
-  auth
+  const ttl = (value: string) => Number.parseInt(value, 10);
+  const policy = auth
     .command('password-policy')
-    .description('Set the token lifetimes (the 0.x name of this command, which never set password rules): both in seconds')
-    .option('--access-token-ttl <seconds>', 'How long an access token lives', (value) => Number.parseInt(value, 10))
-    .option('--refresh-token-ttl <seconds>', 'How long a session lasts in all (the 0.x refresh token lifetime)', (value) => Number.parseInt(value, 10))
+    .description("Set the app's password rules: a preset, or custom rules never below 8 characters. Changing them signs nobody out and forces nobody to reset")
+    .option('--preset <preset>', `basic | recommended | strict | compliance | custom`)
+    .option('--min-length <n>', 'Custom: the shortest password, 8 to 128 characters', ttl);
+  for (const [, flag, what] of RULES) policy.option(`${flag} [bool]`, `Custom: ${what} (true or false)`, yesNo);
+  policy
+    .option('--access-token-ttl <seconds>', 'Moved to `bridge auth token-lifetime`; still taken here for one release', ttl)
+    .option('--refresh-token-ttl <seconds>', 'Moved to `bridge auth token-lifetime`; still taken here for one release', ttl)
     .action(
-      action(deps, async (ctx, opts: { accessTokenTtl?: number; refreshTokenTtl?: number }) => {
+      action(deps, async (ctx, opts: Record<string, unknown> & { preset?: string; minLength?: number; accessTokenTtl?: number; refreshTokenTtl?: number }) => {
         const { c, appId } = await ctx.forApp();
         const current = await signInSettings.get(c, appId);
-        const lifetimes: Record<string, number> = {};
-        for (const [flag, name, value] of [['--access-token-ttl', 'accessTokenSeconds', opts.accessTokenTtl], ['--refresh-token-ttl', 'sessionAbsoluteSeconds', opts.refreshTokenTtl]] as const) {
-          if (value === undefined) continue;
-          const range = current.bounds?.lifetimes?.[name];
-          if (range !== undefined && (value < range.min || value > range.max)) throw new CliError('invalid', `${flag} is ${String(range.min)} to ${String(range.max)} seconds on Bridge. Nothing was changed.`);
-          lifetimes[name] = value;
+        const lifetimes = lifetimesOf(current, opts);
+        const given = RULES.filter(([name]) => opts[name] !== undefined);
+        if (opts.preset !== undefined && !PRESETS.includes(opts.preset)) throw new CliError('invalid', `--preset is one of ${PRESETS.join(', ')}.`);
+        if (opts.preset !== undefined && opts.preset !== 'custom' && (given.length > 0 || opts.minLength !== undefined)) {
+          throw new CliError('invalid', `The ${opts.preset} preset sets its own rules. Nothing was changed.`, { hint: 'Use --preset custom to set rules of your own.' });
         }
-        if (Object.keys(lifetimes).length === 0) throw new CliError('invalid', 'Nothing to change: give --access-token-ttl or --refresh-token-ttl.');
-        // A session's idle time never outlives its whole life: a shorter life shortens the idle time with it.
-        if (opts.refreshTokenTtl !== undefined && current.lifetimes.sessionIdleSeconds > opts.refreshTokenTtl) lifetimes['sessionIdleSeconds'] = opts.refreshTokenTtl;
-        const changed = await signInSettings.update(c, appId, { lifetimes });
-        ctx.io.result({ tokens: { accessTokenTTL: changed.lifetimes.accessTokenSeconds, refreshTokenTTL: changed.lifetimes.sessionAbsoluteSeconds, sessionIdleTTL: changed.lifetimes.sessionIdleSeconds } });
+        if (opts.minLength !== undefined && (!Number.isInteger(opts.minLength) || opts.minLength < 8 || opts.minLength > 128)) throw new CliError('invalid', '--min-length is 8 to 128 characters. Nothing was changed.');
+        const custom = opts.preset === 'custom' || (opts.preset === undefined && (given.length > 0 || opts.minLength !== undefined));
+        const password = custom
+          ? { preset: 'custom', minLength: opts.minLength ?? (current.password['minLength'] as number | undefined) ?? 8, ...Object.fromEntries(RULES.map(([name]) => [name, (opts[name] as boolean | undefined) ?? current.password[name] === true])) }
+          : opts.preset === undefined
+            ? undefined
+            : { preset: opts.preset };
+        if (password === undefined && Object.keys(lifetimes).length === 0) {
+          throw new CliError('invalid', 'Nothing to change: give --preset, or the custom rules (--min-length, --require-upper, --block-common, …).', { hint: 'Token lifetimes moved to `bridge auth token-lifetime`.' });
+        }
+        if (Object.keys(lifetimes).length > 0) ctx.io.info('Token lifetimes moved to `bridge auth token-lifetime`. This command still sets them for one more release.');
+        let changed: SignInSettings;
+        try {
+          changed = await signInSettings.update(c, appId, { ...(password === undefined ? {} : { password }), ...(Object.keys(lifetimes).length === 0 ? {} : { lifetimes }) });
+        } catch (error) {
+          return rulesRefused(error);
+        }
+        ctx.io.result({ ...passwordView(changed), ...(Object.keys(lifetimes).length === 0 ? {} : { tokens: tokensView(changed), moved: 'Token lifetimes: use bridge auth token-lifetime' }) });
+      }),
+    );
+
+  auth
+    .command('token-lifetime')
+    .description('Set the token and session lifetimes, in seconds (moved here from password-policy). Nobody is signed out')
+    .option('--access-token-ttl <seconds>', 'How long an access token lives', ttl)
+    .option('--refresh-token-ttl <seconds>', 'How long a session lasts in all (the 0.x refresh token lifetime)', ttl)
+    .option('--session-idle-ttl <seconds>', 'How long a session lasts without being used', ttl)
+    .action(
+      action(deps, async (ctx, opts: { accessTokenTtl?: number; refreshTokenTtl?: number; sessionIdleTtl?: number }) => {
+        const { c, appId } = await ctx.forApp();
+        const lifetimes = lifetimesOf(await signInSettings.get(c, appId), opts);
+        if (Object.keys(lifetimes).length === 0) throw new CliError('invalid', 'Nothing to change: give --access-token-ttl, --refresh-token-ttl or --session-idle-ttl.');
+        ctx.io.result({ tokens: tokensView(await signInSettings.update(c, appId, { lifetimes })) });
+      }),
+    );
+
+  const providers = auth.command('providers').description('Social sign-in providers: Google, LinkedIn, Microsoft, GitHub and Facebook');
+  providers.command('list').description('Each provider: on or off, its credentials saved, and the return address to register with it').action(
+    action(deps, async (ctx) => {
+      const { c, appId } = await ctx.forApp();
+      const settings = await signInSettings.get(c, appId);
+      ctx.io.result({ providers: Object.fromEntries(PROVIDERS.map((each) => [each.cli, providerState(settings, each)])) });
+    }),
+  );
+  providers
+    .command('set <provider>')
+    .description("Save a provider's client ID and secret (google, linkedin, microsoft, github, facebook), and print the exact return address to register with it")
+    .requiredOption('--client-id <id>', "The client ID from the provider's console (Microsoft: Application (client) ID)")
+    .requiredOption('--client-secret <secret>', "The client secret (Microsoft: the secret's Value, not its Secret ID)")
+    .option('--who-can-sign-in <who>', 'Microsoft: any (default) | work | personal | directory')
+    .option('--directory <id>', 'Microsoft with --who-can-sign-in directory: the directory (tenant) id or domain')
+    .option('--secret-expires-at <date>', 'Microsoft: when the client secret expires, YYYY-MM-DD (default: 24 months from now)')
+    .option('--enable', 'Also switch the provider on')
+    .action(
+      action(deps, async (ctx, name: string, opts: { clientId: string; clientSecret: string; whoCanSignIn?: string; directory?: string; secretExpiresAt?: string; enable?: boolean }) => {
+        const provider = providerOf(name);
+        if (provider === null) {
+          throw new CliError('invalid', `"${name}" is not a provider Bridge offers.`, { hint: `Use one of: ${PROVIDERS.map((each) => each.cli).join(', ')}.${name.toLowerCase() === 'apple' ? ' Apple is not available on Bridge yet.' : ''}` });
+        }
+        const microsoft = provider.key === 'azure';
+        if (!microsoft && (opts.whoCanSignIn !== undefined || opts.directory !== undefined || opts.secretExpiresAt !== undefined)) throw new CliError('invalid', '--who-can-sign-in, --directory and --secret-expires-at are for Microsoft only. Nothing was changed.');
+        const who = opts.whoCanSignIn ?? (opts.directory !== undefined ? 'directory' : 'any');
+        if (microsoft && !['any', 'work', 'personal', 'directory'].includes(who)) throw new CliError('invalid', '--who-can-sign-in is any, work, personal or directory.');
+        if (who === 'directory' && (opts.directory === undefined || opts.directory.trim() === '')) throw new CliError('invalid', '--who-can-sign-in directory needs --directory <id or domain>. Nothing was changed.');
+        if (opts.secretExpiresAt !== undefined && Number.isNaN(new Date(opts.secretExpiresAt).getTime())) throw new CliError('invalid', '--secret-expires-at is a date such as 2028-11-27.');
+        const tenantId = !microsoft ? undefined : who === 'directory' ? (opts.directory as string).trim() : WHO[who as keyof typeof WHO];
+        const { c, appId } = await ctx.forApp();
+        let settings = await signInSettings.saveProvider(c, appId, provider.key, { clientId: opts.clientId, clientSecret: opts.clientSecret, ...(tenantId === undefined ? {} : { tenantId }), ...(opts.secretExpiresAt === undefined ? {} : { secretExpiresAt: opts.secretExpiresAt }) });
+        if (opts.enable === true) settings = await signInSettings.update(c, appId, { social: { [provider.key]: true } });
+        const state = providerState(settings, provider);
+        if (state.returnAddress !== undefined) ctx.io.info(`Register this return address with ${provider.name}: ${state.returnAddress}${microsoft ? ' (platform Web)' : ''}`);
+        ctx.io.result({ provider: provider.cli, ...state });
+      }),
+    );
+
+  const userCommand = program.commands.find((each) => each.name() === 'user') ?? program.command('user').description("The app's users");
+  const passkeys = userCommand.command('passkeys').description("A user's passkeys, for the app's admins: see them, and remove a lost device's");
+  /** The User an email names, across the app: Accounts' users route, as `event auth-attempts` finds them. */
+  const userByEmail = async (ctx: Context, email: string) => {
+    const { c, appId } = await ctx.forApp();
+    const found = (await c.person<{ id: string; email: string }[]>('usersList', { params: { appId }, query: { email } })).body.find((each) => each.email.toLowerCase() === email.toLowerCase());
+    if (found === undefined) throw new CliError('not-found', `No user with the email ${email} in this app.`, { hint: '`bridge user list --tenant-id <workspace>` shows a workspace\'s users.' });
+    return { c, appId, user: found };
+  };
+  passkeys.command('list <email>').description("The user's passkeys: name, where it lives (iCloud Keychain, Google Password Manager…), added, last used, synced").action(
+    action(deps, async (ctx, email: string) => {
+      const { c, appId, user } = await userByEmail(ctx, email);
+      const list = await userPasskeys.list(c, appId, user.id);
+      ctx.io.result({ user: user.email, passkeys: list.map((each) => ({ id: each.id, name: each.name, provider: each.authenticator?.name ?? 'Passkey', createdAt: each.createdAt, lastUsedAt: each.lastUsedAt, syncs: each.backedUp === true })) });
+    }),
+  );
+  passkeys
+    .command('remove <email> <passkeyId>')
+    .description('Remove one of the user\'s passkeys (logged, and the user is emailed). The last one too: they then sign in another way')
+    .option('--dry-run', 'Say which passkey it is, and remove nothing')
+    .option('--yes', 'Confirm the removal')
+    .action(
+      action(deps, async (ctx, email: string, passkeyId: string, opts: { dryRun?: boolean; yes?: boolean }) => {
+        const { c, appId, user } = await userByEmail(ctx, email);
+        const found = (await userPasskeys.list(c, appId, user.id)).find((each) => each.id === passkeyId);
+        if (found === undefined) throw new CliError('not-found', `${user.email} has no passkey ${passkeyId}.`, { hint: `\`bridge user passkeys list ${user.email}\` shows them.` });
+        const view = { id: found.id, name: found.name, provider: found.authenticator?.name ?? 'Passkey', lastUsedAt: found.lastUsedAt };
+        if (opts.dryRun === true) return ctx.io.result({ dryRun: true, user: user.email, passkey: view });
+        if (opts.yes !== true) throw new CliError('invalid', 'Confirm the removal with --yes. `--dry-run` shows which passkey it is first.');
+        await userPasskeys.remove(c, appId, user.id, passkeyId);
+        ctx.io.result({ removed: true, user: user.email, passkey: view });
       }),
     );
 

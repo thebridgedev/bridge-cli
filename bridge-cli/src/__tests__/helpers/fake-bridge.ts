@@ -126,6 +126,9 @@ export function createFakeBridge() {
   const senders = new Map<string, Json | null>();
   const schedules = new Map<string, Json[]>();
   const appUsers = new Map<string, Json[]>();
+  /** Each User's passkeys, by `<app>/<user>` (TBP-861), and the provider credentials saved, by `<app>/<provider>`. */
+  const userPasskeyLists = new Map<string, Json[]>();
+  const savedSecrets = new Map<string, Json>();
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
   /** Why Bridge refuses to send invites now: no email-links address, or too many. */
@@ -447,15 +450,72 @@ export function createFakeBridge() {
       return json(200, withYourApp(app));
     }
 
-    if (service === 'identity-access' && rest === '/sign-in-settings') {
-      const current = perApp(
+    const settingsOf = () =>
+      perApp(
         signInSettings,
         appId,
-        () => ({ methods: { password: true, magicLink: false, passkeys: false }, signUp: true, signUpPlan: null, lifetimes: { accessTokenSeconds: 300, sessionIdleSeconds: 1_209_600, sessionAbsoluteSeconds: 2_592_000 }, password: { minLength: 8 }, bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } } }) as Json,
+        () =>
+          ({
+            methods: { password: true, magicLink: false, passkeys: false },
+            social: { google: false, linkedin: false, facebook: false, github: false, azure: false },
+            secondStep: false,
+            providers: Object.fromEntries(['google', 'linkedin', 'facebook', 'github', 'azure'].map((p) => [p, { name: p === 'azure' ? 'Microsoft' : p, configured: false, clientId: null, tenantId: null, returnAddress: `${ISSUER.replace(BRIDGE_APP, appId)}/federated/${p}/return` }])),
+            signUp: true,
+            signUpPlan: null,
+            lifetimes: { accessTokenSeconds: 300, sessionIdleSeconds: 1_209_600, sessionAbsoluteSeconds: 2_592_000 },
+            password: { preset: 'basic', minLength: 8 },
+            passwordFacts: { badge: null, commonPasswords: { updated: '2026-11-27' }, productionFloor: { kept: true, preset: 'basic' } },
+            bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } },
+          }) as Json,
       );
+    // A provider's credentials (TBP-134, TBP-859): kept as configured, never read back.
+    const providerAt = /^\/sign-in-settings\/providers\/([a-z]+)$/.exec(rest);
+    if (service === 'identity-access' && providerAt !== null && method === 'PUT') {
+      const current = settingsOf();
+      const provider = providerAt[1] as string;
+      const saved = (current['providers'] as Record<string, Json>)[provider];
+      if (saved === undefined) return notFound();
+      if (provider !== 'azure' && input['tenantId'] !== undefined) return json(400, { message: 'Only Microsoft takes a tenantId.' });
+      const tenant = (input['tenantId'] as string | undefined) ?? 'common';
+      savedSecrets.set(`${appId}/${provider}`, input);
+      Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}) });
+      return json(200, current);
+    }
+    // A User's passkeys (TBP-861).
+    const passkeyAt = /^\/users\/([^/]+)\/passkeys(?:\/([^/]+))?$/.exec(rest);
+    if (service === 'identity-access' && passkeyAt !== null) {
+      const own = perApp(userPasskeyLists, `${appId}/${passkeyAt[1] as string}`, () => [] as Json[]);
+      if (method === 'GET' && passkeyAt[2] === undefined) return json(200, own);
+      if (method === 'DELETE' && passkeyAt[2] !== undefined) {
+        const at = own.findIndex((each) => each['id'] === passkeyAt[2]);
+        if (at < 0) return notFound();
+        own.splice(at, 1);
+        return json(204, undefined);
+      }
+      return notFound();
+    }
+    if (service === 'identity-access' && rest === '/sign-in-settings') {
+      const current = settingsOf();
       if (method === 'GET') return json(200, current);
-      const next = { ...current, ...input, methods: { ...(current['methods'] as Json), ...((input['methods'] as Json | undefined) ?? {}) }, lifetimes: { ...(current['lifetimes'] as Json), ...((input['lifetimes'] as Json | undefined) ?? {}) } };
-      if (!Object.values(next['methods'] as Json).some(Boolean)) return json(400, { message: 'At least one sign-in method stays on.' });
+      for (const [name, on] of Object.entries((input['social'] as Json | undefined) ?? {})) {
+        if (on === true && ((current['providers'] as Record<string, Json>)[name]?.['configured'] !== true)) return json(400, { message: `Add ${name}'s client ID and secret first.` });
+      }
+      const password = input['password'] as Json | undefined;
+      if (password !== undefined && perApp(production, appId, () => ({ passes: true, users: 0 }) as Json)['floor'] === 'recommended' && (password['preset'] === 'basic' || (typeof password['minLength'] === 'number' && password['minLength'] < 12))) {
+        return json(400, { message: 'In production the password rules are at least Recommended (12 characters, common passwords refused, not holding the address).' });
+      }
+      const rules = password === undefined ? current['password'] : password['preset'] === 'custom' ? password : { preset: password['preset'], minLength: password['preset'] === 'strict' ? 15 : password['preset'] === 'basic' ? 8 : 12 };
+      const badge = password === undefined ? (current['passwordFacts'] as Json)['badge'] : ['recommended', 'strict'].includes(String((rules as Json)['preset'])) ? 'nist' : (rules as Json)['preset'] === 'compliance' ? 'audit' : null;
+      const next = {
+        ...current,
+        ...input,
+        password: rules,
+        passwordFacts: { ...(current['passwordFacts'] as Json), badge },
+        methods: { ...(current['methods'] as Json), ...((input['methods'] as Json | undefined) ?? {}) },
+        social: { ...(current['social'] as Json), ...((input['social'] as Json | undefined) ?? {}) },
+        lifetimes: { ...(current['lifetimes'] as Json), ...((input['lifetimes'] as Json | undefined) ?? {}) },
+      };
+      if (!Object.values(next['methods'] as Json).some(Boolean) && !Object.values(next['social'] as Json).some(Boolean)) return json(400, { message: 'At least one sign-in method stays on.' });
       Object.assign(current, next);
       return json(200, current);
     }
@@ -844,6 +904,14 @@ export function createFakeBridge() {
       perApp(appUsers, appId, () => [] as Json[]).push({ ...user, suspended: false, workspaces: [{ id: 'cust-1', status: 'active' }] });
     },
     members: (appId: string, workspace: string) => perApp(members, `${appId}/${workspace}`, () => [] as Json[]),
+    /** A User's passkeys, as Identity and Access lists them for the app's admins (TBP-861). */
+    userPasskeys: (appId: string, userId: string) => perApp(userPasskeyLists, `${appId}/${userId}`, () => [] as Json[]),
+    /** The credentials saved for a provider, as the CLI sent them. */
+    savedProvider: (appId: string, provider: string) => savedSecrets.get(`${appId}/${provider}`),
+    /** Production holds the app's password rules at Recommended (TBP-872). */
+    holdAtRecommended(appId: string) {
+      perApp(production, appId, () => ({ passes: true, users: 0 }) as Json)['floor'] = 'recommended';
+    },
     workspaces: (appId: string) => perApp(workspaces, appId, () => [] as Json[]),
     branding: (appId: string) => perApp(brandings, appId, () => ({ scheme: 'auto', colors: {}, radius: 'medium', font: 'system', revision: 1 }) as Json),
     /** Every invite of a workspace, any state: `bridge/<workspace>` for the developer's own, `<app>/<workspace>` for an app's. */

@@ -51,7 +51,8 @@ describe('branding', () => {
 describe('auth methods, config and token lifetimes', () => {
   it('lists the methods with what Bridge does not offer yet; switches one; keeps the last', async () => {
     const listed = (await cli.run(['auth', 'methods', 'list'])).data.loginMethods;
-    expect(listed).toMatchObject({ password: { enabled: true }, magicLink: { enabled: false }, mfa: { enabled: false }, socialProviders: { google: { enabled: false, note: 'Not available on Bridge yet' } } });
+    expect(listed).toMatchObject({ password: { enabled: true }, magicLink: { enabled: false }, mfa: { enabled: false }, socialProviders: { google: { name: 'Google', enabled: false, credentialsSaved: false }, microsoft: { name: 'Microsoft', enabled: false }, apple: { enabled: false, note: 'Not available on Bridge yet' } } });
+    expect(JSON.stringify(listed)).not.toContain('Azure');
     const on = await cli.run(['auth', 'methods', 'enable', 'magic-link']);
     expect(on.data).toMatchObject({ method: 'magicLink', enabled: true });
     expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ methods: { magicLink: true } });
@@ -60,17 +61,100 @@ describe('auth methods, config and token lifetimes', () => {
     const last_ = await cli.run(['auth', 'methods', 'disable', 'password']);
     expect(last_.errors).not.toEqual([]);
     expect(fake.requests.filter((r) => r.path.endsWith('/sign-in-settings') && r.method === 'GET').length).toBeGreaterThan(0);
-    expect((await cli.run(['auth', 'methods', 'enable', 'google'])).error).toMatchObject({ code: 'not-offered' });
+    expect((await cli.run(['auth', 'methods', 'enable', 'apple'])).error).toMatchObject({ code: 'not-offered' });
+    // A provider switches on only once its credentials are saved (TBP-134).
+    expect((await cli.run(['auth', 'methods', 'enable', 'google'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('not saved yet') });
     expect((await cli.run(['auth', 'methods', 'enable', 'carrier-pigeon'])).error).toMatchObject({ code: 'invalid' });
   });
 
-  it('config shows the methods, the lifetimes and the password rules; password-policy sets the lifetimes within bounds', async () => {
-    expect((await cli.run(['auth', 'config'])).data).toMatchObject({ tokens: { accessTokenTTL: 300, refreshTokenTTL: 2_592_000, sessionIdleTTL: 1_209_600 }, passwordRules: { minLength: 8 } });
+  it('config shows the methods, the lifetimes and the password rules; password-policy still sets the lifetimes within bounds, and says they moved', async () => {
+    expect((await cli.run(['auth', 'config'])).data).toMatchObject({ tokens: { accessTokenTTL: 300, refreshTokenTTL: 2_592_000, sessionIdleTTL: 1_209_600 }, passwordRules: { minLength: 8 }, commonPasswordList: 'updated 2026-11-27', productionFloor: 'basic (kept from before the move)' });
     const set = await cli.run(['auth', 'password-policy', '--access-token-ttl', '120', '--refresh-token-ttl', '86400']);
     expect(set.data.tokens).toEqual({ accessTokenTTL: 120, refreshTokenTTL: 86_400, sessionIdleTTL: 86_400 });
+    expect(set.infos.join(' ')).toContain('bridge auth token-lifetime');
     expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ lifetimes: { accessTokenSeconds: 120, sessionAbsoluteSeconds: 86_400, sessionIdleSeconds: 86_400 } });
     expect((await cli.run(['auth', 'password-policy', '--access-token-ttl', '5000'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('60 to 300') });
     expect((await cli.run(['auth', 'password-policy'])).error).toMatchObject({ code: 'invalid' });
+  });
+
+  it('password-policy sets the real password rules: a preset with its badge, or custom rules never below 8 (TBP-216)', async () => {
+    const strict = await cli.run(['auth', 'password-policy', '--preset', 'strict']);
+    expect(strict.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ password: { preset: 'strict' } });
+    expect(strict.data).toMatchObject({ passwordRules: { preset: 'strict', minLength: 15 }, badge: 'Follows NIST password guidelines (SP 800-63B)', commonPasswordList: 'updated 2026-11-27' });
+    expect(strict.data.tokens).toBeUndefined();
+    const custom = await cli.run(['auth', 'password-policy', '--preset', 'custom', '--min-length', '16', '--block-common', '--block-app-name', 'true', '--require-symbol', 'false']);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ password: { preset: 'custom', minLength: 16, requireUpper: false, requireLower: false, requireDigit: false, requireSymbol: false, blockEmail: false, blockCommon: true, blockAppName: true } });
+    expect(custom.data.badge).toBeUndefined();
+    expect((await cli.run(['auth', 'password-policy', '--preset', 'custom', '--min-length', '6'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('8 to 128') });
+    expect((await cli.run(['auth', 'password-policy', '--preset', 'strict', '--min-length', '20'])).error).toMatchObject({ code: 'invalid' });
+    expect((await cli.run(['auth', 'password-policy', '--preset', 'relaxed'])).error).toMatchObject({ code: 'invalid' });
+    const compliance = await cli.run(['auth', 'password-policy', '--preset', 'compliance']);
+    expect(compliance.data.badge).toBe('Meets common audit checklists');
+    // Production keeps Recommended (TBP-872): a looser change is refused with what to do.
+    fake.holdAtRecommended(appId);
+    expect((await cli.run(['auth', 'password-policy', '--preset', 'basic'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('Recommended') });
+  });
+
+  it('token-lifetime sets the lifetimes on their own (D11)', async () => {
+    const set = await cli.run(['auth', 'token-lifetime', '--access-token-ttl', '120', '--session-idle-ttl', '3600']);
+    expect(set.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ lifetimes: { accessTokenSeconds: 120, sessionIdleSeconds: 3600 } });
+    expect(set.data.tokens).toEqual({ accessTokenTTL: 120, refreshTokenTTL: 2_592_000, sessionIdleTTL: 3600 });
+    expect((await cli.run(['auth', 'token-lifetime', '--access-token-ttl', '5000'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('60 to 300') });
+    expect((await cli.run(['auth', 'token-lifetime'])).error).toMatchObject({ code: 'invalid' });
+  });
+});
+
+describe('auth providers (TBP-134, TBP-859)', () => {
+  it("saves a provider's credentials, prints the return address to register, and switches it on", async () => {
+    const set = await cli.run(['auth', 'providers', 'set', 'github', '--client-id', 'gh-id', '--client-secret', 'gh-secret', '--enable']);
+    expect(set.errors).toEqual([]);
+    expect(fake.savedProvider(appId, 'github')).toEqual({ clientId: 'gh-id', clientSecret: 'gh-secret' });
+    expect(set.data).toMatchObject({ provider: 'github', name: 'GitHub', enabled: true, credentialsSaved: true, returnAddress: expect.stringContaining('/federated/github/return') });
+    expect(set.infos.join(' ')).toContain('/federated/github/return');
+    expect(JSON.stringify(set.data)).not.toContain('gh-secret');
+    expect((await cli.run(['auth', 'methods', 'list'])).data.loginMethods.socialProviders.github).toMatchObject({ enabled: true, credentialsSaved: true });
+    expect((await cli.run(['auth', 'methods', 'disable', 'github'])).data).toMatchObject({ method: 'github', enabled: false });
+  });
+
+  it('Microsoft: who can sign in, a directory, the secret expiry, and the Microsoft name (API key azure)', async () => {
+    const any = await cli.run(['auth', 'providers', 'set', 'microsoft', '--client-id', 'ms-id', '--client-secret', 'ms-secret']);
+    expect(any.errors).toEqual([]);
+    expect(fake.savedProvider(appId, 'azure')).toEqual({ clientId: 'ms-id', clientSecret: 'ms-secret', tenantId: 'common' });
+    expect(any.data).toMatchObject({ provider: 'microsoft', whoCanSignIn: 'any', returnAddress: expect.stringContaining('/federated/azure/return') });
+    expect(any.infos.join(' ')).toContain('Register this return address with Microsoft');
+    await cli.run(['auth', 'providers', 'set', 'microsoft', '--client-id', 'ms-id', '--client-secret', 'ms-secret', '--who-can-sign-in', 'work', '--secret-expires-at', '2028-06-30']);
+    expect(fake.savedProvider(appId, 'azure')).toEqual({ clientId: 'ms-id', clientSecret: 'ms-secret', tenantId: 'organizations', secretExpiresAt: '2028-06-30' });
+    const directory = await cli.run(['auth', 'providers', 'set', 'microsoft', '--client-id', 'ms-id', '--client-secret', 'ms-secret', '--directory', 'contoso.onmicrosoft.com']);
+    expect(directory.data).toMatchObject({ whoCanSignIn: 'directory', directory: 'contoso.onmicrosoft.com' });
+    expect((await cli.run(['auth', 'providers', 'set', 'microsoft', '--client-id', 'a', '--client-secret', 'b', '--who-can-sign-in', 'directory'])).error).toMatchObject({ code: 'invalid' });
+    expect((await cli.run(['auth', 'providers', 'set', 'google', '--client-id', 'a', '--client-secret', 'b', '--who-can-sign-in', 'work'])).error).toMatchObject({ code: 'invalid' });
+    expect((await cli.run(['auth', 'providers', 'set', 'apple', '--client-id', 'a', '--client-secret', 'b'])).error).toMatchObject({ code: 'invalid', hint: expect.stringContaining('Apple') });
+    const listed = (await cli.run(['auth', 'providers', 'list'])).data.providers;
+    expect(listed.microsoft).toMatchObject({ name: 'Microsoft', credentialsSaved: true, secretExpiry: 'ok' });
+    expect(JSON.stringify(listed)).not.toContain('Azure');
+  });
+});
+
+describe('user passkeys (TBP-861)', () => {
+  beforeEach(() => {
+    fake.addUser(appId, { id: 'user-1', email: 'anna@acme.example' });
+    fake.userPasskeys(appId, 'user-1').push({ id: 'pk-1', name: 'Work laptop', authenticator: { name: 'iCloud Keychain', icon: null }, createdAt: '2026-11-01T00:00:00.000Z', lastUsedAt: null, deviceType: 'multiDevice', backedUp: true });
+  });
+
+  it("lists a user's passkeys by email, and removes one with --yes", async () => {
+    const listed = await cli.run(['user', 'passkeys', 'list', 'anna@acme.example']);
+    expect(listed.data).toEqual({ user: 'anna@acme.example', passkeys: [{ id: 'pk-1', name: 'Work laptop', provider: 'iCloud Keychain', createdAt: '2026-11-01T00:00:00.000Z', lastUsedAt: null, syncs: true }] });
+    expect((await cli.run(['user', 'passkeys', 'remove', 'anna@acme.example', 'pk-1'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('--yes') });
+    expect((await cli.run(['user', 'passkeys', 'remove', 'anna@acme.example', 'pk-1', '--dry-run'])).data).toMatchObject({ dryRun: true, passkey: { id: 'pk-1' } });
+    expect(fake.userPasskeys(appId, 'user-1')).toHaveLength(1);
+    const removed = await cli.run(['user', 'passkeys', 'remove', 'anna@acme.example', 'pk-1', '--yes']);
+    expect(removed.data).toMatchObject({ removed: true, passkey: { id: 'pk-1', name: 'Work laptop' } });
+    expect(last('DELETE', '/passkeys/pk-1')).toBeDefined();
+    expect(fake.userPasskeys(appId, 'user-1')).toHaveLength(0);
+    expect((await cli.run(['user', 'passkeys', 'remove', 'anna@acme.example', 'pk-1', '--yes'])).error).toMatchObject({ code: 'not-found' });
+    expect((await cli.run(['user', 'passkeys', 'list', 'nobody@acme.example'])).error).toMatchObject({ code: 'not-found' });
   });
 });
 

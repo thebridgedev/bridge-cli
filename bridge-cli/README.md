@@ -115,7 +115,9 @@ bridge flag create team-admin --when "privileges contains users:write"
 | `role` · `privilege` · `workspace list` · `member` | Roles, privileges, your customers' workspaces and their members |
 | `invite send` · `list` · `revoke` | Invites by email: into your own workspace, or with `--workspace` into one of your app's |
 | `branding get` · `update` | The look of the hosted sign-in page: scheme, colours, radius, font |
-| `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` | Sign-in methods, and the token lifetimes |
+| `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` · `auth token-lifetime` | Sign-in methods (social providers too), the password rules (presets, or custom rules never below 8 characters) and the token lifetimes |
+| `auth providers list` · `set <provider>` | Social providers (Google, LinkedIn, Microsoft, GitHub, Facebook): save the client ID and secret, see the return address to register; for Microsoft, who can sign in and the secret's expiry |
+| `user passkeys list <email>` · `remove <email> <id>` | A user's passkeys, for the app's admins: remove a lost device's (`--dry-run`, `--yes`) |
 | `event list` | The app's event log, newest first |
 | `tenant` · `user` · `token` | The 0.x forms of `workspace`, `member` and `key`, with `--dry-run` on deletes |
 | `flag toggle` · `schedule set` · `schedule clear` · `export` · `import` | A flag's state at a time, and flags as code |

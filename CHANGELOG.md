@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Password rules.** `bridge auth password-policy` now sets the real password rules: `--preset basic|recommended|strict|compliance|custom`, and for custom `--min-length` (8 to 128), `--require-upper`, `--require-lower`, `--require-digit`, `--require-symbol`, `--block-email`, `--block-common` and `--block-app-name`. The answer shows the NIST badge, the common-password list's date and production's floor. `auth config` shows them too.
+- **`bridge auth token-lifetime`** sets the token and session lifetimes (`--access-token-ttl`, `--refresh-token-ttl`, `--session-idle-ttl`).
+- **Social providers.** `bridge auth providers set <google|linkedin|microsoft|github|facebook> --client-id --client-secret [--enable]` saves a provider's credentials and prints the exact return address to register. Microsoft takes `--who-can-sign-in any|work|personal|directory` (`--directory <id or domain>`) and `--secret-expires-at`. `auth providers list` and `auth methods list` show each provider's real state, and `auth methods enable|disable` switches a provider whose credentials are saved. It says "Microsoft", never "Azure AD".
+- **A user's passkeys.** `bridge user passkeys list <email>` and `bridge user passkeys remove <email> <passkeyId>` (`--dry-run`, `--yes`), for the app's admins.
+
+### Changed
+
+- **`auth password-policy --access-token-ttl/--refresh-token-ttl` moved** to `bridge auth token-lifetime`. For one release `password-policy` still takes them, sets them and says they moved.
+
 ## [1.0.0-alpha.6] - Unreleased
 
 ### Changed

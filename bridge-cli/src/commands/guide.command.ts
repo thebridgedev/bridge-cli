@@ -58,7 +58,7 @@ const JOURNEYS: readonly Journey[] = [
     feature: 'auth',
     steps: [
       'Goal: users can sign up and sign in to this app through the Bridge.',
-      'Ask the developer which sign-in methods they want (password, magic link, passkeys) before changing any: `bridge auth methods enable|disable <method>`. Social sign-in and MFA are not available on Bridge yet.',
+      'Ask the developer which sign-in methods they want (password, magic link, passkeys, Google, LinkedIn, Microsoft, GitHub, Facebook) before changing any: `bridge auth methods enable|disable <method>`. A social provider needs its client ID and secret first: `bridge auth providers set <provider> --client-id <id> --client-secret <secret> --enable` prints the return address to register with the provider (Microsoft also takes `--who-can-sign-in any|work|personal|directory`). Password rules are presets or custom rules (`bridge auth password-policy --preset recommended`); token lifetimes are `bridge auth token-lifetime`. Apple is not available on Bridge yet.',
       "Register the app's sign-in return and the pages it runs on: `bridge app address add <url> --use sign-in-return`.",
       'Prove it works at the end by signing up and signing in yourself in the running app.',
     ],
