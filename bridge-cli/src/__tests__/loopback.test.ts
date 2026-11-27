@@ -10,16 +10,16 @@
  *  4. startLoopback redirectUri uses 127.0.0.1 (NOT localhost) per RFC 8252.
  */
 import * as http from 'node:http';
-import { LoopbackError, parseCallbackUrl, startLoopback, verifyCallback } from '../auth/loopback';
+import { LoopbackError, PAGE_HEADERS, parseCallbackUrl, startLoopback, verifyCallback } from '../auth/loopback';
 
-/** The browser at the loopback: the page's status and text. */
-function visit(url: string): Promise<{ status: number; body: string }> {
+/** The browser at the loopback: the page's status, headers and text. */
+function visit(url: string): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
     const req = http.get(url, (res) => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => (body += chunk));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
     });
     req.on('error', reject);
   });
@@ -210,7 +210,8 @@ describe('startLoopback', () => {
     expect(err.message).toBe('Sign-in was not finished: Bridge could not complete it.');
     expect(page.status).toBe(400);
     expect(page.body).toContain('<h1>Sign-in was not finished</h1>');
-    expect(page.body).toContain(`${err.message} Run \`bridge auth login\` again.`);
+    expect(page.body).toContain(`<p>${err.message}</p>`);
+    expect(page.body).toContain('Run <code>bridge auth login</code> again in your terminal.');
     expect(page.body).not.toContain('<b>x</b>');
   });
 
@@ -223,5 +224,90 @@ describe('startLoopback', () => {
     // The port is closed: a late browser finds nobody waiting.
     await new Promise((r) => setTimeout(r, 50));
     await expect(visit(`${lb.redirectUri}?code=c&state=S`)).rejects.toThrow();
+  });
+});
+
+/** What the page would fetch or run: any resource, script, frame or form, and any address but the SVG namespace. */
+function loadsSomething(html: string): string[] {
+  const found: string[] = [];
+  for (const pattern of [/<script/i, /<link/i, /<iframe/i, /<img/i, /<form/i, /\s(src|href|action)\s*=/i, /url\(/i, /@import/i, /@font-face/i]) {
+    if (pattern.test(html)) found.push(pattern.source);
+  }
+  const addresses = html.replace(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/g, '').match(/https?:\/\/[^\s"'<>)]*/g) ?? [];
+  return [...found, ...addresses];
+}
+
+describe("the browser's pages (TBP-829)", () => {
+  const POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+  function expectLocked(headers: http.IncomingHttpHeaders) {
+    expect(headers['content-security-policy']).toBe(POLICY);
+    expect(headers['x-content-type-options']).toBe('nosniff');
+    expect(headers['referrer-policy']).toBe('no-referrer');
+    expect(headers['cache-control']).toBe('no-store');
+  }
+
+  it('says the CLI is signed in and to go back to the terminal, in the dashboard look, loading nothing', async () => {
+    const lb = await startLoopback({ expectedState: 'S', timeoutMs: 5000 });
+    const page = await visit(`${lb.redirectUri}?code=c&state=S`);
+    await lb.result;
+    expect(page.status).toBe(200);
+    expectLocked(page.headers);
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(page.body).toContain('<h1>Signed in</h1>');
+    expect(page.body).toContain('You can close this tab and go back to the terminal.');
+    expect(page.body).toContain('data-bridge-cli-page="success"');
+    // The dashboard's look: its tokens, its card and its font, with the logo inline.
+    expect(page.body).toContain('--foreground: #020617');
+    expect(page.body).toContain('--radius: 0.625rem');
+    expect(page.body).toContain('font-family: Inter, ui-sans-serif');
+    expect(page.body).toContain('aria-label="The Bridge"');
+    expect(loadsSomething(page.body)).toEqual([]);
+    // The code never shows on the page.
+    expect(page.body).not.toContain('?code=');
+  });
+
+  it.each([
+    ['access_denied', 'Sign-in was not approved', 'Sign-in was not approved in the browser.'],
+    ['server_error', 'Sign-in was not finished', 'Sign-in was not finished: Bridge could not complete it.'],
+    ['temporarily_unavailable', 'Sign-in was not finished', 'Sign-in was not finished: Bridge could not be reached while approving it.'],
+    ['made_up', 'Sign-in was not finished', 'Sign-in was not finished: Bridge could not complete it.'],
+  ])('error=%s: a fixed page, "%s", with what to do next', async (error, title, message) => {
+    const lb = await startLoopback({ expectedState: 'S', timeoutMs: 5000 });
+    const failed = lb.result.catch((err: unknown) => err);
+    const page = await visit(`${lb.redirectUri}?error=${error}&error_description=%3Cimg%20src%3Dhttps%3A%2F%2Fevil.test%2Fx%3E&state=S`);
+    await failed;
+    expect(page.status).toBe(400);
+    expectLocked(page.headers);
+    expect(page.body).toContain(`<h1>${title}</h1>`);
+    expect(page.body).toContain(`<p>${message}</p>`);
+    expect(page.body).toContain('Run <code>bridge auth login</code> again in your terminal. You can close this tab and go back to the terminal.');
+    expect(page.body).toContain('data-bridge-cli-page="failure"');
+    expect(page.body).not.toContain('evil.test');
+    expect(loadsSomething(page.body)).toEqual([]);
+  });
+
+  it('an answer that is not this sign-in\'s says so in plain words, and echoes nothing', async () => {
+    const lb = await startLoopback({ expectedState: 'S', timeoutMs: 5000 });
+    const failed = lb.result.catch((err: unknown) => err);
+    const page = await visit(`${lb.redirectUri}?code=c&state=%3Cscript%3E`);
+    expect(((await failed) as LoopbackError).kind).toBe('state_mismatch');
+    expectLocked(page.headers);
+    expect(page.body).toContain('<h1>Sign-in failed</h1>');
+    expect(page.body).toContain('This answer does not belong to the sign-in your terminal started, so nothing was signed in.');
+    expect(page.body).not.toMatch(/<script/i);
+    expect(loadsSomething(page.body)).toEqual([]);
+  });
+
+  it('any other path gets the same locked answer', async () => {
+    const lb = await startLoopback({ expectedState: 'S', timeoutMs: 5000 });
+    const page = await visit(`${lb.redirectUri.replace('/callback', '/favicon.ico')}`);
+    expect(page.status).toBe(404);
+    expectLocked(page.headers);
+    lb.close();
+  });
+
+  it('every answer carries the policy', () => {
+    expect(Object.keys(PAGE_HEADERS).sort()).toEqual(['Cache-Control', 'Connection', 'Content-Security-Policy', 'Referrer-Policy', 'X-Content-Type-Options']);
   });
 });
