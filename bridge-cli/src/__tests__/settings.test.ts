@@ -266,3 +266,112 @@ describe('flag toggle, schedule, export, import and delete preview', () => {
     expect(fake.flags(appId).has('beta-ui')).toBe(false);
   });
 });
+
+describe('email code or link, and MFA (TBP-70, TBP-848, TBP-869)', () => {
+  it('shows and sets what emails carry: code or link', async () => {
+    expect((await cli.run(['auth', 'email-confirmation'])).data).toEqual({ emailConfirmation: 'link' });
+    const set = await cli.run(['auth', 'email-confirmation', 'code']);
+    expect(set.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ emailConfirmation: 'code' });
+    expect(set.data).toEqual({ emailConfirmation: 'code' });
+    expect((await cli.run(['auth', 'config'])).data.emailConfirmation).toBe('code');
+    expect((await cli.run(['auth', 'email-confirmation', 'pigeon'])).error).toMatchObject({ code: 'invalid' });
+  });
+
+  it('MFA is available: methods list shows it, and enable/disable mfa switch the app\'s second step', async () => {
+    const listed = (await cli.run(['auth', 'methods', 'list'])).data.loginMethods.mfa;
+    expect(listed).toMatchObject({ enabled: false, requiredIn: 'workspaces', methods: ['sms'], rememberDeviceDays: 0, note: expect.stringContaining('An authenticator app is the strongest choice.') });
+    const on = await cli.run(['auth', 'methods', 'enable', 'mfa']);
+    expect(on.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ secondStep: true });
+    expect(on.data).toMatchObject({ method: 'mfa', enabled: true });
+    expect((await cli.run(['auth', 'methods', 'disable', 'mfa'])).data).toMatchObject({ method: 'mfa', enabled: false });
+  });
+
+  it('mfa set: the ways as a whole set, the remembered days, on and off; never no way while on', async () => {
+    const set = await cli.run(['auth', 'mfa', 'set', '--on', '--methods', 'totp,email', '--remember-days', '30']);
+    expect(set.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ secondStep: true, mfa: { methods: { totp: true, email: true, sms: false }, rememberDeviceDays: 30 } });
+    expect(set.data.mfa).toMatchObject({ enabled: true, methods: ['totp', 'email'], rememberDeviceDays: 30 });
+    expect((await cli.run(['auth', 'mfa', 'show'])).data.mfa).toMatchObject({ requiredIn: 'workspaces', methods: ['totp', 'email'] });
+    expect((await cli.run(['auth', 'mfa', 'set', '--methods', 'none'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('at least one way') });
+    expect((await cli.run(['auth', 'mfa', 'set', '--methods', 'carrier-pigeon'])).error).toMatchObject({ code: 'invalid' });
+    expect((await cli.run(['auth', 'mfa', 'set', '--remember-days', '91'])).errors).not.toEqual([]);
+    expect((await cli.run(['auth', 'mfa', 'set'])).error).toMatchObject({ code: 'invalid' });
+    const email = await cli.run(['auth', 'mfa', 'set', '--methods', 'email']);
+    expect(email.infos.join(' ')).toContain('An authenticator app is the strongest choice.');
+  });
+
+  it('texts refused by the plan are said as needing a plan that includes texts', async () => {
+    await cli.run(['auth', 'mfa', 'set', '--methods', 'totp']);
+    fake.refuseTexts();
+    const refused = await cli.run(['auth', 'mfa', 'set', '--methods', 'totp,sms']);
+    expect(refused.error).toMatchObject({ code: 'plan-required', message: expect.stringContaining('need a plan that includes texts') });
+  });
+
+  it('requiring MFA in every workspace runs the dry run with the change first, and needs --yes', async () => {
+    await cli.run(['auth', 'mfa', 'set', '--on', '--methods', 'totp']);
+    fake.setDryRun({ total: 3, mfaOn: true, ready: { count: 1, users: ['u1'] }, emailCode: { count: 0, users: [] }, setUp: { count: 1, users: ['u2'] }, lockedOut: { count: 1, users: ['u3'] }, notSignedUp: 0 });
+    const asked = await cli.run(['auth', 'mfa', 'set', '--required-in', 'all']);
+    expect(asked.error).toMatchObject({ code: 'invalid', message: expect.stringContaining('1 of 3 people would be locked out') });
+    expect(fake.dryRuns().at(-1)).toEqual({ all: true, settings: { mfa: { requiredIn: 'all', methods: { totp: true, email: false, sms: false }, rememberDeviceDays: 0 } } });
+    expect(last('PATCH', '/sign-in-settings')?.body).not.toEqual({ mfa: { requiredIn: 'all' } });
+    const done = await cli.run(['auth', 'mfa', 'set', '--required-in', 'all', '--yes']);
+    expect(done.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ mfa: { requiredIn: 'all' } });
+    expect(done.data.mfa.requiredIn).toBe('all');
+  });
+
+  it('mfa dry-run: every person, one workspace\'s members, or named users; it changes nothing', async () => {
+    fake.setDryRun({ total: 2, mfaOn: true, ready: { count: 1, users: ['u1'] }, emailCode: { count: 0, users: [] }, setUp: { count: 0, users: [] }, lockedOut: { count: 1, users: ['u2'] }, notSignedUp: 0 });
+    const all = await cli.run(['auth', 'mfa', 'dry-run', '--all']);
+    expect(all.data.dryRun).toEqual({ total: 2, mfaOn: true, alreadySetUp: 1, getEmailCode: 0, setUpAtNextSignIn: 0, notSignedUpYet: 0, lockedOut: 1, lockedOutUsers: ['u2'] });
+    fake.addWorkspace(appId, { id: 'cust-1', name: 'Customer One' }, [{ id: 'mem-1', user: { id: 'u1', email: 'ann@customer.example' }, role: 'MEMBER' }, { id: 'mem-2', user: { id: 'u2', email: 'bo@customer.example' }, role: 'MEMBER' }]);
+    await cli.run(['auth', 'mfa', 'dry-run', '--workspace', 'Customer One']);
+    expect(fake.dryRuns().at(-1)).toMatchObject({ users: ['u1', 'u2'] });
+    await cli.run(['auth', 'mfa', 'dry-run', '--users', 'u7, u8', '--methods', 'totp']);
+    expect(fake.dryRuns().at(-1)).toEqual({ users: ['u7', 'u8'], settings: { mfa: { requiredIn: 'workspaces', methods: { totp: true, email: false, sms: false }, rememberDeviceDays: 0 } } });
+    expect(fake.requests.filter((r) => r.method === 'PATCH')).toEqual([]);
+    expect((await cli.run(['auth', 'mfa', 'dry-run'])).error).toMatchObject({ code: 'invalid' });
+  });
+});
+
+describe('password expiry and history (TBP-851)', () => {
+  it('go with compliance or custom, say the server\'s warning, and another preset turns them off', async () => {
+    expect((await cli.run(['auth', 'password-policy', '--expiry-days', '90'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('compliance or custom') });
+    const set = await cli.run(['auth', 'password-policy', '--preset', 'compliance', '--expiry-days', '90', '--history', '5']);
+    expect(set.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ password: { preset: 'compliance' }, passwordExpiryDays: 90, passwordHistory: 5 });
+    expect(set.infos.join(' ')).toContain('advises against expiring passwords');
+    expect(set.data).toMatchObject({ badge: 'Meets common audit checklists', passwordExpiryDays: 90, passwordHistory: 5, warning: expect.stringContaining('advises against') });
+    const history = await cli.run(['auth', 'password-policy', '--history', 'off']);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ passwordHistory: 0 });
+    expect(history.data.passwordHistory).toBe(0);
+    const back = await cli.run(['auth', 'password-policy', '--preset', 'strict']);
+    expect(back.errors).toEqual([]);
+    expect(last('PATCH', '/sign-in-settings')?.body).toEqual({ password: { preset: 'strict' }, passwordExpiryDays: null });
+    expect(back.infos.join(' ')).toContain('turns them off');
+    expect((await cli.run(['auth', 'password-policy', '--expiry-days', '45'])).errors).not.toEqual([]);
+    expect((await cli.run(['auth', 'password-policy', '--history', '25'])).errors).not.toEqual([]);
+  });
+});
+
+describe('user mfa-reset (TBP-848)', () => {
+  beforeEach(() => {
+    fake.addUser(appId, { id: 'user-1', email: 'anna@acme.example' });
+  });
+
+  it('resets by id or email after --yes, says who first with --dry-run, and is also `users mfa-reset`', async () => {
+    expect((await cli.run(['user', 'mfa-reset', 'user-1'])).error).toMatchObject({ code: 'invalid', message: expect.stringContaining('--yes') });
+    expect((await cli.run(['user', 'mfa-reset', 'anna@acme.example', '--dry-run'])).data).toMatchObject({ dryRun: true, user: { id: 'user-1', email: 'anna@acme.example' }, signsOut: true });
+    expect(fake.secondStepResets()).toEqual([]);
+    const reset = await cli.run(['users', 'mfa-reset', 'user-1', '--yes']);
+    expect(reset.errors).toEqual([]);
+    expect(reset.data).toMatchObject({ reset: true, user: { id: 'user-1' } });
+    expect(last('POST', '/second-step/reset')?.path).toContain('/users/user-1/second-step/reset');
+    expect(fake.secondStepResets()).toEqual(['user-1']);
+    await cli.run(['user', 'mfa-reset', 'anna@acme.example', '--yes']);
+    expect(fake.secondStepResets()).toEqual(['user-1', 'user-1']);
+    expect((await cli.run(['user', 'mfa-reset', 'nobody', '--yes'])).error).toMatchObject({ code: 'not-found' });
+  });
+});

@@ -122,6 +122,11 @@ export function createFakeBridge() {
   const holders = new Map<string, number>();
   const brandings = new Map<string, Json>();
   const signInSettings = new Map<string, Json>();
+  /** The lock-out dry run's answer, what it was asked, the second-step resets made, and whether texts are refused (TBP-848). */
+  let dryRunAnswer: Json = { total: 0, mfaOn: false, ready: { count: 0, users: [] }, emailCode: { count: 0, users: [] }, setUp: { count: 0, users: [] }, lockedOut: { count: 0, users: [] }, notSignedUp: 0 };
+  const dryRuns: Json[] = [];
+  const secondStepResets: string[] = [];
+  let textsRefused = false;
   const eventLogs = new Map<string, Json[]>();
   const senders = new Map<string, Json | null>();
   const schedules = new Map<string, Json[]>();
@@ -464,7 +469,12 @@ export function createFakeBridge() {
             signUpPlan: null,
             lifetimes: { accessTokenSeconds: 300, sessionIdleSeconds: 1_209_600, sessionAbsoluteSeconds: 2_592_000 },
             password: { preset: 'basic', minLength: 8 },
-            passwordFacts: { badge: null, commonPasswords: { updated: '2026-11-27' }, productionFloor: { kept: true, preset: 'basic' } },
+            passwordFacts: { badge: null, commonPasswords: { updated: '2026-11-27' }, productionFloor: { kept: true, preset: 'basic' }, aging: { presets: ['compliance', 'custom'], expiryDays: [30, 60, 90, 180, 365], historyMax: 24, warning: 'Current guidance (NIST SP 800-63B) advises against expiring passwords unless a compliance rule requires it: people pick weaker ones.' } },
+            emailConfirmation: 'link',
+            mfa: { requiredIn: 'workspaces', methods: { totp: false, email: false, sms: true }, rememberDeviceDays: 0 },
+            mfaFacts: { strongest: 'totp', methods: ['totp', 'email', 'sms'], rememberDeviceMaxDays: 90 },
+            passwordExpiryDays: null,
+            passwordHistory: 0,
             bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } },
           }) as Json,
       );
@@ -494,9 +504,30 @@ export function createFakeBridge() {
       }
       return notFound();
     }
+    // The lock-out dry run and an admin's reset of a User's second step (TBP-848).
+    if (service === 'identity-access' && rest === '/sign-in-settings/mfa-dry-run' && method === 'POST') {
+      if (input['all'] !== true && !Array.isArray(input['users'])) return json(400, { message: 'Name the members (users) or all.' });
+      dryRuns.push(input);
+      return json(200, dryRunAnswer);
+    }
+    const resetAt = /^\/users\/([^/]+)\/second-step\/reset$/.exec(rest);
+    if (service === 'identity-access' && resetAt !== null && method === 'POST') {
+      if (!perApp(appUsers, appId, () => [] as Json[]).some((each) => each['id'] === resetAt[1])) return notFound();
+      secondStepResets.push(resetAt[1] as string);
+      return json(200, { reset: true });
+    }
     if (service === 'identity-access' && rest === '/sign-in-settings') {
       const current = settingsOf();
       if (method === 'GET') return json(200, current);
+      const mfaIn = input['mfa'] as Json | undefined;
+      const mfaNow = current['mfa'] as Json;
+      const mfaNext = mfaIn === undefined ? mfaNow : { ...mfaNow, ...mfaIn, methods: { ...(mfaNow['methods'] as Json), ...((mfaIn['methods'] as Json | undefined) ?? {}) } };
+      if (textsRefused && (mfaIn?.['methods'] as Json | undefined)?.['sms'] === true && (mfaNow['methods'] as Json)['sms'] !== true) return json(403, { message: 'Text messages for the second step come with a plan that includes them. Choose an authenticator app or an email code, or change the plan.' });
+      if ((input['secondStep'] ?? current['secondStep']) === true && !Object.values(mfaNext['methods'] as Json).some(Boolean)) return json(400, { message: 'With MFA on, at least one way of the second step stays on.' });
+      const presetNext = String(((input['password'] as Json | undefined) ?? (current['password'] as Json))['preset']);
+      const expiryNext = input['passwordExpiryDays'] === undefined ? current['passwordExpiryDays'] : input['passwordExpiryDays'];
+      const historyNext = input['passwordHistory'] === undefined ? current['passwordHistory'] : input['passwordHistory'];
+      if ((expiryNext !== null || (historyNext as number) > 0) && !['compliance', 'custom'].includes(presetNext)) return json(400, { message: 'Password expiry and history come with the Compliance or Custom password rules. Choose one of those first, or turn them off.' });
       for (const [name, on] of Object.entries((input['social'] as Json | undefined) ?? {})) {
         if (on === true && ((current['providers'] as Record<string, Json>)[name]?.['configured'] !== true)) return json(400, { message: `Add ${name}'s client ID and secret first.` });
       }
@@ -505,11 +536,13 @@ export function createFakeBridge() {
         return json(400, { message: 'In production the password rules are at least Recommended (12 characters, common passwords refused, not holding the address).' });
       }
       const rules = password === undefined ? current['password'] : password['preset'] === 'custom' ? password : { preset: password['preset'], minLength: password['preset'] === 'strict' ? 15 : password['preset'] === 'basic' ? 8 : 12 };
-      const badge = password === undefined ? (current['passwordFacts'] as Json)['badge'] : ['recommended', 'strict'].includes(String((rules as Json)['preset'])) ? 'nist' : (rules as Json)['preset'] === 'compliance' ? 'audit' : null;
+      const ruleBadge = password === undefined ? (current['passwordFacts'] as Json)['badge'] : ['recommended', 'strict'].includes(String((rules as Json)['preset'])) ? 'nist' : (rules as Json)['preset'] === 'compliance' ? 'audit' : null;
+      const badge = expiryNext !== null ? 'audit' : ruleBadge;
       const next = {
         ...current,
         ...input,
         password: rules,
+        mfa: mfaNext,
         passwordFacts: { ...(current['passwordFacts'] as Json), badge },
         methods: { ...(current['methods'] as Json), ...((input['methods'] as Json | undefined) ?? {}) },
         social: { ...(current['social'] as Json), ...((input['social'] as Json | undefined) ?? {}) },
@@ -908,6 +941,18 @@ export function createFakeBridge() {
     userPasskeys: (appId: string, userId: string) => perApp(userPasskeyLists, `${appId}/${userId}`, () => [] as Json[]),
     /** The credentials saved for a provider, as the CLI sent them. */
     savedProvider: (appId: string, provider: string) => savedSecrets.get(`${appId}/${provider}`),
+    /** What the lock-out dry run answers, and what it was asked (TBP-848). */
+    setDryRun(answer: Json) {
+      dryRunAnswer = answer;
+    },
+    dryRuns: () => dryRuns,
+    /** The Users whose second step an admin reset. */
+    secondStepResets: () => secondStepResets,
+    /** The texts gate refuses switching text messages on (403). */
+    refuseTexts() {
+      textsRefused = true;
+    },
+    signInSettings: (appId: string) => signInSettings.get(appId),
     /** Production holds the app's password rules at Recommended (TBP-872). */
     holdAtRecommended(appId: string) {
       perApp(production, appId, () => ({ passes: true, users: 0 }) as Json)['floor'] = 'recommended';

@@ -52,6 +52,9 @@ export const ROUTES = {
   signInProviderSave: r('PUT', 'identity-access', '/apps/{appId}/sign-in-settings/providers/{provider}', 'person'),
   userPasskeysList: r('GET', 'identity-access', '/apps/{appId}/users/{userId}/passkeys', 'person'),
   userPasskeysRemove: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/passkeys/{passkeyId}', 'person'),
+  // The lock-out dry run before MFA is required, and an admin's reset of a User's second step.
+  mfaDryRun: r('POST', 'identity-access', '/apps/{appId}/sign-in-settings/mfa-dry-run', 'person'),
+  userSecondStepReset: r('POST', 'identity-access', '/apps/{appId}/users/{userId}/second-step/reset', 'person'),
   eventsList: r('GET', 'events-and-logs', '/apps/{appId}/events', 'person'),
   senderGet: r('GET', 'communication', '/apps/{appId}/sender', 'person'),
   senderSet: r('PUT', 'communication', '/apps/{appId}/sender', 'person'),

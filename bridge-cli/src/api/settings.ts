@@ -22,8 +22,16 @@ export interface SignInSettings {
   readonly methods: { readonly password: boolean; readonly magicLink: boolean; readonly passkeys: boolean };
   /** Each social provider on or off, by Identity and Access's keys (`azure` is Microsoft). */
   readonly social?: Readonly<Record<string, boolean>>;
-  /** The text-message second step (MFA). */
+  /** The app's MFA switch: whether the second step is asked for at all. */
   readonly secondStep?: boolean;
+  /** What sign-in, sign-up and forgot-password emails carry: a 6-digit code or a link. */
+  readonly emailConfirmation?: 'code' | 'link';
+  /** Where MFA is required, its allowed ways and how long a device is remembered. */
+  readonly mfa?: MfaSettings;
+  readonly mfaFacts?: { readonly strongest?: string; readonly methods?: readonly string[]; readonly rememberDeviceMaxDays?: number };
+  /** Password expiry in days (null: never) and how many old passwords are refused. Compliance or Custom only. */
+  readonly passwordExpiryDays?: number | null;
+  readonly passwordHistory?: number;
   /** Each provider's saved credentials as a console sees them, never the secret, and the return address to register. */
   readonly providers?: Readonly<Record<string, ProviderView>>;
   readonly signUp: boolean;
@@ -31,8 +39,33 @@ export interface SignInSettings {
   readonly lifetimes: { readonly accessTokenSeconds: number; readonly sessionIdleSeconds: number; readonly sessionAbsoluteSeconds: number | null };
   readonly password: Readonly<Record<string, unknown>>;
   /** The rules' badge (`nist`, `audit` or null), the common-password list's date and production's floor. */
-  readonly passwordFacts?: { readonly badge?: string | null; readonly commonPasswords?: { readonly updated?: string }; readonly productionFloor?: { readonly kept?: boolean; readonly preset?: string } };
+  readonly passwordFacts?: {
+    readonly badge?: string | null;
+    readonly commonPasswords?: { readonly updated?: string };
+    readonly productionFloor?: { readonly kept?: boolean; readonly preset?: string };
+    /** Password expiry and history: the presets that take them, the choices, and the server's warning. */
+    readonly aging?: { readonly presets?: readonly string[]; readonly expiryDays?: readonly number[]; readonly historyMax?: number; readonly warning?: string };
+  };
   readonly bounds?: { readonly lifetimes?: Readonly<Record<string, { readonly min: number; readonly max: number }>> };
+}
+
+export type SecondStepMethod = 'totp' | 'email' | 'sms';
+
+export interface MfaSettings {
+  readonly requiredIn: 'workspaces' | 'all';
+  readonly methods: Readonly<Record<SecondStepMethod, boolean>>;
+  readonly rememberDeviceDays: number;
+}
+
+/** The lock-out dry run's answer. Users are ids, at most 50 a group. */
+export interface MfaDryRun {
+  readonly total: number;
+  readonly mfaOn: boolean;
+  readonly ready: { readonly count: number; readonly users: readonly string[] };
+  readonly emailCode: { readonly count: number; readonly users: readonly string[] };
+  readonly setUp: { readonly count: number; readonly users: readonly string[] };
+  readonly lockedOut: { readonly count: number; readonly users: readonly string[] };
+  readonly notSignedUp: number;
 }
 
 export interface ProviderView {
@@ -52,6 +85,11 @@ export interface SignInSettingsFields {
   social?: Record<string, boolean>;
   lifetimes?: Partial<SignInSettings['lifetimes']>;
   password?: Record<string, unknown>;
+  secondStep?: boolean;
+  emailConfirmation?: 'code' | 'link';
+  mfa?: { requiredIn?: 'workspaces' | 'all'; methods?: Partial<Record<SecondStepMethod, boolean>>; rememberDeviceDays?: number };
+  passwordExpiryDays?: number | null;
+  passwordHistory?: number;
 }
 
 /** A passkey of one User, as the app's admins see it: never a key. */
@@ -96,6 +134,16 @@ export const signInSettings = {
   /** Saves a provider's client ID and secret (and Microsoft's tenant and secret expiry): switches nothing on. */
   saveProvider: (c: BridgeClient, appId: string, provider: string, fields: { clientId: string; clientSecret: string; tenantId?: string; secretExpiresAt?: string }) =>
     c.person<SignInSettings>('signInProviderSave', { params: { appId, provider }, body: fields }).then((answer) => answer.body),
+  /** Who would be locked out if MFA were required in every workspace (`all`) or for these users, with `mfa` the whole choice considered. Changes nothing. */
+  mfaDryRun: (c: BridgeClient, appId: string, input: { all?: true; users?: string[]; mfa?: MfaSettings }) =>
+    c
+      .person<MfaDryRun>('mfaDryRun', { params: { appId }, body: { ...(input.all === true ? { all: true } : {}), ...(input.users === undefined ? {} : { users: input.users }), ...(input.mfa === undefined ? {} : { settings: { mfa: input.mfa } }) } })
+      .then((answer) => answer.body),
+};
+
+/** A User's second step reset by an admin of the app: every way, recovery code and remembered device goes, their sessions end, and they are emailed. */
+export const userSecondStep = {
+  reset: (c: BridgeClient, appId: string, userId: string) => c.person<{ reset: boolean }>('userSecondStepReset', { params: { appId, userId }, body: {} }).then((answer) => answer.body),
 };
 
 export const userPasskeys = {

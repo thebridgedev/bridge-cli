@@ -1,5 +1,5 @@
 import { InvalidArgumentError, type Command } from 'commander';
-import { branding, listEvents, sender, signInSettings, userPasskeys, type BrandingFields, type SignInSettings } from '../api/settings.js';
+import { branding, listEvents, sender, signInSettings, userPasskeys, userSecondStep, type BrandingFields, type MfaDryRun, type MfaSettings, type SecondStepMethod, type SignInSettings, type SignInSettingsFields } from '../api/settings.js';
 import { apps } from '../api/apps.js';
 import { connection, plans } from '../api/billing.js';
 import { CliError } from '../core/errors.js';
@@ -9,7 +9,8 @@ import { findWorkspaceId } from './workspace-id.js';
 /**
  * The commands that read and change how the app looks and signs people in, and what happened in it: `branding`,
  * `auth methods|config|password-policy`, `event list` and `setup communication` (the 0.x commands of those names, on
- * version 2), with `auth providers`, `auth token-lifetime` and `user passkeys`. What
+ * version 2), with `auth providers`, `auth token-lifetime`, `auth email-confirmation`, `auth mfa`, `user passkeys` and
+ * `user mfa-reset`. What
  * the new Bridge does not have yet (Apple, a free-form stylesheet) is said, never faked.
  */
 
@@ -83,14 +84,64 @@ function loginMethods(settings: SignInSettings) {
     password: { enabled: settings.methods.password },
     magicLink: { enabled: settings.methods.magicLink },
     passkeys: { enabled: settings.methods.passkeys },
-    mfa: { enabled: settings.secondStep === true, note: 'Second factor, not a standalone login method: a code by text message after any way of signing in' },
+    mfa: mfaView(settings),
     socialProviders: { ...Object.fromEntries(PROVIDERS.map((each) => [each.view, providerState(settings, each)])), apple: NOT_YET },
   };
 }
 
+/** The ways of the second step as the CLI names them, and Identity and Access's keys. */
+const SECOND_STEP: Readonly<Record<string, SecondStepMethod>> = { totp: 'totp', authenticator: 'totp', app: 'totp', email: 'email', sms: 'sms', text: 'sms', texts: 'sms' };
+const STRONGEST_NOTE = 'An authenticator app is the strongest choice.';
+const TEXTS_NEED_PLAN = 'Text messages need a plan that includes texts. Nothing was changed.';
+
+/** MFA as the CLI shows it: on or off, where it is required, the ways allowed, the remembered device. */
+function mfaView(settings: SignInSettings) {
+  const mfa = settings.mfa;
+  if (mfa === undefined) return { enabled: settings.secondStep === true, note: 'Second factor, not a standalone login method: a code by text message after any way of signing in' };
+  return {
+    enabled: settings.secondStep === true,
+    requiredIn: mfa.requiredIn === 'all' ? 'all' : 'workspaces',
+    methods: (Object.keys(mfa.methods) as SecondStepMethod[]).filter((method) => mfa.methods[method]),
+    rememberDeviceDays: mfa.rememberDeviceDays,
+    note: `Second factor, not a standalone login method: asked after any way of signing in, ${mfa.requiredIn === 'all' ? 'in every workspace' : 'in workspaces that turned MFA on'}. ${STRONGEST_NOTE}`,
+  };
+}
+
+/** `--methods totp,email` as the whole set of ways: each one named on, the others off. */
+export function methodsOf(list: string): Record<SecondStepMethod, boolean> {
+  const chosen = list.split(',').map((each) => each.trim().toLowerCase()).filter((each) => each !== '' && each !== 'none');
+  const methods: Record<SecondStepMethod, boolean> = { totp: false, email: false, sms: false };
+  for (const name of chosen) {
+    const method = SECOND_STEP[name];
+    if (method === undefined) throw new CliError('invalid', `"${name}" is not a way of the second step. Nothing was changed.`, { hint: 'Use totp (authenticator app), email or sms, comma-separated: --methods totp,email' });
+    methods[method] = true;
+  }
+  return methods;
+}
+
+/** The dry run as the CLI prints it: the counts, and the users each group names (ids, at most 50). */
+function dryRunView(result: MfaDryRun) {
+  return {
+    total: result.total,
+    mfaOn: result.mfaOn,
+    alreadySetUp: result.ready.count,
+    getEmailCode: result.emailCode.count,
+    setUpAtNextSignIn: result.setUp.count,
+    notSignedUpYet: result.notSignedUp,
+    lockedOut: result.lockedOut.count,
+    lockedOutUsers: result.lockedOut.users,
+  };
+}
+
+/** A refusal of switching texts on (the texts gate, 403): said as the plan it needs. */
+function textsRefused(error: unknown, smsOn: boolean): never {
+  if (smsOn && error instanceof CliError && error.status === 403) throw new CliError('plan-required', TEXTS_NEED_PLAN, { status: 403, hint: 'Choose totp (an authenticator app) or email instead, or change the plan to one that includes texts.' });
+  throw error;
+}
+
 /** The method names `auth methods enable|disable` takes, in any case, with kebab or snake forms (`magic-link`). */
 const SWITCHES = { magiclink: 'magicLink', passkeys: 'passkeys', password: 'password' } as const;
-const NOT_AVAILABLE = ['mfa', 'apple'];
+const NOT_AVAILABLE = ['apple'];
 
 /** `--since` as a time: a duration back from now (24h, 7d, 2w) or an ISO date. */
 export function sinceOf(since: string, now: number): string {
@@ -106,6 +157,12 @@ async function methodSwitch(ctx: Context, input: string, on: boolean): Promise<v
   const wanted = input.replace(/[-_\s]/g, '').toLowerCase();
   if (NOT_AVAILABLE.includes(wanted)) {
     throw new CliError('not-offered', `${input}: not available on Bridge yet.`, { hint: 'Password, magic links and passkeys are. Nothing was changed.' });
+  }
+  // MFA is the app's second-step switch: `bridge auth mfa set` chooses where and which ways.
+  if (wanted === 'mfa' || wanted === 'secondstep' || wanted === '2fa') {
+    const { c, appId } = await ctx.forApp();
+    const settings = await signInSettings.update(c, appId, { secondStep: on });
+    return ctx.io.result({ method: 'mfa', enabled: settings.secondStep === true, loginMethods: loginMethods(settings) });
   }
   const provider = providerOf(input);
   if (provider !== null) {
@@ -149,7 +206,31 @@ function passwordView(settings: SignInSettings) {
     ...(badge === null ? {} : { badge }),
     ...(facts?.commonPasswords?.updated === undefined ? {} : { commonPasswordList: `updated ${facts.commonPasswords.updated}` }),
     ...(facts?.productionFloor === undefined ? {} : { productionFloor: facts.productionFloor.kept === true ? `${String(facts.productionFloor.preset)} (kept from before the move)` : 'recommended' }),
+    ...(settings.passwordExpiryDays === undefined ? {} : { passwordExpiryDays: settings.passwordExpiryDays, passwordHistory: settings.passwordHistory ?? 0 }),
+    ...(settings.passwordExpiryDays != null && facts?.aging?.warning !== undefined ? { warning: facts.aging.warning } : {}),
   };
+}
+
+/** The presets that take password expiry and history. */
+const AGING_PRESETS = ['compliance', 'custom'];
+const EXPIRY_DAYS = [30, 60, 90, 180, 365];
+
+/** `--expiry-days off|30|60|90|180|365`: days, or null for never. */
+function expiryOf(value: string): number | null {
+  const word = value.trim().toLowerCase();
+  if (word === 'off' || word === 'never' || word === '0') return null;
+  const days = Number(word);
+  if (!EXPIRY_DAYS.includes(days)) throw new InvalidArgumentError(`off or one of ${EXPIRY_DAYS.join(', ')}`);
+  return days;
+}
+
+/** `--history off|0..24`: how many old passwords are refused. */
+function historyOf(value: string): number {
+  const word = value.trim().toLowerCase();
+  if (word === 'off') return 0;
+  const depth = Number(word);
+  if (!Number.isInteger(depth) || depth < 0 || depth > 24) throw new InvalidArgumentError('off, or 0 to 24');
+  return depth;
 }
 
 const tokensView = (settings: SignInSettings) => ({ accessTokenTTL: settings.lifetimes.accessTokenSeconds, refreshTokenTTL: settings.lifetimes.sessionAbsoluteSeconds, sessionIdleTTL: settings.lifetimes.sessionIdleSeconds });
@@ -171,6 +252,7 @@ function lifetimesOf(current: SignInSettings, opts: { accessTokenTtl?: number; r
 
 /** A refusal of the password rules (production's floor): said as Bridge said it, with what to do. */
 function rulesRefused(error: unknown): never {
+  if (error instanceof CliError && /expiry and history/i.test(error.message)) throw new CliError('invalid', `${error.message} Nothing was changed.`, { hint: 'Use --preset compliance or custom, or turn them off with --expiry-days off --history off.' });
   if (error instanceof CliError && /password rules/i.test(error.message)) throw new CliError('invalid', `${error.message} Nothing was changed.`, { hint: 'Pick recommended or strict, or switch the app to development first (bridge app mode development --yes).' });
   throw error;
 }
@@ -241,6 +323,7 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
         loginMethods: loginMethods(settings),
         tokens: tokensView(settings),
         ...passwordView(settings),
+        ...(settings.emailConfirmation === undefined ? {} : { emailConfirmation: settings.emailConfirmation }),
         signUp: settings.signUp,
       });
     }),
@@ -253,10 +336,12 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
     .option('--min-length <n>', 'Custom: the shortest password, 8 to 128 characters', ttl);
   for (const [, flag, what] of RULES) policy.option(`${flag} [bool]`, `Custom: ${what} (true or false)`, yesNo);
   policy
+    .option('--expiry-days <days>', `Compliance or custom: passwords expire after off | ${EXPIRY_DAYS.join(' | ')} days. Current guidance advises against it unless a compliance rule requires it`, expiryOf)
+    .option('--history <n>', "Compliance or custom: don't allow the last N passwords, off or 1 to 24", historyOf)
     .option('--access-token-ttl <seconds>', 'Moved to `bridge auth token-lifetime`; still taken here for one release', ttl)
     .option('--refresh-token-ttl <seconds>', 'Moved to `bridge auth token-lifetime`; still taken here for one release', ttl)
     .action(
-      action(deps, async (ctx, opts: Record<string, unknown> & { preset?: string; minLength?: number; accessTokenTtl?: number; refreshTokenTtl?: number }) => {
+      action(deps, async (ctx, opts: Record<string, unknown> & { preset?: string; minLength?: number; accessTokenTtl?: number; refreshTokenTtl?: number; expiryDays?: number | null; history?: number }) => {
         const { c, appId } = await ctx.forApp();
         const current = await signInSettings.get(c, appId);
         const lifetimes = lifetimesOf(current, opts);
@@ -272,13 +357,28 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
           : opts.preset === undefined
             ? undefined
             : { preset: opts.preset };
-        if (password === undefined && Object.keys(lifetimes).length === 0) {
-          throw new CliError('invalid', 'Nothing to change: give --preset, or the custom rules (--min-length, --require-upper, --block-common, …).', { hint: 'Token lifetimes moved to `bridge auth token-lifetime`.' });
+        // Password expiry and history: only with Compliance or Custom; another preset turns them off.
+        const aging: Pick<SignInSettingsFields, 'passwordExpiryDays' | 'passwordHistory'> = {};
+        if (opts.expiryDays !== undefined) aging.passwordExpiryDays = opts.expiryDays;
+        if (opts.history !== undefined) aging.passwordHistory = opts.history;
+        const presetAfter = (password?.['preset'] as string | undefined) ?? (current.password['preset'] as string | undefined) ?? 'basic';
+        const agingOn = (aging.passwordExpiryDays ?? null) !== null || (aging.passwordHistory ?? 0) > 0;
+        if (agingOn && !AGING_PRESETS.includes(presetAfter)) {
+          throw new CliError('invalid', `Password expiry and history come with the compliance or custom rules, not ${presetAfter}. Nothing was changed.`, { hint: 'Add --preset compliance (or custom).' });
         }
+        if (password !== undefined && !AGING_PRESETS.includes(presetAfter) && current.passwordExpiryDays !== undefined) {
+          if (aging.passwordExpiryDays === undefined && current.passwordExpiryDays !== null) aging.passwordExpiryDays = null;
+          if (aging.passwordHistory === undefined && (current.passwordHistory ?? 0) > 0) aging.passwordHistory = 0;
+          if (Object.keys(aging).length > 0) ctx.io.info(`Password expiry and history come with compliance or custom: ${presetAfter} turns them off.`);
+        }
+        if (password === undefined && Object.keys(lifetimes).length === 0 && Object.keys(aging).length === 0) {
+          throw new CliError('invalid', 'Nothing to change: give --preset, the custom rules (--min-length, --require-upper, --block-common, …), --expiry-days or --history.', { hint: 'Token lifetimes moved to `bridge auth token-lifetime`.' });
+        }
+        if (aging.passwordExpiryDays != null) ctx.io.info(current.passwordFacts?.aging?.warning ?? 'Current guidance (NIST SP 800-63B) advises against expiring passwords unless a compliance rule requires it.');
         if (Object.keys(lifetimes).length > 0) ctx.io.info('Token lifetimes moved to `bridge auth token-lifetime`. This command still sets them for one more release.');
         let changed: SignInSettings;
         try {
-          changed = await signInSettings.update(c, appId, { ...(password === undefined ? {} : { password }), ...(Object.keys(lifetimes).length === 0 ? {} : { lifetimes }) });
+          changed = await signInSettings.update(c, appId, { ...(password === undefined ? {} : { password }), ...aging, ...(Object.keys(lifetimes).length === 0 ? {} : { lifetimes }) });
         } catch (error) {
           return rulesRefused(error);
         }
@@ -298,6 +398,114 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
         const lifetimes = lifetimesOf(await signInSettings.get(c, appId), opts);
         if (Object.keys(lifetimes).length === 0) throw new CliError('invalid', 'Nothing to change: give --access-token-ttl, --refresh-token-ttl or --session-idle-ttl.');
         ctx.io.result({ tokens: tokensView(await signInSettings.update(c, appId, { lifetimes })) });
+      }),
+    );
+
+  auth
+    .command('email-confirmation [choice]')
+    .description('What sign-in, sign-up and forgot-password emails carry: code (a 6-digit code to type) or link (a link to open). Without a choice, shows it')
+    .action(
+      action(deps, async (ctx, choice: string | undefined) => {
+        const { c, appId } = await ctx.forApp();
+        if (choice === undefined) {
+          const settings = await signInSettings.get(c, appId);
+          if (settings.emailConfirmation === undefined) throw new CliError('not-offered', 'This Bridge has no choice of code or link yet: its emails carry a link.');
+          return ctx.io.result({ emailConfirmation: settings.emailConfirmation });
+        }
+        const wanted = choice.trim().toLowerCase();
+        if (wanted !== 'code' && wanted !== 'link') throw new CliError('invalid', `"${choice}" is neither code nor link. Nothing was changed.`, { hint: 'code: the email holds a 6-digit code to type. link: the email holds a link to open.' });
+        const settings = await signInSettings.update(c, appId, { emailConfirmation: wanted });
+        ctx.io.result({ emailConfirmation: settings.emailConfirmation ?? wanted });
+      }),
+    );
+
+  const mfa = auth.command('mfa').description('Multi-factor authentication: on or off, where it is required, the ways allowed, the remembered device, and the lock-out dry run');
+  mfa.command('show').description("The app's MFA settings").action(
+    action(deps, async (ctx) => {
+      const { c, appId } = await ctx.forApp();
+      ctx.io.result({ mfa: mfaView(await signInSettings.get(c, appId)) });
+    }),
+  );
+  /** The MFA choice a change leads to, whole (the dry run takes it whole), and the change itself. */
+  const mfaAfter = (current: MfaSettings, change: NonNullable<SignInSettingsFields['mfa']>): MfaSettings => ({ ...current, ...change, methods: { ...current.methods, ...change.methods } });
+  const daysOf = (value: string) => {
+    const days = Number(value);
+    if (!Number.isInteger(days) || days < 0 || days > 90) throw new InvalidArgumentError('0 (off) to 90 days');
+    return days;
+  };
+  mfa
+    .command('set')
+    .description('Change MFA: only what you pass changes. Requiring it in every workspace runs the lock-out dry run first and needs --yes')
+    .option('--on', 'Turn MFA on for the app')
+    .option('--off', 'Turn MFA off for the app')
+    .option('--required-in <where>', 'workspaces (those that turned MFA on) | all (every workspace)')
+    .option('--methods <list>', `The ways allowed, comma-separated: totp (authenticator app), email, sms (text message). ${STRONGEST_NOTE}`)
+    .option('--remember-days <days>', 'Remember a device that passed the second step for this many days: 0 (off) to 90', daysOf)
+    .option('--yes', 'Confirm requiring MFA in every workspace after the dry run')
+    .action(
+      action(deps, async (ctx, opts: { on?: boolean; off?: boolean; requiredIn?: string; methods?: string; rememberDays?: number; yes?: boolean }) => {
+        if (opts.on === true && opts.off === true) throw new CliError('invalid', '--on or --off, not both.');
+        if (opts.requiredIn !== undefined && opts.requiredIn !== 'workspaces' && opts.requiredIn !== 'all') throw new CliError('invalid', '--required-in is workspaces or all. Nothing was changed.');
+        const change: NonNullable<SignInSettingsFields['mfa']> = {
+          ...(opts.requiredIn === undefined ? {} : { requiredIn: opts.requiredIn as 'workspaces' | 'all' }),
+          ...(opts.methods === undefined ? {} : { methods: methodsOf(opts.methods) }),
+          ...(opts.rememberDays === undefined ? {} : { rememberDeviceDays: opts.rememberDays }),
+        };
+        const secondStep = opts.on === true ? true : opts.off === true ? false : undefined;
+        if (Object.keys(change).length === 0 && secondStep === undefined) throw new CliError('invalid', 'Nothing to change: give --on, --off, --required-in, --methods or --remember-days.');
+        const { c, appId } = await ctx.forApp();
+        const current = await signInSettings.get(c, appId);
+        if (current.mfa === undefined && Object.keys(change).length > 0) throw new CliError('not-offered', 'This Bridge has no MFA choices yet: only --on and --off. Nothing was changed.');
+        const after = current.mfa === undefined ? undefined : mfaAfter(current.mfa, change);
+        if (after !== undefined && (secondStep ?? current.secondStep === true) && !Object.values(after.methods).some(Boolean)) throw new CliError('invalid', 'MFA on needs at least one way: give --methods with totp, email or sms. Nothing was changed.');
+        // Requiring MFA in every workspace: who would be locked out, before anything is changed.
+        if (after !== undefined && after.requiredIn === 'all' && current.mfa?.requiredIn !== 'all') {
+          const dryRun = dryRunView(await signInSettings.mfaDryRun(c, appId, { all: true, mfa: after }));
+          if (opts.yes !== true) {
+            throw new CliError('invalid', `Requiring MFA in every workspace: ${String(dryRun.lockedOut)} of ${String(dryRun.total)} people would be locked out, ${String(dryRun.setUpAtNextSignIn)} set a way up at their next sign-in. Nothing was changed.`, { hint: 'Confirm with --yes. `bridge auth mfa dry-run --all` lists who.', details: { dryRun } });
+          }
+          ctx.io.info(`Dry run: ${String(dryRun.lockedOut)} of ${String(dryRun.total)} people locked out.`);
+        }
+        const fields: SignInSettingsFields = { ...(secondStep === undefined ? {} : { secondStep }), ...(Object.keys(change).length === 0 ? {} : { mfa: change }) };
+        let changed: SignInSettings;
+        try {
+          changed = await signInSettings.update(c, appId, fields);
+        } catch (error) {
+          return textsRefused(error, change.methods?.sms === true && current.mfa?.methods.sms !== true);
+        }
+        if (change.methods !== undefined && !change.methods.totp) ctx.io.info(STRONGEST_NOTE);
+        ctx.io.result({ mfa: mfaView(changed) });
+      }),
+    );
+  mfa
+    .command('dry-run')
+    .description('Who would be locked out if MFA were required: in every workspace (--all), in one workspace (--workspace), or for these users (--users). Changes nothing')
+    .option('--all', 'Every person of the app, as "required in every workspace"')
+    .option('--workspace <id>', "A workspace's members, as turning that workspace's MFA on (its id or name)")
+    .option('--users <ids>', 'These user ids, comma-separated')
+    .option('--methods <list>', 'The ways being considered, comma-separated (default: the app\'s)')
+    .action(
+      action(deps, async (ctx, opts: { all?: boolean; workspace?: string; users?: string; methods?: string }) => {
+        const chosen = [opts.all === true, opts.workspace !== undefined, opts.users !== undefined].filter(Boolean).length;
+        if (chosen !== 1) throw new CliError('invalid', 'Give one of --all, --workspace <id> or --users <ids>.');
+        const { c, appId } = await ctx.forApp();
+        const current = await signInSettings.get(c, appId);
+        let users: string[] | undefined;
+        if (opts.users !== undefined) users = opts.users.split(',').map((each) => each.trim()).filter((each) => each !== '');
+        if (opts.workspace !== undefined) {
+          const workspaceId = await findWorkspaceId(ctx, opts.workspace);
+          users = [];
+          let after: string | undefined;
+          for (;;) {
+            const page = (await c.person<{ id: string; user: { id?: string } }[]>('membersList', { params: { appId, workspaceId }, query: { limit: '100', after } })).body;
+            users.push(...page.map((each) => each.user.id).filter((each): each is string => typeof each === 'string'));
+            if (page.length < 100 || users.length >= 5000) break;
+            after = page.at(-1)?.id;
+          }
+        }
+        const considered = current.mfa === undefined ? undefined : mfaAfter(current.mfa, { ...(opts.all === true ? { requiredIn: 'all' as const } : {}), ...(opts.methods === undefined ? {} : { methods: methodsOf(opts.methods) }) });
+        const result = await signInSettings.mfaDryRun(c, appId, { ...(opts.all === true ? { all: true as const } : { users: users ?? [] }), ...(considered === undefined ? {} : { mfa: considered }) });
+        ctx.io.result({ dryRun: dryRunView(result) });
       }),
     );
 
@@ -341,6 +549,8 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
     );
 
   const userCommand = program.commands.find((each) => each.name() === 'user') ?? program.command('user').description("The app's users");
+  // `bridge users mfa-reset` reads as well as `bridge user mfa-reset`.
+  if (!program.commands.some((each) => each.name() === 'users' || each.aliases().includes('users'))) userCommand.alias('users');
   const passkeys = userCommand.command('passkeys').description("A user's passkeys, for the app's admins: see them, and remove a lost device's");
   /** The User an email names, across the app: Accounts' users route, as `event auth-attempts` finds them. */
   const userByEmail = async (ctx: Context, email: string) => {
@@ -371,6 +581,22 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
         if (opts.yes !== true) throw new CliError('invalid', 'Confirm the removal with --yes. `--dry-run` shows which passkey it is first.');
         await userPasskeys.remove(c, appId, user.id, passkeyId);
         ctx.io.result({ removed: true, user: user.email, passkey: view });
+      }),
+    );
+
+  userCommand
+    .command('mfa-reset <user>')
+    .description("Reset a user's two-step verification (a lost phone), by user id or email: every way they set up, their recovery codes and remembered devices go, they are signed out everywhere and emailed. Logged")
+    .option('--dry-run', 'Say who it is, and reset nothing')
+    .option('--yes', 'Confirm the reset')
+    .action(
+      action(deps, async (ctx, who: string, opts: { dryRun?: boolean; yes?: boolean }) => {
+        const { c, appId, user } = who.includes('@') ? await userByEmail(ctx, who) : { ...(await ctx.forApp()), user: { id: who, email: null as string | null } };
+        const view = { id: user.id, ...(user.email === null ? {} : { email: user.email }) };
+        if (opts.dryRun === true) return ctx.io.result({ dryRun: true, user: view, resets: ['authenticator app', 'phone', 'recovery codes', 'remembered devices'], signsOut: true, emailed: true });
+        if (opts.yes !== true) throw new CliError('invalid', 'Confirm the reset with --yes. It removes every way of their second step and signs them out everywhere; `--dry-run` shows who it is first.');
+        await userSecondStep.reset(c, appId, user.id);
+        ctx.io.result({ reset: true, user: view, next: 'They set two-step verification up again at their next sign-in.' });
       }),
     );
 
