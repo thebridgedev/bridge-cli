@@ -129,6 +129,11 @@ export function createFakeBridge() {
   /** Each User's passkeys, by `<app>/<user>` (TBP-861), and the provider credentials saved, by `<app>/<provider>`. */
   const userPasskeyLists = new Map<string, Json[]>();
   const savedSecrets = new Map<string, Json>();
+  /** Each User's connected tools (TBP-854) by `<app>/<user>`, and how many browser sessions they have. */
+  const userConnectionLists = new Map<string, Json[]>();
+  const browserSessions = new Map<string, number>();
+  /** A server from before Assistants and CLI: no `tools`, no `mcp`, no connections routes. */
+  let olderServer = false;
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
   /** Why Bridge refuses to send invites now: no email-links address, or too many. */
@@ -160,7 +165,8 @@ export function createFakeBridge() {
     const mine = yourAppOf(app);
     const main = mine['main'] as string | null;
     const choices = (app['addresses'] as { url: string; uses: string[] }[]).filter((each) => each.uses.includes('browser-origin') && !each.url.includes('*')).map((each) => each.url);
-    return { ...app, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main) } };
+    const { mcp, ...rest } = app;
+    return { ...rest, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main), ...(olderServer ? {} : { mcp: mcp ?? [] }) } };
   }
 
   let signInPage: string | null = null;
@@ -440,6 +446,8 @@ export function createFakeBridge() {
       }
       const mine = yourAppOf(app);
       if (input['signIn'] !== undefined) mine['signIn'] = { ...(mine['signIn'] as Json), ...(input['signIn'] as Json) };
+      const mcp = input['mcp'] as string[] | undefined;
+      if (mcp !== undefined && (mcp.length > 10 || mcp.some((each) => !/^https:\/\/[^*?#]+$/.test(each)))) return json(400, { message: 'mcp lists at most 10 https URLs, with no wildcard, query or fragment.' });
       for (const [field, value] of Object.entries(input)) {
         if (['main', 'confirmPasskeys', 'signIn', 'mode'].includes(field)) continue;
         if (['logo', 'website', 'privacyPolicy', 'termsOfService'].includes(field)) (app['profile'] as Json)[field] = value;
@@ -466,6 +474,7 @@ export function createFakeBridge() {
             password: { preset: 'basic', minLength: 8 },
             passwordFacts: { badge: null, commonPasswords: { updated: '2026-11-27' }, productionFloor: { kept: true, preset: 'basic' } },
             bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } },
+            ...(olderServer ? {} : { tools: { anyAssistant: true, assistants: [], shortCode: false } }),
           }) as Json,
       );
     // A provider's credentials (TBP-134, TBP-859): kept as configured, never read back.
@@ -480,6 +489,29 @@ export function createFakeBridge() {
       savedSecrets.set(`${appId}/${provider}`, input);
       Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}) });
       return json(200, current);
+    }
+    // A User's connected tools and every session (TBP-854).
+    const connectionAt = /^\/users\/([^/]+)\/(connections|sessions)(?:\/([^/]+))?$/.exec(rest);
+    if (service === 'identity-access' && connectionAt !== null && !olderServer) {
+      const key = `${appId}/${connectionAt[1] as string}`;
+      const own = perApp(userConnectionLists, key, () => [] as Json[]);
+      if (connectionAt[2] === 'sessions' && method === 'DELETE' && connectionAt[3] === undefined) {
+        const ended = own.length + (browserSessions.get(key) ?? 0);
+        own.splice(0);
+        browserSessions.set(key, 0);
+        return json(200, { ended });
+      }
+      if (connectionAt[2] === 'connections' && connectionAt[3] === undefined) {
+        if (method === 'GET') return json(200, own);
+        if (method === 'DELETE') return json(200, { ended: own.splice(0).length });
+      }
+      if (connectionAt[2] === 'connections' && method === 'DELETE') {
+        const at = own.findIndex((each) => each['id'] === connectionAt[3]);
+        if (at < 0) return notFound();
+        own.splice(at, 1);
+        return json(204, undefined);
+      }
+      return notFound();
     }
     // A User's passkeys (TBP-861).
     const passkeyAt = /^\/users\/([^/]+)\/passkeys(?:\/([^/]+))?$/.exec(rest);
@@ -514,6 +546,7 @@ export function createFakeBridge() {
         methods: { ...(current['methods'] as Json), ...((input['methods'] as Json | undefined) ?? {}) },
         social: { ...(current['social'] as Json), ...((input['social'] as Json | undefined) ?? {}) },
         lifetimes: { ...(current['lifetimes'] as Json), ...((input['lifetimes'] as Json | undefined) ?? {}) },
+        ...(input['tools'] === undefined ? {} : { tools: { ...(current['tools'] as Json), ...(input['tools'] as Json) } }),
       };
       if (!Object.values(next['methods'] as Json).some(Boolean) && !Object.values(next['social'] as Json).some(Boolean)) return json(400, { message: 'At least one sign-in method stays on.' });
       Object.assign(current, next);
@@ -906,6 +939,17 @@ export function createFakeBridge() {
     members: (appId: string, workspace: string) => perApp(members, `${appId}/${workspace}`, () => [] as Json[]),
     /** A User's passkeys, as Identity and Access lists them for the app's admins (TBP-861). */
     userPasskeys: (appId: string, userId: string) => perApp(userPasskeyLists, `${appId}/${userId}`, () => [] as Json[]),
+    /** A User's connected tools, as Identity and Access lists them for the app's admins (TBP-854). */
+    userConnections: (appId: string, userId: string) => perApp(userConnectionLists, `${appId}/${userId}`, () => [] as Json[]),
+    /** How many browser sessions a User has, ended by "sign out everywhere". */
+    setBrowserSessions(appId: string, userId: string, count: number) {
+      browserSessions.set(`${appId}/${userId}`, count);
+    },
+    browserSessions: (appId: string, userId: string) => browserSessions.get(`${appId}/${userId}`) ?? 0,
+    /** Answers as a server from before Assistants and CLI. */
+    beOlderServer() {
+      olderServer = true;
+    },
     /** The credentials saved for a provider, as the CLI sent them. */
     savedProvider: (appId: string, provider: string) => savedSecrets.get(`${appId}/${provider}`),
     /** Production holds the app's password rules at Recommended (TBP-872). */

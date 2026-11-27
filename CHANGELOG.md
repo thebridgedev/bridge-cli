@@ -8,6 +8,10 @@
 - **`bridge auth token-lifetime`** sets the token and session lifetimes (`--access-token-ttl`, `--refresh-token-ttl`, `--session-idle-ttl`).
 - **Social providers.** `bridge auth providers set <google|linkedin|microsoft|github|facebook> --client-id --client-secret [--enable]` saves a provider's credentials and prints the exact return address to register. Microsoft takes `--who-can-sign-in any|work|personal|directory` (`--directory <id or domain>`) and `--secret-expires-at`. `auth providers list` and `auth methods list` show each provider's real state, and `auth methods enable|disable` switches a provider whose credentials are saved. It says "Microsoft", never "Azure AD".
 - **A user's passkeys.** `bridge user passkeys list <email>` and `bridge user passkeys remove <email> <passkeyId>` (`--dry-run`, `--yes`), for the app's admins.
+- **Assistants and CLI.** `bridge app tools` shows which AI assistants may connect to your app's MCP endpoints and whether your CLI may sign in with a short code; `bridge app tools set --any-assistant on|off --assistant <id>... --short-code on|off` changes them (switching short codes on warns about device code phishing). `bridge app mcp list|add|remove <url>` keeps the extra MCP endpoints on other domains. An older Bridge says it has no such settings.
+- **A user's connected tools.** `bridge user connections <email|id>`, `bridge user disconnect <email|id> [<id>|--all]` and `bridge user sign-out-everywhere <email|id>` (`--dry-run`, `--yes`), for the app's admins. `users` is the same group.
+- **`bridge check mcp`** lists an MCP endpoint over HTTP (the MCP SDK's HTTP transports, a `/mcp` route) that has no Bridge guard in MCP mode (`bridgeMcpGuard`, `bridgeMcpMiddleware` or `mode: 'mcp'`), and exits 1 while one is left.
+- **`bridge guide mcp-and-cli`**: protect your MCP endpoint and add sign-in to your own CLI with auth-core.
 
 ### Changed
 

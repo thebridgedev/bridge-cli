@@ -52,6 +52,11 @@ export const ROUTES = {
   signInProviderSave: r('PUT', 'identity-access', '/apps/{appId}/sign-in-settings/providers/{provider}', 'person'),
   userPasskeysList: r('GET', 'identity-access', '/apps/{appId}/users/{userId}/passkeys', 'person'),
   userPasskeysRemove: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/passkeys/{passkeyId}', 'person'),
+  // A User's connected tools (the app's CLI, AI assistants) and every session, for the app's admins.
+  userConnectionsList: r('GET', 'identity-access', '/apps/{appId}/users/{userId}/connections', 'person'),
+  userConnectionsEnd: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/connections/{sessionId}', 'person'),
+  userConnectionsEndAll: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/connections', 'person'),
+  userSessionsEnd: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/sessions', 'person'),
   eventsList: r('GET', 'events-and-logs', '/apps/{appId}/events', 'person'),
   senderGet: r('GET', 'communication', '/apps/{appId}/sender', 'person'),
   senderSet: r('PUT', 'communication', '/apps/{appId}/sender', 'person'),

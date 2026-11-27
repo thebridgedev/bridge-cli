@@ -39,6 +39,7 @@ const MASTERS: Record<string, string> = {
   orientation: 'bridge-cli/prompts/orientation.md',
   'fit-together': 'bridge-cli/prompts/fit-together.md',
   'integration-success': 'bridge-cli/prompts/integration-success.md',
+  'mcp-and-cli': 'bridge-cli/prompts/mcp-and-cli.md',
 };
 const DECISIONS = ['login', 'teams', 'roles', 'payments', 'feature-control', 'look-and-feel', 'going-live'] as const;
 /** The master that stands in for a decision guide not written yet. */
@@ -202,10 +203,10 @@ export function registerGuideCommands(program: Command, deps: Deps): void {
         }),
       );
   }
-  for (const topic of ['mechanisms', 'orientation', 'fit-together', 'integration-success'] as const) {
+  for (const topic of ['mechanisms', 'orientation', 'fit-together', 'integration-success', 'mcp-and-cli'] as const) {
     guide
       .command(topic)
-      .description({ mechanisms: 'How Bridge works: limits, counters and gauges, UI levels, customisation', orientation: 'What Bridge does: a short map to relay to a developer', 'fit-together': 'How roles, plans, limits and flags fit together', 'integration-success': 'The message to give at the end of a finished integration' }[topic])
+      .description({ mechanisms: 'How Bridge works: limits, counters and gauges, UI levels, customisation', orientation: 'What Bridge does: a short map to relay to a developer', 'fit-together': 'How roles, plans, limits and flags fit together', 'integration-success': 'The message to give at the end of a finished integration', 'mcp-and-cli': "Protect your app's MCP endpoint and sign users in to your own CLI" }[topic])
       .option('--json', 'Give a JSON envelope instead of the markdown')
       .action(action(deps, async (ctx, opts: { json?: boolean }) => emit(ctx, topic, await master(ctx, topic), opts.json)));
   }

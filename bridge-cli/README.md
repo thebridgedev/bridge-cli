@@ -118,6 +118,9 @@ bridge flag create team-admin --when "privileges contains users:write"
 | `auth methods list` · `enable` · `disable` · `auth config` · `auth password-policy` · `auth token-lifetime` | Sign-in methods (social providers too), the password rules (presets, or custom rules never below 8 characters) and the token lifetimes |
 | `auth providers list` · `set <provider>` | Social providers (Google, LinkedIn, Microsoft, GitHub, Facebook): save the client ID and secret, see the return address to register; for Microsoft, who can sign in and the secret's expiry |
 | `user passkeys list <email>` · `remove <email> <id>` | A user's passkeys, for the app's admins: remove a lost device's (`--dry-run`, `--yes`) |
+| `app tools` · `app tools set --any-assistant on\|off --assistant <id>... --short-code on\|off` | Assistants and CLI: which AI assistants may connect to your MCP endpoints (any, by default) and sign-in with a short code (off by default). Browser sign-in for your CLI and MCP sign-in are always on |
+| `app mcp list` · `add <url>` · `remove <url>` | Extra MCP endpoints on other domains; those on your app's own addresses need nothing |
+| `user connections <email\|id>` · `user disconnect <email\|id> [<id>\|--all]` · `user sign-out-everywhere <email\|id>` | A user's connected tools (your CLI, AI assistants), for the app's admins: disconnect one or all, or end every session (`--dry-run`, `--yes`). Also `users` |
 | `event list` | The app's event log, newest first |
 | `tenant` · `user` · `token` | The 0.x forms of `workspace`, `member` and `key`, with `--dry-run` on deletes |
 | `flag toggle` · `schedule set` · `schedule clear` · `export` · `import` | A flag's state at a time, and flags as code |
@@ -125,6 +128,7 @@ bridge flag create team-admin --when "privileges contains users:write"
 | `doctor` · `event auth-attempts` · `flag eval` · `flag init` | Check a project against the app; one person's sign-ins; what a flag gives someone; set a project up for flags |
 | `guide` | The integration guides, from Bridge's public repositories |
 | `check gates` | Lists every direct role, privilege or plan check in your project, with the flag to use instead |
+| `check mcp` | Lists an MCP endpoint in your project that has no Bridge guard in MCP mode |
 
 `bridge <command> --help` has every option.
 
