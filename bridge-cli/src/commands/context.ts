@@ -19,6 +19,8 @@ export interface Deps {
   readonly now?: () => number;
   /** How long browser sign-in waits for the page, in ms. */
   readonly signInTimeoutMs?: number;
+  /** Waits between short-code polls; tests pass one that returns at once. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface GlobalOptions {

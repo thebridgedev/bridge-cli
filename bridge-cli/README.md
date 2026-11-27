@@ -30,7 +30,18 @@ bridge auth login --server https://<your Bridge>
 
 This opens your Bridge's sign-in page for the CLI in your browser: the page your issuer publishes (on The Bridge, the dashboard), and the CLI says its address before it opens it. If you are already signed in there in that browser, you only approve the CLI; otherwise you sign in by any method the page offers, or create your account, then approve. The browser comes back to the CLI on `127.0.0.1`. The CLI first asks Bridge to hold a sign-in request for it, with its loopback address and a PKCE challenge, so the code goes only to that address and only this process can trade it: a code that leaks is no use to anyone else. If the browser cannot be opened, the CLI prints the address to open.
 
-If no browser is at hand (a server, a container, CI), sign in in the terminal:
+On a machine without a browser (SSH, a container, a server), sign in with a short code:
+
+```bash
+bridge auth login --device
+# Open https://<dashboard>/connect/device/ and enter WDJB-MJHT. The code expires in 10 minutes.
+```
+
+Open the address on any other device (your laptop, your phone), sign in to the dashboard if you are not, enter the code and approve: the same approval as in the browser, with delete off unless you tick it. Only approve a code you started yourself. The CLI waits and is signed in as soon as you approve; a denied or expired code stops it with a message. When no browser can be opened, `bridge auth login` suggests `--device` where your Bridge offers it.
+
+Scripts and CI do not sign in as a person: set `BRIDGE_APP_KEY` to one of your app's keys (see below).
+
+You can also sign in in the terminal with your password:
 
 ```bash
 bridge auth login --password --email you@example.com          # asks for the password, without echo
@@ -97,7 +108,7 @@ bridge flag create team-admin --when "privileges contains users:write"
 
 | Command | What it does |
 |---|---|
-| `auth login` · `logout` · `whoami` · `workspace` | Sign in and out, see who you are, switch workspace |
+| `auth login` · `logout` · `whoami` · `workspace` | Sign in and out (`--device` with a short code on a machine without a browser), see who you are, switch workspace |
 | `app setup` | Hook up your project: the app's issuer into `.env`, your dev address as a browser origin and email-links page |
 | `app list` · `create` · `use` · `get` · `update` · `delete` | Your apps; `update` sets the name, logo, website, privacy policy and terms |
 | `app address list` · `add` · `remove` | Sign-in returns, email links, browser origins, sign-out and checkout returns |

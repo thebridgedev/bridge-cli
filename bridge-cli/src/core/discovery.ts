@@ -23,6 +23,11 @@ export interface Discovery {
    */
   readonly signInPage: string | null;
   readonly signInRequests: string | null;
+  /**
+   * Sign-in with a short code (RFC 8628), when the app offers it: where the CLI asks for a code. Listed under
+   * `bridge_endpoints["2"].device_authorization`, or as the standard `device_authorization_endpoint`; null when off.
+   */
+  readonly deviceAuthorization: string | null;
   /** Each microservice's base address at version 2. */
   readonly bases: Readonly<Record<Service, string>>;
 }
@@ -119,6 +124,7 @@ export function readMetadata(issuer: string, document: unknown): Discovery {
     signOut,
     // Listed together, for an app whose page signs in for programs (the Bridge App): a page without its requests is not offered.
     ...pageAndRequests(v2),
+    deviceAuthorization: listed(v2?.['device_authorization'], 'device_authorization') ?? listed(meta['device_authorization_endpoint'], 'device_authorization_endpoint'),
     bases: {
       'app-registry': required(appRegistry, 'app_registry'),
       'identity-access': required(identityAccess, 'identity_access'),

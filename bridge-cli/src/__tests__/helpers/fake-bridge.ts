@@ -170,6 +170,13 @@ export function createFakeBridge() {
   }
 
   let signInPage: string | null = null;
+  /** Sign-in with a short code (RFC 8628): off until a test switches it on, as an app's `tools.shortCode`. */
+  let deviceCodes = false;
+  interface DeviceGrant { userCode: string; status: 'pending' | 'approved' | 'denied' | 'used'; session: Omit<Session, 'ended'> | null; expiresAt: number; slowDown: number }
+  const deviceGrants = new Map<string, DeviceGrant>();
+  /** Called on each poll: what a test does on the other device meanwhile. */
+  let onDevicePoll: ((userCode: string, polls: number) => void) | null = null;
+  let devicePolls = 0;
   /** What the server's protected resource metadata names as its issuer, when a test changes it. */
   let protectedResourceIssuer: string | null = null;
 
@@ -178,6 +185,12 @@ export function createFakeBridge() {
     const document = JSON.parse(text) as Json;
     // Listed only for an app whose page signs in for programs: the page and where its sign-in requests start.
     if (signInPage !== null) Object.assign((document['bridge_endpoints'] as Json)['2'] as Json, { sign_in_page: signInPage, sign_in_requests: `${V2}/identity-access/apps/${BRIDGE_APP}/sign-in-requests` });
+    if (deviceCodes) {
+      const at = `${V2}/identity-access/apps/${BRIDGE_APP}/device-authorization`;
+      document['device_authorization_endpoint'] = at;
+      document['grant_types_supported'] = [...(document['grant_types_supported'] as string[]), 'urn:ietf:params:oauth:grant-type:device_code'];
+      Object.assign((document['bridge_endpoints'] as Json)['2'] as Json, { device_authorization: at, device_request: `${V2}/identity-access/apps/${BRIDGE_APP}/device/request` });
+    }
     return document;
   }
 
@@ -273,8 +286,41 @@ export function createFakeBridge() {
       found.used = true;
       return json(200, issue(found.session));
     }
+    if (body['grant_type'] === 'urn:ietf:params:oauth:grant-type:device_code') {
+      const grant = deviceGrants.get(String(body['device_code']));
+      if (!grant) return json(400, { error: 'invalid_grant', error_description: 'The device code is not valid.' });
+      devicePolls += 1;
+      onDevicePoll?.(grant.userCode, devicePolls);
+      if (grant.slowDown > 0) {
+        grant.slowDown -= 1;
+        return json(400, { error: 'slow_down', error_description: 'Polling too fast.' });
+      }
+      if (grant.status === 'used') return json(400, { error: 'invalid_grant', error_description: 'This code was already used.' });
+      if (grant.status === 'denied') return json(400, { error: 'access_denied', error_description: 'The sign-in was denied.' });
+      if (clock >= grant.expiresAt) return json(400, { error: 'expired_token', error_description: 'The code expired.' });
+      if (grant.status === 'pending' || grant.session === null) return json(400, { error: 'authorization_pending', error_description: 'Waiting for approval.' });
+      grant.status = 'used';
+      const sessionId = id('session');
+      sessions.set(sessionId, { ...grant.session, ended: false });
+      return json(200, issue(sessionId), { 'cache-control': 'no-store' });
+    }
     return json(400, { error: 'unsupported_grant_type' });
   }
+
+  function deviceAuthorization(body: Json): Response {
+    if (!deviceCodes) return json(400, { error: 'unauthorized_client', error_description: 'This app does not allow sign-in with a short code. Sign in through the browser.' });
+    if (body['client_id'] !== undefined && body['client_id'] !== BRIDGE_APP) return json(400, { error: 'invalid_client' });
+    const deviceCode = `dc-${secret()}`;
+    const userCode = 'WDJB-MJHT';
+    deviceGrants.set(deviceCode, { userCode, status: 'pending', session: null, expiresAt: clock + 600_000, slowDown: 0 });
+    return json(200, { device_code: deviceCode, user_code: userCode, verification_uri: 'https://dashboard.test/connect/device/', verification_uri_complete: `https://dashboard.test/connect/device/?code=${userCode}`, expires_in: 600, interval: 5 });
+  }
+
+  const grantOf = (userCode: string): DeviceGrant => {
+    const found = [...deviceGrants.values()].find((each) => each.userCode === userCode && each.status === 'pending');
+    if (found === undefined) throw new Error(`No pending code ${userCode}`);
+    return found;
+  };
 
   /** Who the request is from: a person's token, or an app key. */
   function caller(headers: Record<string, string>): { kind: 'person'; session: Session } | { kind: 'key'; key: NonNullable<ReturnType<typeof keys.get>> } | Response | null {
@@ -315,6 +361,7 @@ export function createFakeBridge() {
     if (method === 'POST' && path === `${ia}/sign-in`) return signIn(input);
     if (method === 'POST' && path === `${ia}/sign-in-requests`) return startRequest(input);
     if (method === 'POST' && path === `${ia}/token`) return token(input);
+    if (method === 'POST' && path === `${ia}/device-authorization`) return deviceAuthorization(input);
     if (method === 'POST' && path === `${ia}/revoke`) {
       const found = refreshTokens.get(String(input['token']));
       if (found) {
@@ -878,6 +925,27 @@ export function createFakeBridge() {
       clock += ms;
     },
     /** The issuer publishes its sign-in page, and its sign-in requests, in its metadata. */
+    /** Offers sign-in with a short code (the app's `tools.shortCode`). */
+    setDeviceCodes(on: boolean) {
+      deviceCodes = on;
+    },
+    /** What the other device does on each poll, such as approving the code. */
+    onDevicePoll(hook: ((userCode: string, polls: number) => void) | null) {
+      onDevicePoll = hook;
+      devicePolls = 0;
+    },
+    /** The person approves the code on the dashboard, deleting off unless ticked. */
+    approveDevice(userCode: string, email: string, options: { workspace?: string; allowDelete?: boolean } = {}) {
+      const person = people.get(email) as Person;
+      Object.assign(grantOf(userCode), { status: 'approved', session: { person, workspace: options.workspace ?? person.workspaces[0]?.id ?? null, authTime: clock, canDelete: options.allowDelete === true } });
+    },
+    denyDevice(userCode: string) {
+      grantOf(userCode).status = 'denied';
+    },
+    /** The next polls are answered slow_down. */
+    slowDownDevice(userCode: string, times = 1) {
+      grantOf(userCode).slowDown = times;
+    },
     setSignInPage(url: string | null) {
       signInPage = url;
     },
