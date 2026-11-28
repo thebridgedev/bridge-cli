@@ -9,26 +9,38 @@ import { action, type Context, type Deps } from './context.js';
  * `bridge guide` prints the master prompt; `bridge guide <topic>` one guide; the journeys (`add-login`, `add-paid-plan`,
  * `add-feature-flag`, `add-teams`, `go-live`, `verify-setup`, `whats-wrong`) the same instructions the assistant's
  * commands give, from a terminal.
+ *
+ * This is CLI 1.0, for the new Bridge: it reads the guides of the 1.0 line, each repository's `v1` branch, and never
+ * falls back to the 0.x text on `main` (CLI 0.x keeps reading that). A framework with no 1.0 plugin gets a plain note
+ * instead of its 0.x guide.
  */
 
-const BASE = 'https://raw.githubusercontent.com/thebridgedev';
-const CLI_REPO = 'bridge-cli/main';
-const FRAMEWORKS: Record<string, string> = {
-  svelte: 'bridge-svelte/main',
-  react: 'bridge-react/main',
-  angular: 'bridge-angular/main',
-  nextjs: 'bridge-nextjs/main',
-  nestjs: 'bridge-nestjs/main',
-  express: 'bridge-express/main',
+const DEFAULT_BASE = 'https://raw.githubusercontent.com/thebridgedev';
+/** Where the guides are read from: `BRIDGE_GUIDES_BASE_URL` (a local copy laid out as `<repo>/<branch>/<path>`), else GitHub. */
+const baseOf = (ctx: Context): string => {
+  const given = ctx.deps.env['BRIDGE_GUIDES_BASE_URL']?.trim();
+  return given === undefined || given === '' ? DEFAULT_BASE : given.replace(/\/+$/, '');
 };
+const CLI_REPO = 'bridge-cli/v1';
+/** The frameworks with a 1.0 plugin, and the line their guides are on. `javascript` is auth-core, for any other JavaScript app. */
+const FRAMEWORKS: Record<string, string> = {
+  svelte: 'bridge-svelte/v1',
+  nestjs: 'bridge-nestjs/v1',
+  javascript: 'auth-core/v1',
+};
+/** The frameworks Bridge has a 0.x plugin for and no 1.0 plugin yet. */
+const NOT_YET: readonly string[] = ['react', 'angular', 'nextjs', 'express'];
+const ALL_FRAMEWORKS = [...Object.keys(FRAMEWORKS), ...NOT_YET];
 /** A feature a framework has a guide for, and the files that may hold it, in order. */
 const FEATURES: Record<string, readonly string[]> = {
   integration: ['mcp/integration-prompt.md'],
   auth: ['mcp/sdk-auth-prompt.md', 'mcp/auth-prompt.md'],
+  'sdk-auth': ['mcp/sdk-auth-prompt.md'],
   'feature-flags': ['mcp/feature-flags-prompt.md'],
   billing: ['mcp/billing-prompt.md'],
   team: ['mcp/team-prompt.md'],
   branding: ['mcp/branding-prompt.md'],
+  server: ['mcp/server-prompt.md'],
 };
 /** The guides every framework shares, in the CLI repository. */
 const MASTERS: Record<string, string> = {
@@ -44,6 +56,23 @@ const DECISIONS = ['login', 'teams', 'roles', 'payments', 'feature-control', 'lo
 /** The master that stands in for a decision guide not written yet. */
 const STAND_IN: Record<string, string | undefined> = { login: 'master', payments: 'billing-master', 'feature-control': 'flags-master' };
 
+/** What a framework with no 1.0 plugin gets instead of its 0.x guide. */
+export function noPluginYet(framework: string): string {
+  return [
+    `# ${framework} has no 1.0 plugin yet`,
+    '',
+    `The new Bridge works with the 1.0 plugins only, and there is no 1.0 plugin for ${framework} yet. Its 0.x plugin talks to the old Bridge and does not work here, so this guide is not given: tell the developer before building on it.`,
+    '',
+    'What to use instead:',
+    '',
+    '- **Any JavaScript app:** `@nebulr-group/bridge-auth-core@alpha`, `createBridge({ issuer })` in the browser and `createBridgeServer({ issuer, appKey })` on a server. `bridge guide javascript` and `bridge guide javascript server` are its guides.',
+    '- **SvelteKit:** `bridge guide svelte`. **NestJS:** `bridge guide nestjs`.',
+  ].join('\n');
+}
+
+/** The verify rule: what any assistant can check from a terminal, and what needs a browser. */
+const VERIFY_INTRO = 'Run the terminal checks. If you have a browser tool, run the browser checks too. If you do not, list them for the developer, numbered, and start the summary with a Heads up line saying which checks were not run.';
+
 interface Journey {
   readonly name: string;
   readonly decision: (typeof DECISIONS)[number] | null;
@@ -58,9 +87,10 @@ const JOURNEYS: readonly Journey[] = [
     feature: 'auth',
     steps: [
       'Goal: users can sign up and sign in to this app through the Bridge.',
-      'Ask the developer which sign-in methods they want (password, magic link, passkeys) before changing any: `bridge auth methods enable|disable <method>`. Social sign-in and MFA are not available on Bridge yet.',
-      "Register the app's sign-in return and the pages it runs on: `bridge app address add <url> --use sign-in-return`.",
-      'Prove it works at the end by signing up and signing in yourself in the running app.',
+      "Sign-in happens inside the app, on its own `/auth` pages, styled to match it. Install the 1.0 plugin from the `alpha` tag; its one setting is the app's issuer.",
+      "Hook the project up: `bridge app setup --url <dev address>` writes the issuer into `.env` and adds the address as a browser origin and `<address>/auth` as the email-links address. Production addresses: `bridge app address add <url> --use browser-origin` and `bridge app address add <url>/auth --use email-links`.",
+      'Ask the developer which sign-in methods they want before changing any. Password, sign-in links and passkeys: `bridge auth methods enable|disable <magicLink|passkeys|password>`. Social providers and the second step (a code by text message) are switched on in the dashboard, where their credentials are saved.',
+      'Prove it works by asking the developer to sign up and sign in themselves in the running app (sign-up, the email link, sign-in, sign-out). If a step fails, `bridge event auth-attempts --user <their email>` names the reason and the fix.',
     ],
   },
   {
@@ -69,8 +99,12 @@ const JOURNEYS: readonly Journey[] = [
     feature: 'billing',
     steps: [
       'Goal: a customer can pick a paid plan and pay for it.',
-      'Plan names, prices, trials and limits are product decisions: ask the developer, then `bridge plan create <key> --name <name> --price "<amount> <CURRENCY>/<interval>" --trial-days <n> | --no-trial`.',
-      'Check payments with `bridge stripe status`; `bridge stripe connect` connects it.',
+      'Plan names, prices, trials and limits are product decisions: ask the developer, then `bridge plan create <key> --name <name> --price "<amount> <CURRENCY>/<interval>" --trial-days <n>` (or `--no-trial`).',
+      'Check payments with `bridge stripe status`; `bridge stripe connect` connects Stripe in test mode.',
+      'Verify. ' + VERIFY_INTRO,
+      'Terminal checks: the project builds; `npx @nebulr-group/bridge-cli@alpha check gates` is clean; `bridge plan list` shows the plans, prices, trials, features and limits the developer confirmed; `bridge stripe status` says Stripe is connected; with a backend, a call to the counted handler at the limit is refused with 402.',
+      'Browser checks: 1. the plan page shows the plans, a plan with a monthly and a yearly price as one card; 2. choosing the free plan changes the plan at once; 3. a paid plan opens Stripe Checkout; 4. a test payment returns to the plan page on the new plan, and a cancelled one returns too; 5. a workspace with no plan lands on the plan page (the paywall).',
+      'When a check was not run, the summary starts with "Heads up: not verified in a browser" and names the checks, instead of the success banner.',
     ],
   },
   {
@@ -81,6 +115,10 @@ const JOURNEYS: readonly Journey[] = [
       'Goal: a feature in the app is controlled by a Bridge flag.',
       "Who should see the feature (everyone, a share, a plan, named workspaces) is the developer's call: ask, then `bridge flag create <key> --when \"<attribute> <operator> <value>\"`.",
       'Read the flag in the app with the SDK surface the guide names, never by hand against SDK internals.',
+      'Verify. ' + VERIFY_INTRO,
+      'Terminal checks: the project builds; `npx @nebulr-group/bridge-cli@alpha check gates` is clean; `bridge flag get <key>` shows the rule the developer asked for; `bridge flag eval <key> --context <json>` gives the on value for someone it should match and the off value for someone it should not; with a backend, the gated endpoint answers 403 or 402 for a caller the flag is off for.',
+      'Browser checks: 1. signed in as someone the flag is on for, the gated page, link or button shows; 2. as someone it is off for, it is hidden, and a gated page sends them away; 3. switching the flag off with `bridge flag off <key>` hides it within seconds, without a reload.',
+      'When a check was not run, the summary starts with "Heads up: not verified in a browser" and names the checks, instead of the success banner.',
     ],
   },
   {
@@ -90,6 +128,7 @@ const JOURNEYS: readonly Journey[] = [
     steps: [
       'Goal: a customer can invite teammates into their workspace, each with a role.',
       'Which roles exist and what each may do are product decisions: ask the developer, then `bridge role create <key> --name <name> --privilege <p>`.',
+      "Invites are emailed to the app's email-links address: check `bridge app address list` has one.",
       'Wire the team UI with the SDK surface the per-framework team guide names.',
     ],
   },
@@ -99,20 +138,25 @@ const JOURNEYS: readonly Journey[] = [
     feature: null,
     steps: [
       'Goal: nothing on the readiness checklist blocks real users.',
-      'Take each item in turn with the developer: production addresses (`bridge app address list`), the email sender (`bridge setup communication`), live Stripe keys (`bridge stripe connect --live`).',
+      'Start from `bridge setup status`. Take each item in turn with the developer: production addresses (`bridge app address list`, `bridge app address add`), the email sender (`bridge setup communication`), live Stripe keys (`bridge stripe connect --live`).',
     ],
   },
   {
     name: 'verify-setup',
     decision: null,
     feature: null,
-    steps: ['Goal: evidence that sign-in works end to end, not an opinion.', '1. `bridge app get` and `bridge auth config`: compare them with the project\'s Bridge settings.', '2. Ask the developer to sign up and sign in themselves in the running app.'],
+    steps: [
+      'Goal: evidence that sign-in works end to end, not an opinion.',
+      VERIFY_INTRO,
+      "Terminal checks: 1. `bridge doctor` compares the project's Bridge settings with the app and names every difference with its fix; fix each. 2. `bridge app address list` has the app's browser origin and email-links address. 3. `bridge setup status` for the readiness checklist. 4. `npx @nebulr-group/bridge-cli@alpha check gates` is clean.",
+      'Browser checks, which are the developer\'s own: 1. sign up in the running app; 2. open the email link; 3. sign in; 4. sign out. If a step fails, `bridge event auth-attempts --user <their email>` gives the reason and the fix.',
+    ],
   },
   {
     name: 'whats-wrong',
     decision: null,
     feature: null,
-    steps: ['Goal: the reason for the failure and its fix, from evidence.', '`bridge event list --since 24h` shows what happened; `bridge auth config` how sign-in is set up.'],
+    steps: ['Goal: the reason for the failure and its fix, from evidence.', '`bridge event list --since 24h` shows what happened; `bridge event auth-attempts --user <email>` one person\'s sign-ins; `bridge doctor` the project against the app; `bridge auth config` how sign-in is set up.'],
   },
 ];
 
@@ -129,11 +173,13 @@ async function read(ctx: Context, url: string): Promise<string | null> {
   }
 }
 
+/** A framework's guide from its 1.0 line, the no-plugin note for a framework without one, or null when it has no such guide. */
 async function frameworkGuide(ctx: Context, framework: string, feature: string): Promise<string | null> {
+  if (NOT_YET.includes(framework)) return noPluginYet(framework);
   const repo = FRAMEWORKS[framework];
-  if (repo === undefined) throw new CliError('invalid', `${framework} is not a framework Bridge ships an SDK for: ${Object.keys(FRAMEWORKS).join(', ')}.`);
+  if (repo === undefined) throw new CliError('invalid', `${framework} is not a framework Bridge has a plugin for: ${ALL_FRAMEWORKS.join(', ')}.`);
   for (const path of FEATURES[feature] ?? []) {
-    const found = await read(ctx, `${BASE}/${repo}/${path}`);
+    const found = await read(ctx, `${baseOf(ctx)}/${repo}/${path}`);
     if (found !== null) return found;
   }
   return null;
@@ -141,11 +187,11 @@ async function frameworkGuide(ctx: Context, framework: string, feature: string):
 
 async function master(ctx: Context, topic: string): Promise<string> {
   const path = MASTERS[topic] as string;
-  return (await read(ctx, `${BASE}/${CLI_REPO}/${path}`)) ?? `# The ${topic} guide is unavailable\n\nNo file at ${BASE}/${CLI_REPO}/${path}.`;
+  return (await read(ctx, `${baseOf(ctx)}/${CLI_REPO}/${path}`)) ?? `# The ${topic} guide is unavailable\n\nNo file at ${baseOf(ctx)}/${CLI_REPO}/${path}.`;
 }
 
 async function decisionGuide(ctx: Context, domain: string): Promise<string> {
-  const found = await read(ctx, `${BASE}/${CLI_REPO}/bridge-cli/prompts/decisions/${domain}.md`);
+  const found = await read(ctx, `${baseOf(ctx)}/${CLI_REPO}/bridge-cli/prompts/decisions/${domain}.md`);
   if (found !== null) return found;
   const standIn = STAND_IN[domain];
   const note = `# Decision guide: ${domain}: not written yet\n\nIt will appear here without a CLI change.\n\nTake every product decision to the developer rather than choosing for them.`;
@@ -171,7 +217,7 @@ export function registerGuideCommands(program: Command, deps: Deps): void {
     .description('The guides there are, and which features each framework has a guide for')
     .action(
       action(deps, async (ctx) => {
-        const coverage = await read(ctx, `${BASE}/${CLI_REPO}/bridge-cli/prompts/guide-coverage.json`);
+        const coverage = await read(ctx, `${baseOf(ctx)}/${CLI_REPO}/bridge-cli/prompts/guide-coverage.json`);
         let frameworks: unknown = null;
         try {
           frameworks = coverage === null ? null : (JSON.parse(coverage) as { frameworks?: unknown }).frameworks;
@@ -184,6 +230,7 @@ export function registerGuideCommands(program: Command, deps: Deps): void {
           shared: Object.keys(MASTERS),
           features: Object.keys(FEATURES),
           frameworks: frameworks ?? Object.keys(FRAMEWORKS),
+          noPluginYet: NOT_YET,
         });
       }),
     );
@@ -192,7 +239,7 @@ export function registerGuideCommands(program: Command, deps: Deps): void {
     guide
       .command(topic)
       .description(`The ${topic === 'flags' ? 'feature flags' : 'billing'} integration prompt (with --framework, that framework's guide)`)
-      .option('--framework <name>', `One of: ${Object.keys(FRAMEWORKS).join(', ')}`)
+      .option('--framework <name>', `One of: ${ALL_FRAMEWORKS.join(', ')}`)
       .option('--json', 'Give a JSON envelope instead of the markdown')
       .action(
         action(deps, async (ctx, opts: { framework?: string; json?: boolean }) => {
@@ -219,11 +266,11 @@ export function registerGuideCommands(program: Command, deps: Deps): void {
         emit(ctx, `decision:${domain}`, await decisionGuide(ctx, domain), opts.json);
       }),
     );
-  for (const framework of Object.keys(FRAMEWORKS)) {
+  for (const framework of ALL_FRAMEWORKS) {
     guide
       .command(framework)
       .argument('[feature]', `One of: ${Object.keys(FEATURES).join(', ')} (default integration)`)
-      .description(`The integration guide for ${framework}`)
+      .description(NOT_YET.includes(framework) ? `${framework} has no 1.0 plugin yet: says what to use instead` : framework === 'javascript' ? 'The integration guide for any other JavaScript app (auth-core): integration, or server' : `The integration guide for ${framework}`)
       .option('--json', 'Give a JSON envelope instead of the markdown')
       .action(
         action(deps, async (ctx, feature: string | undefined, opts: { json?: boolean }) => {
@@ -239,7 +286,7 @@ export function registerGuideCommands(program: Command, deps: Deps): void {
     guide
       .command(journey.name)
       .description(`The ${journey.name} journey: its steps, its decision guide and, with --framework, that framework's guide`)
-      .option('--framework <name>', `One of: ${Object.keys(FRAMEWORKS).join(', ')}`)
+      .option('--framework <name>', `One of: ${ALL_FRAMEWORKS.join(', ')}`)
       .option('--json', 'Give a JSON envelope instead of the markdown')
       .action(
         action(deps, async (ctx, opts: { framework?: string; json?: boolean }) => {

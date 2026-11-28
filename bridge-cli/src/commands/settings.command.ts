@@ -132,7 +132,7 @@ export function registerSettingsCommands(program: Command, deps: Deps): void {
       ctx.io.result({ loginMethods: loginMethods(await signInSettings.get(c, appId)) });
     }),
   );
-  methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys or password. Social sign-in and MFA are not available on Bridge yet').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
+  methods.command('enable <method>').description('Switch a login method on: magicLink, passkeys or password. Social providers and the second step are switched on in the dashboard, where their credentials are saved').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, true)));
   methods.command('disable <method>').description('Switch a login method off. Bridge refuses to switch off the last one').action(action(deps, (ctx, method: string) => methodSwitch(ctx, method, false)));
 
   auth.command('config').description("The app's sign-in configuration: the login methods, the token lifetimes and the password rules").action(
