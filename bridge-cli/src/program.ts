@@ -13,6 +13,7 @@ import { registerInfoCommands } from './commands/info.command.js';
 import { registerKeyCommands } from './commands/key.command.js';
 import { registerPlanCommands } from './commands/plan.command.js';
 import { registerSettingsCommands } from './commands/settings.command.js';
+import { registerToolsCommands } from './commands/tools.command.js';
 
 /**
  * The whole command tree. Kept apart from `cli.ts` (which reads the package
@@ -39,6 +40,8 @@ export function buildProgram(deps: Deps, version = '0.0.0'): Command {
   registerCompatCommands(program, deps);
   // After the auth and compat commands: it adds `auth methods|config|password-policy|token-lifetime|providers` to the `auth` group and `user passkeys`.
   registerSettingsCommands(program, deps);
+  // After the app and settings commands: it adds `app tools|mcp` and `user connections|disconnect|sign-out-everywhere`.
+  registerToolsCommands(program, deps);
   // After the settings commands: it adds `event auth-attempts` to the `event` group.
   registerDiagnoseCommands(program, deps);
   registerInfoCommands(program, deps);

@@ -55,6 +55,11 @@ export const ROUTES = {
   // The lock-out dry run before MFA is required, and an admin's reset of a User's second step.
   mfaDryRun: r('POST', 'identity-access', '/apps/{appId}/sign-in-settings/mfa-dry-run', 'person'),
   userSecondStepReset: r('POST', 'identity-access', '/apps/{appId}/users/{userId}/second-step/reset', 'person'),
+  // A User's connected tools (the app's CLI, AI assistants) and every session, for the app's admins.
+  userConnectionsList: r('GET', 'identity-access', '/apps/{appId}/users/{userId}/connections', 'person'),
+  userConnectionsEnd: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/connections/{sessionId}', 'person'),
+  userConnectionsEndAll: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/connections', 'person'),
+  userSessionsEnd: r('DELETE', 'identity-access', '/apps/{appId}/users/{userId}/sessions', 'person'),
   eventsList: r('GET', 'events-and-logs', '/apps/{appId}/events', 'person'),
   senderGet: r('GET', 'communication', '/apps/{appId}/sender', 'person'),
   senderSet: r('PUT', 'communication', '/apps/{appId}/sender', 'person'),

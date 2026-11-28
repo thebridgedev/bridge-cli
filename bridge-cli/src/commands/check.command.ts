@@ -18,6 +18,7 @@ import {
   isScannedSource,
   type GateFinding,
 } from '../gate-rules.js';
+import { MCP_EXCEPTION_MARKER, mcpFindings, type McpFinding } from '../mcp-rules.js';
 
 export function projectSourceFiles(root: string): string[] {
   const out: string[] = [];
@@ -45,6 +46,31 @@ export function checkGates(root: string): { scanned: number; findings: GateFindi
   const files = projectSourceFiles(root);
   const findings = files.flatMap((file) => codeGateFindings(readFileSync(file, 'utf-8'), relative(root, file)));
   return { scanned: files.length, findings };
+}
+
+/** `bridge check mcp`: the project's MCP endpoints over HTTP that have no Bridge guard in MCP mode. */
+export function checkMcp(root: string): { scanned: number; findings: McpFinding[] } {
+  const files = projectSourceFiles(root);
+  const findings = mcpFindings(files.map((file) => ({ file: relative(root, file), source: readFileSync(file, 'utf-8') })));
+  return { scanned: files.length, findings };
+}
+
+export function formatMcpReport(scanned: number, findings: McpFinding[]): string {
+  if (findings.length === 0) return `bridge check mcp: ${scanned} files checked, no MCP endpoint without Bridge's guard.\n`;
+  const lines = [
+    `bridge check mcp: ${findings.length} MCP endpoint${findings.length === 1 ? '' : 's'} without Bridge's guard in ${scanned} files.`,
+    '',
+    'Assistants only connect to an MCP endpoint that tells them where to sign in, and every call must carry a checked user.',
+    '',
+  ];
+  for (const f of findings) {
+    lines.push(`${f.file}:${f.line}  MCP endpoint`);
+    lines.push(`    ${f.text}`);
+    lines.push(`    instead: ${f.instead}`);
+    lines.push('');
+  }
+  lines.push(`An endpoint protected another way stays with a \`// ${MCP_EXCEPTION_MARKER}: <reason>\` comment in its file.`);
+  return lines.join('\n') + '\n';
 }
 
 const KIND_LABEL: Record<GateFinding['kind'], string> = {
@@ -97,6 +123,22 @@ export function registerCheckCommands(program: Command, deps: Deps): void {
         const { scanned, findings } = checkGates(root);
         if (opts.json) deps.io.result({ scanned, findings });
         else deps.io.text(formatGateReport(scanned, findings));
+        if (findings.length > 0) deps.io.setExitCode(1);
+      } catch (error) {
+        deps.io.error(error);
+      }
+    });
+
+  check
+    .command('mcp')
+    .description("Warn about an MCP endpoint over HTTP (the MCP SDK's HTTP transports, a /mcp route) without Bridge's guard in MCP mode. Exits 1 while any is left.")
+    .option('--cwd <path>', 'Project directory (defaults to current)', process.cwd())
+    .option('--json', 'Print the findings as JSON')
+    .action((opts: { cwd: string; json?: boolean }) => {
+      try {
+        const { scanned, findings } = checkMcp(resolve(opts.cwd));
+        if (opts.json) deps.io.result({ scanned, findings });
+        else deps.io.text(formatMcpReport(scanned, findings));
         if (findings.length > 0) deps.io.setExitCode(1);
       } catch (error) {
         deps.io.error(error);

@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { signInWithDevice } from '../auth/device.js';
 import { signInWithBrowser, signInWithPassword, type WorkspaceChoice } from '../auth/sign-in.js';
 import type { StoredSession } from '../auth/store.js';
 import { CliError } from '../core/errors.js';
@@ -62,6 +63,7 @@ interface LoginOptions {
   workspace?: string;
   browser?: boolean;
   allowDelete?: boolean;
+  device?: boolean;
 }
 
 export function registerAuthCommands(program: Command, deps: Deps): void {
@@ -69,7 +71,8 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
 
   auth
     .command('login')
-    .description('Sign in through Bridge\'s sign-in page in your browser, or with --password in the terminal')
+    .description('Sign in through Bridge\'s sign-in page in your browser; with --device on a machine without a browser (SSH, a container); scripts and CI use an app key (BRIDGE_APP_KEY)')
+    .option('--device', 'Sign in with a short code: open the address it prints on any other device, enter the code and approve. For machines without a browser')
     .option('--password', 'Sign in with your email and password in the terminal (no browser needed)')
     .option('--email <email>', 'Your email, with --password')
     .option('--password-stdin', 'Read the password from stdin, with --password (for scripts and CI)')
@@ -78,6 +81,7 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
     .option('--no-browser', 'Print the sign-in address instead of opening the browser')
     .action(
       action(deps, async (ctx, opts: LoginOptions) => {
+        if (opts.device === true && (opts.password || opts.passwordStdin)) throw new CliError('invalid', '--device and --password are two ways to sign in: pick one.');
         if (opts.allowDelete === true && !opts.password && !opts.passwordStdin) {
           throw new CliError('invalid', '--allow-delete goes with --password.', { hint: 'In the browser, tick delete on the approval page instead.' });
         }
@@ -99,10 +103,13 @@ export function registerAuthCommands(program: Command, deps: Deps): void {
             chooseWorkspace: workspaceChooser(ctx),
             allowDelete: opts.allowDelete === true,
           });
+        } else if (opts.device === true) {
+          session = await signInWithDevice(deps.fetch, sessions, d, { show: (message) => ctx.io.info(message), ...(deps.sleep === undefined ? {} : { sleep: deps.sleep }), ...(deps.now === undefined ? {} : { now: deps.now }) });
         } else {
           if (d.signInPage !== null) ctx.io.info(`Signing in at ${new URL(d.signInPage).host} for ${issuerHost}.`);
           session = await signInWithBrowser(deps.fetch, sessions, d, {
             openBrowser: opts.browser === false ? async () => ({ ok: false }) : deps.openBrowser,
+            ...(d.deviceAuthorization === null ? {} : { noBrowserHint: 'No browser on this machine? Run `bridge auth login --device` instead.' }),
             show: (message) => ctx.io.info(message),
             ...(deps.signInTimeoutMs === undefined ? {} : { timeoutMs: deps.signInTimeoutMs }),
           });

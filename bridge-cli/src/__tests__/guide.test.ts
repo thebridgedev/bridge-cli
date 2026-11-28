@@ -66,3 +66,24 @@ describe('bridge guide', () => {
     expect(listed.frameworks).toEqual({ svelte: ['auth', 'billing'] });
   });
 });
+
+describe('bridge guide mcp-and-cli', () => {
+  const { readFileSync } = jest.requireActual<typeof import('node:fs')>('node:fs');
+  const { join } = jest.requireActual<typeof import('node:path')>('node:path');
+  const { docGateViolations } = jest.requireActual<typeof import('../gate-rules')>('../gate-rules');
+  const guide = readFileSync(join(__dirname, '..', '..', 'prompts', 'mcp-and-cli.md'), 'utf8');
+
+  it('reads the guide from the prompts, as the other guides', async () => {
+    const files = { ...FILES, 'bridge-cli/main/bridge-cli/prompts/mcp-and-cli.md': guide };
+    const fetchIt = async (url: string) => {
+      const body = (files as Record<string, string>)[url.replace('https://raw.githubusercontent.com/thebridgedev/', '')];
+      return body === undefined ? new Response('404', { status: 404 }) : new Response(body, { status: 200, headers: { 'content-type': 'text/plain' } });
+    };
+    expect((await cli.run(['guide', 'mcp-and-cli'], { fetch: fetchIt })).texts).toEqual([guide]);
+  });
+
+  it("points at auth-core's MCP mode and CLI helper, and teaches no direct gate", () => {
+    for (const name of ['bridgeMcpGuard', 'bridgeMcpMiddleware', 'createBridgeCli', 'bridge check mcp', 'bridge app mcp add']) expect(guide).toContain(name);
+    expect(docGateViolations(guide)).toEqual([]);
+  });
+});

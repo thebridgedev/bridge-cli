@@ -134,6 +134,11 @@ export function createFakeBridge() {
   /** Each User's passkeys, by `<app>/<user>` (TBP-861), and the provider credentials saved, by `<app>/<provider>`. */
   const userPasskeyLists = new Map<string, Json[]>();
   const savedSecrets = new Map<string, Json>();
+  /** Each User's connected tools (TBP-854) by `<app>/<user>`, and how many browser sessions they have. */
+  const userConnectionLists = new Map<string, Json[]>();
+  const browserSessions = new Map<string, number>();
+  /** A server from before Assistants and CLI: no `tools`, no `mcp`, no connections routes. */
+  let olderServer = false;
   /** Invites by `bridge/<workspace>` (the developer's own) or `<app>/<workspace>`. */
   const invites = new Map<string, Json[]>();
   /** Why Bridge refuses to send invites now: no email-links address, or too many. */
@@ -165,12 +170,20 @@ export function createFakeBridge() {
     const mine = yourAppOf(app);
     const main = mine['main'] as string | null;
     const choices = (app['addresses'] as { url: string; uses: string[] }[]).filter((each) => each.uses.includes('browser-origin') && !each.url.includes('*')).map((each) => each.url);
+    const { mcp, ...rest } = app;
     const related = (mine['relatedOrigins'] as Json | null | undefined) ?? null;
     const file = related === null || main === null ? null : { url: `https://${domainOf(main)}/.well-known/webauthn`, body: { origins: [...(related['origins'] as string[]), ...(related['hosted'] === true ? ['https://auth.bridge.test'] : [])] } };
-    return { ...app, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main), relatedOrigins: related === null ? null : { ...related, file, labelLimit: 5 } } };
+    return { ...rest, yourApp: { mode: mine['mode'], main, mainChoices: choices, passkeyDomain: domainOf(main), signIn: { ...(mine['signIn'] as Json), emailLinksOpenOn: null }, productionRules: productionRules(main), relatedOrigins: related === null ? null : { ...related, file, labelLimit: 5 }, ...(olderServer ? {} : { mcp: mcp ?? [] }) } };
   }
 
   let signInPage: string | null = null;
+  /** Sign-in with a short code (RFC 8628): off until a test switches it on, as an app's `tools.shortCode`. */
+  let deviceCodes = false;
+  interface DeviceGrant { userCode: string; status: 'pending' | 'approved' | 'denied' | 'used'; session: Omit<Session, 'ended'> | null; expiresAt: number; slowDown: number }
+  const deviceGrants = new Map<string, DeviceGrant>();
+  /** Called on each poll: what a test does on the other device meanwhile. */
+  let onDevicePoll: ((userCode: string, polls: number) => void) | null = null;
+  let devicePolls = 0;
   /** What the server's protected resource metadata names as its issuer, when a test changes it. */
   let protectedResourceIssuer: string | null = null;
 
@@ -179,6 +192,12 @@ export function createFakeBridge() {
     const document = JSON.parse(text) as Json;
     // Listed only for an app whose page signs in for programs: the page and where its sign-in requests start.
     if (signInPage !== null) Object.assign((document['bridge_endpoints'] as Json)['2'] as Json, { sign_in_page: signInPage, sign_in_requests: `${V2}/identity-access/apps/${BRIDGE_APP}/sign-in-requests` });
+    if (deviceCodes) {
+      const at = `${V2}/identity-access/apps/${BRIDGE_APP}/device-authorization`;
+      document['device_authorization_endpoint'] = at;
+      document['grant_types_supported'] = [...(document['grant_types_supported'] as string[]), 'urn:ietf:params:oauth:grant-type:device_code'];
+      Object.assign((document['bridge_endpoints'] as Json)['2'] as Json, { device_authorization: at, device_request: `${V2}/identity-access/apps/${BRIDGE_APP}/device/request` });
+    }
     return document;
   }
 
@@ -274,8 +293,41 @@ export function createFakeBridge() {
       found.used = true;
       return json(200, issue(found.session));
     }
+    if (body['grant_type'] === 'urn:ietf:params:oauth:grant-type:device_code') {
+      const grant = deviceGrants.get(String(body['device_code']));
+      if (!grant) return json(400, { error: 'invalid_grant', error_description: 'The device code is not valid.' });
+      devicePolls += 1;
+      onDevicePoll?.(grant.userCode, devicePolls);
+      if (grant.slowDown > 0) {
+        grant.slowDown -= 1;
+        return json(400, { error: 'slow_down', error_description: 'Polling too fast.' });
+      }
+      if (grant.status === 'used') return json(400, { error: 'invalid_grant', error_description: 'This code was already used.' });
+      if (grant.status === 'denied') return json(400, { error: 'access_denied', error_description: 'The sign-in was denied.' });
+      if (clock >= grant.expiresAt) return json(400, { error: 'expired_token', error_description: 'The code expired.' });
+      if (grant.status === 'pending' || grant.session === null) return json(400, { error: 'authorization_pending', error_description: 'Waiting for approval.' });
+      grant.status = 'used';
+      const sessionId = id('session');
+      sessions.set(sessionId, { ...grant.session, ended: false });
+      return json(200, issue(sessionId), { 'cache-control': 'no-store' });
+    }
     return json(400, { error: 'unsupported_grant_type' });
   }
+
+  function deviceAuthorization(body: Json): Response {
+    if (!deviceCodes) return json(400, { error: 'unauthorized_client', error_description: 'This app does not allow sign-in with a short code. Sign in through the browser.' });
+    if (body['client_id'] !== undefined && body['client_id'] !== BRIDGE_APP) return json(400, { error: 'invalid_client' });
+    const deviceCode = `dc-${secret()}`;
+    const userCode = 'WDJB-MJHT';
+    deviceGrants.set(deviceCode, { userCode, status: 'pending', session: null, expiresAt: clock + 600_000, slowDown: 0 });
+    return json(200, { device_code: deviceCode, user_code: userCode, verification_uri: 'https://dashboard.test/connect/device/', verification_uri_complete: `https://dashboard.test/connect/device/?code=${userCode}`, expires_in: 600, interval: 5 });
+  }
+
+  const grantOf = (userCode: string): DeviceGrant => {
+    const found = [...deviceGrants.values()].find((each) => each.userCode === userCode && each.status === 'pending');
+    if (found === undefined) throw new Error(`No pending code ${userCode}`);
+    return found;
+  };
 
   /** Who the request is from: a person's token, or an app key. */
   function caller(headers: Record<string, string>): { kind: 'person'; session: Session } | { kind: 'key'; key: NonNullable<ReturnType<typeof keys.get>> } | Response | null {
@@ -316,6 +368,7 @@ export function createFakeBridge() {
     if (method === 'POST' && path === `${ia}/sign-in`) return signIn(input);
     if (method === 'POST' && path === `${ia}/sign-in-requests`) return startRequest(input);
     if (method === 'POST' && path === `${ia}/token`) return token(input);
+    if (method === 'POST' && path === `${ia}/device-authorization`) return deviceAuthorization(input);
     if (method === 'POST' && path === `${ia}/revoke`) {
       const found = refreshTokens.get(String(input['token']));
       if (found) {
@@ -453,6 +506,8 @@ export function createFakeBridge() {
       }
       const mine = yourAppOf(app);
       if (input['signIn'] !== undefined) mine['signIn'] = { ...(mine['signIn'] as Json), ...(input['signIn'] as Json) };
+      const mcp = input['mcp'] as string[] | undefined;
+      if (mcp !== undefined && (mcp.length > 10 || mcp.some((each) => !/^https:\/\/[^*?#]+$/.test(each)))) return json(400, { message: 'mcp lists at most 10 https URLs, with no wildcard, query or fragment.' });
       if (input['relatedOrigins'] !== undefined) mine['relatedOrigins'] = input['relatedOrigins'] === null ? null : { ...(input['relatedOrigins'] as Json), check: null };
       for (const [field, value] of Object.entries(input)) {
         if (['main', 'confirmPasskeys', 'signIn', 'mode', 'relatedOrigins'].includes(field)) continue;
@@ -486,6 +541,7 @@ export function createFakeBridge() {
             passwordHistory: 0,
             passkeyOffer: { afterSignIn: true, automatic: true },
             bounds: { lifetimes: { accessTokenSeconds: { min: 60, max: 300 } } },
+            ...(olderServer ? {} : { tools: { anyAssistant: true, assistants: [], shortCode: false } }),
           }) as Json,
       );
     // A provider's credentials (TBP-134, TBP-859): kept as configured, never read back.
@@ -500,6 +556,29 @@ export function createFakeBridge() {
       savedSecrets.set(`${appId}/${provider}`, input);
       Object.assign(saved, { configured: true, clientId: input['clientId'], ...(provider === 'azure' ? { tenantId: tenant, audience: ({ common: 'any', organizations: 'work', consumers: 'personal' } as Record<string, string>)[tenant] ?? 'directory', secretExpiresAt: (input['secretExpiresAt'] as string | undefined) ?? '2028-11-27T00:00:00.000Z', secretExpiry: 'ok' } : {}), ...(provider === 'apple' ? { teamId: input['teamId'], keyId: input['keyId'], clientIdWarning: null } : {}) });
       return json(200, current);
+    }
+    // A User's connected tools and every session (TBP-854).
+    const connectionAt = /^\/users\/([^/]+)\/(connections|sessions)(?:\/([^/]+))?$/.exec(rest);
+    if (service === 'identity-access' && connectionAt !== null && !olderServer) {
+      const key = `${appId}/${connectionAt[1] as string}`;
+      const own = perApp(userConnectionLists, key, () => [] as Json[]);
+      if (connectionAt[2] === 'sessions' && method === 'DELETE' && connectionAt[3] === undefined) {
+        const ended = own.length + (browserSessions.get(key) ?? 0);
+        own.splice(0);
+        browserSessions.set(key, 0);
+        return json(200, { ended });
+      }
+      if (connectionAt[2] === 'connections' && connectionAt[3] === undefined) {
+        if (method === 'GET') return json(200, own);
+        if (method === 'DELETE') return json(200, { ended: own.splice(0).length });
+      }
+      if (connectionAt[2] === 'connections' && method === 'DELETE') {
+        const at = own.findIndex((each) => each['id'] === connectionAt[3]);
+        if (at < 0) return notFound();
+        own.splice(at, 1);
+        return json(204, undefined);
+      }
+      return notFound();
     }
     // A User's passkeys (TBP-861).
     const passkeyAt = /^\/users\/([^/]+)\/passkeys(?:\/([^/]+))?$/.exec(rest);
@@ -557,6 +636,7 @@ export function createFakeBridge() {
         methods: { ...(current['methods'] as Json), ...((input['methods'] as Json | undefined) ?? {}) },
         social: { ...(current['social'] as Json), ...((input['social'] as Json | undefined) ?? {}) },
         lifetimes: { ...(current['lifetimes'] as Json), ...((input['lifetimes'] as Json | undefined) ?? {}) },
+        ...(input['tools'] === undefined ? {} : { tools: { ...(current['tools'] as Json), ...(input['tools'] as Json) } }),
         passkeyOffer: { ...(current['passkeyOffer'] as Json), ...((input['passkeyOffer'] as Json | undefined) ?? {}) },
       };
       if (!Object.values(next['methods'] as Json).some(Boolean) && !Object.values(next['social'] as Json).some(Boolean)) return json(400, { message: 'At least one sign-in method stays on.' });
@@ -889,6 +969,27 @@ export function createFakeBridge() {
       clock += ms;
     },
     /** The issuer publishes its sign-in page, and its sign-in requests, in its metadata. */
+    /** Offers sign-in with a short code (the app's `tools.shortCode`). */
+    setDeviceCodes(on: boolean) {
+      deviceCodes = on;
+    },
+    /** What the other device does on each poll, such as approving the code. */
+    onDevicePoll(hook: ((userCode: string, polls: number) => void) | null) {
+      onDevicePoll = hook;
+      devicePolls = 0;
+    },
+    /** The person approves the code on the dashboard, deleting off unless ticked. */
+    approveDevice(userCode: string, email: string, options: { workspace?: string; allowDelete?: boolean } = {}) {
+      const person = people.get(email) as Person;
+      Object.assign(grantOf(userCode), { status: 'approved', session: { person, workspace: options.workspace ?? person.workspaces[0]?.id ?? null, authTime: clock, canDelete: options.allowDelete === true } });
+    },
+    denyDevice(userCode: string) {
+      grantOf(userCode).status = 'denied';
+    },
+    /** The next polls are answered slow_down. */
+    slowDownDevice(userCode: string, times = 1) {
+      grantOf(userCode).slowDown = times;
+    },
     setSignInPage(url: string | null) {
       signInPage = url;
     },
@@ -950,6 +1051,17 @@ export function createFakeBridge() {
     members: (appId: string, workspace: string) => perApp(members, `${appId}/${workspace}`, () => [] as Json[]),
     /** A User's passkeys, as Identity and Access lists them for the app's admins (TBP-861). */
     userPasskeys: (appId: string, userId: string) => perApp(userPasskeyLists, `${appId}/${userId}`, () => [] as Json[]),
+    /** A User's connected tools, as Identity and Access lists them for the app's admins (TBP-854). */
+    userConnections: (appId: string, userId: string) => perApp(userConnectionLists, `${appId}/${userId}`, () => [] as Json[]),
+    /** How many browser sessions a User has, ended by "sign out everywhere". */
+    setBrowserSessions(appId: string, userId: string, count: number) {
+      browserSessions.set(`${appId}/${userId}`, count);
+    },
+    browserSessions: (appId: string, userId: string) => browserSessions.get(`${appId}/${userId}`) ?? 0,
+    /** Answers as a server from before Assistants and CLI. */
+    beOlderServer() {
+      olderServer = true;
+    },
     /** The credentials saved for a provider, as the CLI sent them. */
     savedProvider: (appId: string, provider: string) => savedSecrets.get(`${appId}/${provider}`),
     /** What the lock-out dry run answers, and what it was asked (TBP-848). */

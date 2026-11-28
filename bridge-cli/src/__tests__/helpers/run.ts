@@ -66,6 +66,8 @@ export function createCli(fake: FakeBridge, base: { env?: Record<string, string>
       store: base.store ?? ((configDir) => new FileStore(configDir)),
       now: fake.now,
       signInTimeoutMs: 5_000,
+      // Short-code polling waits on the fake's clock, never the real one.
+      sleep: async (ms: number) => fake.advance(ms),
     });
     // commander's own refusals (a missing option, an unknown command) throw instead of exiting, on every command.
     const quiet = (command: typeof program) => {

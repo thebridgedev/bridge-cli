@@ -49,6 +49,7 @@ describe('discovery against the pinned metadata document', () => {
       signOut: `${BASE}/v2/identity-access/sign-out`,
       signInPage: null,
       signInRequests: null,
+      deviceAuthorization: null,
       bases: {
         'app-registry': `${BASE}/v2/app-registry`,
         'identity-access': `${BASE}/v2/identity-access`,

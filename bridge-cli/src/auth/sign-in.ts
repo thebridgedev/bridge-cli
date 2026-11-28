@@ -80,6 +80,8 @@ export interface BrowserSignIn {
   /** Told the address when the browser cannot be opened, or always, so it can be opened by hand. */
   readonly show: (message: string) => void;
   readonly timeoutMs?: number;
+  /** Said after the address when the browser could not be opened: the short code, where Bridge offers it. */
+  readonly noBrowserHint?: string;
   /** For tests: called once the loopback listens. */
   readonly onListening?: (loopback: StartedLoopback, url: string) => void;
 }
@@ -131,6 +133,7 @@ export async function signInWithBrowser(fetchFn: Fetch, sessions: Sessions, d: D
         ? `Opened your browser to sign in: approve the sign-in there (sign in first if you are not). If it did not open, go to:\n  ${url}`
         : `Open this address in your browser to sign in, and approve the sign-in there:\n  ${url}`,
     );
+    if (!opened.ok && input.noBrowserHint !== undefined) input.show(input.noBrowserHint);
     const { code } = await loopback.result;
     return await sessions.exchangeCode(d, code, verifier, loopback.redirectUri);
   } catch (error) {

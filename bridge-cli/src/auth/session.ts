@@ -4,6 +4,9 @@ import { call, type Fetch } from '../core/http.js';
 import { withLock } from './lock.js';
 import type { SessionStore, StoredSession } from './store.js';
 
+/** The grant a short-code sign-in polls with (RFC 8628). */
+export const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+
 /** Renew this long before the access token expires, so a call never carries one that runs out on the way. */
 const RENEW_BEFORE_MS = 60_000;
 
@@ -56,6 +59,22 @@ export class Sessions {
       method: 'POST',
       url: d.token,
       body: { grant_type: 'authorization_code', code, code_verifier: verifier, client_id: d.appId, ...(redirectUri === undefined ? {} : { redirect_uri: redirectUri }) },
+    });
+    const session = this.fromAnswer(d, tokenAnswer(body), null, this.now());
+    await this.deps.store.write(session);
+    return session;
+  }
+
+  /**
+   * One poll of a short-code sign-in (RFC 8628, 3.4): the tokens once the code was approved, kept as a browser sign-in's
+   * are. Bridge's `authorization_pending`, `slow_down`, `access_denied` and `expired_token` come back as the CLI error
+   * whose details carry them.
+   */
+  async exchangeDeviceCode(d: Discovery, deviceCode: string): Promise<StoredSession> {
+    const { body } = await call(this.deps.fetch, {
+      method: 'POST',
+      url: d.token,
+      body: { grant_type: DEVICE_CODE_GRANT, device_code: deviceCode, client_id: d.appId },
     });
     const session = this.fromAnswer(d, tokenAnswer(body), null, this.now());
     await this.deps.store.write(session);

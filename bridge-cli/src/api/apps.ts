@@ -21,6 +21,8 @@ export interface YourApp {
   readonly passkeyDomain: string | null;
   readonly signIn: { readonly location: SignInLocation; readonly path: string; readonly returnPath: string; readonly emailLinks: SignInLocation | null; readonly emailLinksOpenOn: string | null };
   readonly productionRules: Rule[];
+  /** Extra MCP endpoint URLs on other domains; absent from an older server. The app's own addresses never need listing. */
+  readonly mcp?: string[];
   /** Passkeys on other domains: the list, the file to publish on the main domain and the last check; null for none. */
   readonly relatedOrigins?: RelatedOrigins | null;
 }
@@ -90,6 +92,8 @@ export interface AppFields {
   readonly signIn?: { location?: SignInLocation; path?: string; returnPath?: string; emailLinks?: SignInLocation | null };
   /** You have seen how many passkeys stop working and go ahead with a main address on another domain. */
   readonly confirmPasskeys?: boolean;
+  /** The extra MCP endpoint URLs, the whole list. */
+  readonly mcp?: string[];
 }
 
 export function checkUses(uses: readonly string[]): AddressUse[] {

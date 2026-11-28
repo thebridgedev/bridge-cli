@@ -49,6 +49,16 @@ export interface SignInSettings {
     readonly aging?: { readonly presets?: readonly string[]; readonly expiryDays?: readonly number[]; readonly historyMax?: number; readonly warning?: string };
   };
   readonly bounds?: { readonly lifetimes?: Readonly<Record<string, { readonly min: number; readonly max: number }>> };
+  /** Assistants and CLI; absent from an older server. */
+  readonly tools?: ToolsSettings;
+}
+
+/** Which AI assistants may connect to the app's MCP endpoints, and whether its CLI may sign in with a short code. */
+export interface ToolsSettings {
+  readonly anyAssistant: boolean;
+  /** Client ids allowed when `anyAssistant` is off (at most 50). */
+  readonly assistants: string[];
+  readonly shortCode: boolean;
 }
 
 export type SecondStepMethod = 'totp' | 'email' | 'sms';
@@ -97,6 +107,8 @@ export interface SignInSettingsFields {
   mfa?: { requiredIn?: 'workspaces' | 'all'; methods?: Partial<Record<SecondStepMethod, boolean>>; rememberDeviceDays?: number };
   passwordExpiryDays?: number | null;
   passwordHistory?: number;
+  /** Merged into what the app has. */
+  tools?: Partial<ToolsSettings>;
   passkeyOffer?: { afterSignIn?: boolean; automatic?: boolean };
 }
 
@@ -157,6 +169,26 @@ export const userSecondStep = {
 export const userPasskeys = {
   list: (c: BridgeClient, appId: string, userId: string) => c.person<UserPasskey[]>('userPasskeysList', { params: { appId, userId } }).then((answer) => answer.body),
   remove: (c: BridgeClient, appId: string, userId: string, passkeyId: string) => c.person<unknown>('userPasskeysRemove', { params: { appId, userId, passkeyId } }).then(() => undefined),
+};
+
+/** One tool connected to one user of the app: the app's CLI or an AI assistant. Never a token. */
+export interface UserConnection {
+  readonly id: string;
+  readonly kind: 'cli' | 'assistant';
+  readonly client: { readonly id: string; readonly name: string };
+  readonly workspace: string | null;
+  readonly delete: boolean;
+  readonly signedInAt: string;
+  readonly lastUsedAt: string | null;
+  readonly expiresAt: string | null;
+}
+
+/** A user's connected tools, for the app's admins: list, end one or all, and end every session ("sign out everywhere"). */
+export const userConnections = {
+  list: (c: BridgeClient, appId: string, userId: string) => c.person<UserConnection[]>('userConnectionsList', { params: { appId, userId } }).then((answer) => answer.body),
+  end: (c: BridgeClient, appId: string, userId: string, sessionId: string) => c.person<unknown>('userConnectionsEnd', { params: { appId, userId, sessionId } }).then(() => undefined),
+  endAll: (c: BridgeClient, appId: string, userId: string) => c.person<{ ended: number }>('userConnectionsEndAll', { params: { appId, userId } }).then((answer) => answer.body),
+  signOutEverywhere: (c: BridgeClient, appId: string, userId: string) => c.person<{ ended: number }>('userSessionsEnd', { params: { appId, userId } }).then((answer) => answer.body),
 };
 
 /** The app's event log, newest first. Events and logs gives at most 100 a page; this follows its cursor up to `limit`. */
