@@ -32,6 +32,8 @@ export interface SignInSettings {
   /** Password expiry in days (null: never) and how many old passwords are refused. Compliance or Custom only. */
   readonly passwordExpiryDays?: number | null;
   readonly passwordHistory?: number;
+  /** When a person with no passkey is offered one: after signing in another way, and made by the browser on its own. */
+  readonly passkeyOffer?: { readonly afterSignIn: boolean; readonly automatic: boolean };
   /** Each provider's saved credentials as a console sees them, never the secret, and the return address to register. */
   readonly providers?: Readonly<Record<string, ProviderView>>;
   readonly signUp: boolean;
@@ -78,6 +80,11 @@ export interface ProviderView {
   readonly audience?: 'any' | 'work' | 'personal' | 'directory';
   readonly secretExpiresAt?: string | null;
   readonly secretExpiry?: 'ok' | 'soon' | 'expired' | null;
+  /** Apple only: the Team ID and Key ID in use, the domain to list on the Services ID, and a Services ID that looks wrong. */
+  readonly teamId?: string | null;
+  readonly keyId?: string | null;
+  readonly domain?: string;
+  readonly clientIdWarning?: string | null;
 }
 
 export interface SignInSettingsFields {
@@ -90,6 +97,7 @@ export interface SignInSettingsFields {
   mfa?: { requiredIn?: 'workspaces' | 'all'; methods?: Partial<Record<SecondStepMethod, boolean>>; rememberDeviceDays?: number };
   passwordExpiryDays?: number | null;
   passwordHistory?: number;
+  passkeyOffer?: { afterSignIn?: boolean; automatic?: boolean };
 }
 
 /** A passkey of one User, as the app's admins see it: never a key. */
@@ -132,7 +140,7 @@ export const signInSettings = {
   get: (c: BridgeClient, appId: string) => c.person<SignInSettings>('signInSettingsGet', { params: { appId } }).then((answer) => answer.body),
   update: (c: BridgeClient, appId: string, fields: SignInSettingsFields) => c.person<SignInSettings>('signInSettingsUpdate', { params: { appId }, body: fields }).then((answer) => answer.body),
   /** Saves a provider's client ID and secret (and Microsoft's tenant and secret expiry): switches nothing on. */
-  saveProvider: (c: BridgeClient, appId: string, provider: string, fields: { clientId: string; clientSecret: string; tenantId?: string; secretExpiresAt?: string }) =>
+  saveProvider: (c: BridgeClient, appId: string, provider: string, fields: { clientId: string; clientSecret: string; tenantId?: string; secretExpiresAt?: string } | { clientId: string; teamId: string; keyId: string; privateKey: string }) =>
     c.person<SignInSettings>('signInProviderSave', { params: { appId, provider }, body: fields }).then((answer) => answer.body),
   /** Who would be locked out if MFA were required in every workspace (`all`) or for these users, with `mfa` the whole choice considered. Changes nothing. */
   mfaDryRun: (c: BridgeClient, appId: string, input: { all?: true; users?: string[]; mfa?: MfaSettings }) =>

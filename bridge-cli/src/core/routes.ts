@@ -70,6 +70,7 @@ export const ROUTES = {
   appsModeSwitch: r('POST', 'app-registry', '/apps/{appId}/mode', 'person'),
   productionStatus: r('GET', 'identity-access', '/apps/{appId}/sign-in-settings/production', 'person'),
   passkeyImpact: r('GET', 'identity-access', '/apps/{appId}/sign-in-settings/passkey-impact', 'person'),
+  relatedOriginsCheck: r('POST', 'app-registry', '/apps/{appId}/related-origins/check', 'person'),
 
   // App keys.
   keysList: r('GET', 'identity-access', '/apps/{appId}/keys', 'person'),

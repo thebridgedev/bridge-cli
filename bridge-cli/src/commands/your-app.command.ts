@@ -84,6 +84,34 @@ export function registerYourAppCommands(app: Command, deps: Deps): void {
     );
 
   app
+    .command('related-origins')
+    .description("Passkeys on the app's other domains and on Bridge's sign-in page (related origins): show them, change them, or check the file the main domain publishes. Needs an https main address")
+    .option('--add <origin>', 'Let another https address of the app use the passkeys (repeatable)', (value: string, all: string[] = []) => [...all, value])
+    .option('--remove <origin>', 'Stop letting an address use them (repeatable)', (value: string, all: string[] = []) => [...all, value])
+    .option('--hosted <on|off>', "Use passkeys directly on Bridge's sign-in page")
+    .option('--none', 'Remove every related origin')
+    .option('--check', 'Read the main domain\'s /.well-known/webauthn now and keep what was found')
+    .action(
+      action(deps, async (ctx, opts: { add?: string[]; remove?: string[]; hosted?: string; none?: boolean; check?: boolean }) => {
+        const { c, appId } = await ctx.forApp();
+        let found = await apps.get(c, appId);
+        const now = yourAppOf(found)?.relatedOrigins ?? null;
+        if (opts.none === true || opts.add !== undefined || opts.remove !== undefined || opts.hosted !== undefined) {
+          if (opts.hosted !== undefined && !['on', 'off'].includes(opts.hosted)) throw new CliError('invalid', '--hosted is on or off. Nothing was changed.');
+          const origins = [...new Set([...(now?.origins ?? []).filter((each) => !(opts.remove ?? []).includes(each)), ...(opts.add ?? [])])];
+          const hosted = opts.hosted === undefined ? (now?.hosted ?? false) : opts.hosted === 'on';
+          found = await apps.update(c, appId, { relatedOrigins: opts.none === true || (origins.length === 0 && !hosted) ? null : { origins, hosted } });
+        }
+        if (opts.check === true) found = await apps.checkRelatedOrigins(c, appId);
+        const related = yourAppOf(found)?.relatedOrigins ?? null;
+        if (related?.file) ctx.io.info(`Publish at ${related.file.url} (application/json):\n${JSON.stringify(related.file.body, null, 2)}`);
+        ctx.io.result({
+          relatedOrigins: related === null ? null : { origins: related.origins, hosted: related.hosted, file: related.file, check: related.check, limit: `at most ${related.labelLimit} different domain names` },
+        });
+      }),
+    );
+
+  app
     .command('sign-in')
     .description('Where users sign in (in your app, or on Bridge\'s pages) and the paths under Advanced. Without options it shows them')
     .option('--location <where>', 'app | hosted: where signed-out users go, where email links open and where users land after signing out')
